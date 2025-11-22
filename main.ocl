@@ -5,6 +5,9 @@
   essential functions automatically.
 #/
 
+// imports only function thats from #namespace core.io in CoreSX.sxh
+impoprt core.io.*;
+
 void main()
 {
     /# Print uses CoreSX core.io.print #/
