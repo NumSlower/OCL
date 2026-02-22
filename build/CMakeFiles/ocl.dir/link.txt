@@ -1,1 +1,0 @@
-/usr/bin/cc  -Wall -Wextra -pedantic -fPIC -g CMakeFiles/ocl.dir/src/frontend/main.c.o CMakeFiles/ocl.dir/src/frontend/errors.c.o -o bin/ocl  lib/libocl_interpreter.a -lm 
