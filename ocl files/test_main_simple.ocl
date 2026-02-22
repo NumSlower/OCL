@@ -1,0 +1,6 @@
+func int main() {
+    Let greet:String = "Welcome to the OCL interpreter made in";
+    Let number:Int = 2026;
+    printf("Hello world %s %d \n": greet, number);
+    return 0;
+}

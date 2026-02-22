@@ -1,0 +1,8 @@
+func int main() {
+    String greet;
+    greet = "Welcome to the OCL interpreter made in";
+    int number;
+    number = 2026;
+    printf("Hello world %s %d \n": greet, number);
+    return 0;
+}

@@ -1,0 +1,5 @@
+/workspaces/OCL/build/CMakeFiles/ocl_interpreter.dir
+/workspaces/OCL/build/CMakeFiles/ocl.dir
+/workspaces/OCL/build/CMakeFiles/test.dir
+/workspaces/OCL/build/CMakeFiles/edit_cache.dir
+/workspaces/OCL/build/CMakeFiles/rebuild_cache.dir

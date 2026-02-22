@@ -1,0 +1,6 @@
+func int main() {
+    int x;
+    x = 42;
+    printf("The answer is %d\n": x);
+    return 0;
+}

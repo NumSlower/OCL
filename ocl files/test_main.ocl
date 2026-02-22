@@ -1,0 +1,18 @@
+Import <CoreSX.sxh>
+
+Let greet:String = "Hello";
+Let number:Int = 42;
+
+func hello() {
+    return;
+}
+
+func int multiply(a:int, b:int) {
+    return a * b;
+}
+
+func int main() {
+    hello();
+    multiply(9, 8);
+    return 0;
+}
