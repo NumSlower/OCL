@@ -1,45 +1,57 @@
-#ifndef OCL_VM_H
-#define OCL_VM_H
+#ifndef OCL_COMMON_H
+#define OCL_COMMON_H
 
-#include "bytecode.h"
+#include <stddef.h>
+#include <stdint.h>
+#include <stdbool.h>
 
-/* Call frame for function calls */
+/* Source location tracking */
 typedef struct {
-    uint32_t return_address;
-    Value *locals;
-    size_t local_count;
-    size_t local_capacity;
-} CallFrame;
+    int line;
+    int column;
+    const char *filename;
+} SourceLocation;
 
-/* Virtual machine */
+/* Value types for the runtime */
+typedef enum {
+    VALUE_INT,
+    VALUE_FLOAT,
+    VALUE_STRING,
+    VALUE_BOOL,
+    VALUE_CHAR,
+    VALUE_NULL
+} ValueType;
+
+/* Union to hold different value types */
 typedef struct {
-    Bytecode *bytecode;
-    Value *stack;
-    size_t stack_top;
-    size_t stack_capacity;
-    
-    CallFrame *call_stack;
-    size_t call_stack_top;
-    size_t call_stack_capacity;
-    
-    Value *globals;
-    size_t global_count;
-    size_t global_capacity;
-    
-    uint32_t pc;  /* Program counter */
-    bool halted;
-    int exit_code;
-} VM;
+    ValueType type;
+    union {
+        int64_t int_val;
+        double  float_val;
+        char   *string_val;
+        bool    bool_val;
+        char    char_val;
+    } data;
+} Value;
 
-/* VM functions */
-VM *vm_create(Bytecode *bytecode);
-void vm_free(VM *vm);
-int vm_execute(VM *vm);
-Value vm_get_result(VM *vm);
+/* ── Value constructors ──────────────────────────────────────────── */
+Value value_int(int64_t i);
+Value value_float(double f);
+Value value_string(char *s);          /* takes ownership of s        */
+Value value_string_copy(const char *s); /* copies s                  */
+Value value_bool(bool b);
+Value value_char(char c);
+Value value_null(void);
 
-/* Stack operations */
-void vm_push(VM *vm, Value value);
-Value vm_pop(VM *vm);
-Value vm_peek(VM *vm, size_t depth);
+/* ── Value utilities ─────────────────────────────────────────────── */
+bool  value_is_truthy(Value v);
+void  value_free(Value v);
+char *value_to_string(Value v);       /* returns static buffer – do not free */
 
-#endif /* OCL_VM_H */
+/* ── Memory utilities ────────────────────────────────────────────── */
+void  *ocl_malloc(size_t size);
+void  *ocl_realloc(void *ptr, size_t size);
+void   ocl_free(void *ptr);
+char  *ocl_strdup(const char *s);     /* forward declaration fixes common.c */
+
+#endif /* OCL_COMMON_H */

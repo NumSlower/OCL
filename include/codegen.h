@@ -5,50 +5,51 @@
 #include "bytecode.h"
 #include "errors.h"
 
-/* Variable mapping for code generation */
+/* ── Variable slot ───────────────────────────────────────────────── */
 typedef struct {
     char *name;
-    int index;
-} VariableMapping;
+    int   slot;
+    int   scope_level;
+    bool  is_global;
+} VarSlot;
 
-/* Built-in function tracking */
+/* ── Built-in descriptor ─────────────────────────────────────────── */
 typedef struct {
     char *name;
-    int id;  /* Special ID for built-in functions */
-} BuiltinFunction;
+    int   id;
+} BuiltinDesc;
 
-/* User-defined function tracking */
-typedef struct {
-    char *name;
-    uint32_t bytecode_offset;  /* Instruction address where function starts */
-} UserDefinedFunction;
+#define CODEGEN_MAX_FRAMES 256
 
-/* Code generator */
+/* ── Code generator ──────────────────────────────────────────────── */
 typedef struct {
-    Bytecode *bytecode;
+    Bytecode       *bytecode;
     ErrorCollector *errors;
-    int local_count;
-    int scope_level;
-    
-    /* Variable tracking */
-    VariableMapping *variables;
-    size_t variable_count;
-    size_t variable_capacity;
-    
-    /* Built-in function tracking */
-    BuiltinFunction *builtins;
-    size_t builtin_count;
-    size_t builtin_capacity;
-    
-    /* User-defined function tracking */
-    UserDefinedFunction *functions;
-    size_t function_count;
-    size_t function_capacity;
+
+    /* Local variable table */
+    VarSlot *vars;
+    size_t   var_count;
+    size_t   var_cap;
+    int      scope_level;
+
+    /* Per-function local-slot counter stack */
+    int  local_stack[CODEGEN_MAX_FRAMES];
+    int  local_stack_top;
+    bool in_global_scope;
+
+    /* Global variable table */
+    VarSlot *globals;
+    size_t   global_count;
+    size_t   global_cap;
+
+    /* Built-in registry */
+    BuiltinDesc *builtins;
+    size_t       builtin_count;
 } CodeGenerator;
 
-/* Code generator functions */
 CodeGenerator *codegen_create(ErrorCollector *errors);
-void codegen_free(CodeGenerator *gen);
-bool codegen_generate(CodeGenerator *gen, ProgramNode *program, Bytecode *output);
+void           codegen_free(CodeGenerator *gen);
+bool           codegen_generate(CodeGenerator *gen, ProgramNode *program,
+                                 Bytecode *output);
 
 #endif /* OCL_CODEGEN_H */

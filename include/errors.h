@@ -1,8 +1,7 @@
 #ifndef OCL_ERRORS_H
 #define OCL_ERRORS_H
 
-#include "common.h"
-#include <stdarg.h>
+#include "common.h"   /* pulls in stdarg.h */
 
 /* Error types */
 typedef enum {
@@ -12,27 +11,27 @@ typedef enum {
     ERROR_RUNTIME
 } ErrorType;
 
-/* Error structure */
+/* Single error */
 typedef struct {
-    ErrorType type;
-    const char *message;
+    ErrorType      type;
+    const char    *message;
     SourceLocation location;
-    bool is_warning;
+    bool           is_warning;
 } Error;
 
-/* Error system */
+/* Error collector */
 typedef struct {
-    Error *errors;
-    size_t error_count;
-    size_t capacity;
+    Error  *errors;
+    size_t  error_count;
+    size_t  capacity;
 } ErrorCollector;
 
-/* Error collector functions */
 ErrorCollector *error_collector_create(void);
-void error_collector_free(ErrorCollector *collector);
-void error_add(ErrorCollector *collector, ErrorType type, SourceLocation loc, const char *format, ...);
-void error_print_all(ErrorCollector *collector);
-int error_get_count(ErrorCollector *collector);
-bool error_has_errors(ErrorCollector *collector);
+void            error_collector_free(ErrorCollector *collector);
+void            error_add(ErrorCollector *collector, ErrorType type,
+                           SourceLocation loc, const char *format, ...);
+void            error_print_all(ErrorCollector *collector);
+int             error_get_count(ErrorCollector *collector);
+bool            error_has_errors(ErrorCollector *collector);
 
 #endif /* OCL_ERRORS_H */

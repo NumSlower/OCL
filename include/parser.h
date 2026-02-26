@@ -3,18 +3,20 @@
 
 #include "lexer.h"
 #include "ast.h"
+#include "errors.h"
 
-/* Parser structure */
+/* ── Parser ──────────────────────────────────────────────────────── */
 typedef struct {
-    Token *tokens;
-    size_t token_count;
-    size_t current;
-    const char *filename;
+    Token          *tokens;
+    size_t          token_count;
+    size_t          current;
+    const char     *filename;
+    ErrorCollector *errors;     /* NULL → fall back to stderr */
 } Parser;
 
-/* Parser functions */
-Parser *parser_create(Token *tokens, size_t token_count, const char *filename);
-void parser_free(Parser *parser);
+Parser      *parser_create(Token *tokens, size_t token_count,
+                            const char *filename, ErrorCollector *errors);
+void         parser_free(Parser *parser);
 ProgramNode *parser_parse(Parser *parser);
 
 #endif /* OCL_PARSER_H */

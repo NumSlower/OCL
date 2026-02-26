@@ -2,8 +2,6 @@
 #include "common.h"
 #include <string.h>
 #include <ctype.h>
-#include <stdlib.h>
-#include <stdio.h>
 
 /* ── Helpers ──────────────────────────────────────────────────── */
 static inline char cur(const Lexer *l)  { return l->source[l->position]; }
