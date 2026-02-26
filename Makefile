@@ -17,14 +17,10 @@ VM_DIR      := $(SRC_DIR)/vm
 INTERP_DIR  := $(SRC_DIR)/interpreter
 FRONT_DIR   := $(SRC_DIR)/frontend
 
-# ── Sources ───────────────────────────────────────────────────────────────────
-SRCS := \
-    $(SRC_DIR)/common.c \
-    $(INTERP_DIR)/*.c \
-    $(VM_DIR)/*.c \
-    $(STDLIB_DIR)/*.c \
-    $(FRONT_DIR)/*.c
+# ── Sources (find all .c files recursively) ───────────────────────────────────
+SRCS := $(shell find $(SRC_DIR) -name '*.c')
 
+# ── Objects: mirror the src/ tree under build/ ───────────────────────────────
 OBJS := $(patsubst $(SRC_DIR)/%.c, $(BUILD_DIR)/%.o, $(SRCS))
 
 # ── Flags ─────────────────────────────────────────────────────────────────────
@@ -49,7 +45,6 @@ LFLAGS ?= $(LDFLAGS_DEBUG)
 # ── Detect OS for any platform-specific tweaks ────────────────────────────────
 UNAME := $(shell uname -s)
 ifeq ($(UNAME), Darwin)
-    # macOS: ASAN is available but lives in a different path on Apple Clang
     CFLAGS_DEBUG := $(filter-out -fsanitize=address,undefined, $(CFLAGS_DEBUG))
     CFLAGS_DEBUG += -fsanitize=address -fsanitize=undefined
 endif
@@ -80,7 +75,7 @@ $(TARGET): $(OBJS)
 	@$(CC) $(OBJS) -o $@ $(LFLAGS)
 	@echo "Built $(TARGET) v$(VERSION)"
 
-# ── Compile ───────────────────────────────────────────────────────────────────
+# ── Compile: pattern rule that handles any depth under src/ ──────────────────
 $(BUILD_DIR)/%.o: $(SRC_DIR)/%.c
 	@mkdir -p $(dir $@)
 	@echo "  CC    $<"

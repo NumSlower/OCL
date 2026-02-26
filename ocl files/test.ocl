@@ -1,0 +1,27 @@
+func int getYear() {
+    return 2026;
+}
+
+/# Function to return the month (hard coded) #/
+func String getMonth() {
+    return "February";
+}
+
+/# Function to greet the user #/
+func void greetUser(name:string) {
+    printf("Hello, %s!\n", name);
+}
+
+/# Function to display date #/
+func void displayDate() {
+    printf("The current date is: %s %d\n", getMonth(), getYear());
+}
+
+func int main() {
+    Let userName:String = "Tip";
+
+    greetUser(userName);
+    displayDate();
+
+    return 0;
+}

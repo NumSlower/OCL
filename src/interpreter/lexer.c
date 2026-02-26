@@ -1,7 +1,8 @@
-#include "lexer.h"
-#include "common.h"
+#include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include "lexer.h"
+#include "common.h"
 
 /* ── Helpers ──────────────────────────────────────────────────── */
 static inline char cur(const Lexer *l)  { return l->source[l->position]; }
@@ -116,7 +117,7 @@ static Token read_number(Lexer *l) {
     tok.lexeme        = ocl_strdup(buf);
     tok.lexeme_length = len;
     if (is_float) {
-        tok.type             = TOKEN_FLOAT;
+        tok.type              = TOKEN_FLOAT;
         tok.value.float_value = strtod(buf, NULL);
     } else {
         tok.type            = TOKEN_INT;

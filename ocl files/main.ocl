@@ -1,5 +1,5 @@
 /# This is only required if the comppiler is bening used. #/
-Import <CoreSX.sxh>
+/# Import <CoreSX.sxh> #/
 
 /# 
 How to create a variable:
@@ -61,7 +61,7 @@ func int main() {
 
     printf("Hello world %s %d \n": greet, number);
     printf(add(9,8));  /# Prints 17 #/
-    multiply(9,8);     /# Returns 72, but does not print it. You could use printf to display it. #/
+    multiply(9,8);     /# Returns 72, but does not print it. You could use printf to display it. Or just return it#/
     hello();           /# Parentheses are still required #/
     year();
     month();

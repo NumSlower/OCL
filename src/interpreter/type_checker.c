@@ -21,8 +21,7 @@ void symbol_table_free(SymbolTable *t) {
     for (size_t i = 0; i < t->symbol_count; i++) {
         Symbol *s = t->symbols[i];
         ocl_free(s->name);
-        /* s->type is owned by the AST - do NOT free here */
-        /* s->param_types is a borrowed pointer array - do NOT free elements */
+        /* s->type is owned by the AST — do NOT free here */
         ocl_free(s->param_types);
         ocl_free(s);
     }
@@ -39,10 +38,8 @@ void symbol_table_exit_scope(SymbolTable *t) {
         if (t->symbols[i]->scope_level == t->current_scope_level) {
             Symbol *s = t->symbols[i];
             ocl_free(s->name);
-            /* s->type owned by AST */
             ocl_free(s->param_types);
             ocl_free(s);
-            /* shift left */
             for (size_t j = i; j + 1 < t->symbol_count; j++)
                 t->symbols[j] = t->symbols[j + 1];
             t->symbol_count--;
@@ -64,7 +61,7 @@ void symbol_table_insert(SymbolTable *t, const char *name, TypeNode *type,
     if (!t) return;
     Symbol *s       = ocl_malloc(sizeof(Symbol));
     s->name         = ocl_strdup(name);
-    s->type         = type;  /* not owned here */
+    s->type         = type;
     s->is_function  = is_function;
     s->is_parameter = is_parameter;
     s->scope_level  = t->current_scope_level;
@@ -122,12 +119,30 @@ void type_checker_free(TypeChecker *tc) {
     ocl_free(tc);
 }
 
-/* Forward declare */
-static void check_node(TypeChecker *tc, ASTNode *node);
+/* Forward declarations */
+static void      check_node(TypeChecker *tc, ASTNode *node);
 static TypeNode *check_expr(TypeChecker *tc, ExprNode *expr);
 
+/*
+ * Return a static TypeNode for each builtin type.
+ * This avoids allocating a new node on every expression visit,
+ * which was the source of all the type_checker leaks.
+ * Callers must NEVER free the returned pointer.
+ */
 static TypeNode *builtin_type(BuiltinType bt) {
-    return ast_create_type(bt, 0);
+    static TypeNode types[TYPE_UNKNOWN + 1];
+    static bool     initialised = false;
+    if (!initialised) {
+        for (int i = 0; i <= (int)TYPE_UNKNOWN; i++) {
+            types[i].type         = (BuiltinType)i;
+            types[i].bit_width    = 0;
+            types[i].element_type = NULL;
+            types[i].is_array     = false;
+        }
+        initialised = true;
+    }
+    if ((int)bt < 0 || (int)bt > (int)TYPE_UNKNOWN) bt = TYPE_UNKNOWN;
+    return &types[(int)bt];
 }
 
 static void tc_error(TypeChecker *tc, SourceLocation loc, const char *fmt, ...) {
@@ -166,30 +181,28 @@ static TypeNode *check_expr(TypeChecker *tc, ExprNode *expr) {
                          "Undefined variable '%s'", id->name);
                 return builtin_type(TYPE_UNKNOWN);
             }
-            return sym->type;
+            return sym->type ? sym->type : builtin_type(TYPE_UNKNOWN);
         }
         case AST_BIN_OP: {
             BinOpNode *b = (BinOpNode *)expr;
             TypeNode *lt = check_expr(tc, b->left);
             TypeNode *rt = check_expr(tc, b->right);
 
-            if (!strcmp(b->operator, "=")) {
-                /* assignment – type of right-hand side */
+            if (!strcmp(b->operator, "="))
                 return rt;
-            }
-            /* Comparison operators → bool */
+
             if (!strcmp(b->operator,"==")||!strcmp(b->operator,"!=")||
                 !strcmp(b->operator,"<") ||!strcmp(b->operator,"<=") ||
                 !strcmp(b->operator,">")||!strcmp(b->operator,">=")  ||
-                !strcmp(b->operator,"&&")||!strcmp(b->operator,"||")) {
+                !strcmp(b->operator,"&&")||!strcmp(b->operator,"||"))
                 return builtin_type(TYPE_BOOL);
-            }
-            /* Arithmetic: promote to float if either side is float */
+
             if (lt->type == TYPE_FLOAT || rt->type == TYPE_FLOAT)
                 return builtin_type(TYPE_FLOAT);
-            /* String concatenation */
+
             if (lt->type == TYPE_STRING && !strcmp(b->operator, "+"))
                 return builtin_type(TYPE_STRING);
+
             return lt;
         }
         case AST_UNARY_OP: {
@@ -199,7 +212,6 @@ static TypeNode *check_expr(TypeChecker *tc, ExprNode *expr) {
         }
         case AST_CALL: {
             CallNode *c = (CallNode *)expr;
-            /* Check built-ins */
             if (!strcmp(c->function_name,"print") ||
                 !strcmp(c->function_name,"printf"))
                 return builtin_type(TYPE_VOID);
@@ -210,13 +222,11 @@ static TypeNode *check_expr(TypeChecker *tc, ExprNode *expr) {
                          "Undefined function '%s'", c->function_name);
                 return builtin_type(TYPE_UNKNOWN);
             }
-            /* Check argument count */
             if (sym->is_function && sym->param_count != c->argument_count) {
                 tc_error(tc, c->base.location,
                          "Function '%s' expects %zu arguments, got %zu",
                          c->function_name, sym->param_count, c->argument_count);
             }
-            /* Type-check arguments */
             for (size_t i = 0; i < c->argument_count; i++)
                 check_expr(tc, c->arguments[i]);
             return sym->type ? sym->type : builtin_type(TYPE_VOID);
@@ -244,7 +254,6 @@ static void check_node(TypeChecker *tc, ASTNode *node) {
             TypeNode *init_type = NULL;
             if (v->initializer) init_type = check_expr(tc, v->initializer);
 
-            /* If the declared type is UNKNOWN/missing, infer from initializer */
             TypeNode *decl_type = v->type;
             if (decl_type && decl_type->type == TYPE_UNKNOWN && init_type)
                 decl_type->type = init_type->type;
@@ -255,7 +264,6 @@ static void check_node(TypeChecker *tc, ASTNode *node) {
         case AST_FUNC_DECL: {
             FuncDeclNode *f = (FuncDeclNode *)node;
 
-            /* Collect param types */
             TypeNode **ptypes = NULL;
             if (f->param_count > 0) {
                 ptypes = ocl_malloc(f->param_count * sizeof(TypeNode *));
@@ -265,17 +273,14 @@ static void check_node(TypeChecker *tc, ASTNode *node) {
             symbol_table_insert_func(tc->symbol_table, f->name,
                                       f->return_type, ptypes, f->param_count);
 
-            /* Enter function scope */
             symbol_table_enter_scope(tc->symbol_table);
             TypeNode *saved_ret = tc->current_function_return_type;
             tc->current_function_return_type = f->return_type;
 
-            /* Register parameters */
             for (size_t i = 0; i < f->param_count; i++)
                 symbol_table_insert(tc->symbol_table, f->params[i]->name,
                                      f->params[i]->type, false, true);
 
-            /* Check body */
             if (f->body)
                 for (size_t i = 0; i < f->body->statement_count; i++)
                     check_node(tc, f->body->statements[i]);
@@ -295,10 +300,8 @@ static void check_node(TypeChecker *tc, ASTNode *node) {
         case AST_IF_STMT: {
             IfStmtNode *s = (IfStmtNode *)node;
             check_expr(tc, s->condition);
-            if (s->then_block)
-                check_node(tc, (ASTNode *)s->then_block);
-            if (s->else_block)
-                check_node(tc, (ASTNode *)s->else_block);
+            if (s->then_block) check_node(tc, (ASTNode *)s->then_block);
+            if (s->else_block) check_node(tc, (ASTNode *)s->else_block);
             break;
         }
         case AST_FOR_LOOP:
@@ -316,24 +319,13 @@ static void check_node(TypeChecker *tc, ASTNode *node) {
         }
         case AST_RETURN: {
             ReturnNode *r = (ReturnNode *)node;
-            TypeNode *vtype = check_expr(tc, r->value);
-            if (tc->current_function_return_type &&
-                tc->current_function_return_type->type != TYPE_VOID &&
-                vtype && vtype->type != TYPE_UNKNOWN) {
-                /* light type compatibility check */
-                BuiltinType expected = tc->current_function_return_type->type;
-                BuiltinType got      = vtype->type;
-                if (expected != got && !(expected == TYPE_FLOAT && got == TYPE_INT)) {
-                    /* not an error – just a warning for now */
-                }
-            }
+            check_expr(tc, r->value);
             break;
         }
         case AST_BREAK:
         case AST_CONTINUE:
             break;
 
-        /* Expression statement */
         default:
             check_expr(tc, (ExprNode *)node);
             break;
@@ -343,8 +335,7 @@ static void check_node(TypeChecker *tc, ASTNode *node) {
 bool type_checker_check(TypeChecker *tc, ProgramNode *program) {
     if (!tc || !program) return false;
 
-    /* First pass: register all top-level declarations (funcs + globals)
-       so call order and reference order do not matter */
+    /* Pass 1: register all top-level declarations */
     for (size_t i = 0; i < program->node_count; i++) {
         ASTNode *n = program->nodes[i];
         if (n->type == AST_FUNC_DECL) {
@@ -358,17 +349,15 @@ bool type_checker_check(TypeChecker *tc, ProgramNode *program) {
             symbol_table_insert_func(tc->symbol_table, f->name,
                                       f->return_type, ptypes, f->param_count);
         } else if (n->type == AST_VAR_DECL) {
-            /* Global variable - register so functions can reference it */
             VarDeclNode *v = (VarDeclNode *)n;
             symbol_table_insert(tc->symbol_table, v->name, v->type, false, false);
         }
     }
 
-    /* Second pass: full check (skip top-level var decls – already registered) */
+    /* Pass 2: full check */
     for (size_t i = 0; i < program->node_count; i++) {
         ASTNode *n = program->nodes[i];
         if (n->type == AST_VAR_DECL) {
-            /* Already registered in pass 1; just type-check the initializer */
             VarDeclNode *v = (VarDeclNode *)n;
             if (v->initializer) check_expr(tc, v->initializer);
         } else {

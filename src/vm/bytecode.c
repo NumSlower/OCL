@@ -43,6 +43,12 @@ void bytecode_emit(Bytecode *bc, Opcode op, uint32_t op1, uint32_t op2, SourceLo
     ins->location = loc;
 }
 
+/* Patch the operand1 of a previously emitted instruction (used for backpatching jumps). */
+void bytecode_patch(Bytecode *bc, uint32_t index, uint32_t new_operand1) {
+    if (!bc || index >= (uint32_t)bc->instruction_count) return;
+    bc->instructions[index].operand1 = new_operand1;
+}
+
 uint32_t bytecode_add_constant(Bytecode *bc, Value v) {
     if (!bc) return 0;
     if (bc->constant_count >= bc->constant_capacity) {
@@ -50,7 +56,7 @@ uint32_t bytecode_add_constant(Bytecode *bc, Value v) {
         bc->constants = ocl_realloc(bc->constants,
                                      bc->constant_capacity * sizeof(Value));
     }
-    /* Deep-copy string values so constants table owns its strings independently */
+    /* Deep-copy string values so the constants table owns its strings independently */
     if (v.type == VALUE_STRING && v.data.string_val)
         v.data.string_val = ocl_strdup(v.data.string_val);
     bc->constants[bc->constant_count] = v;
@@ -58,9 +64,9 @@ uint32_t bytecode_add_constant(Bytecode *bc, Value v) {
 }
 
 uint32_t bytecode_add_function(Bytecode *bc, const char *name,
-                                 uint32_t start_ip, int param_count) {
+                                uint32_t start_ip, int param_count) {
     if (!bc) return 0;
-    /* Update if already registered (pass-1 placeholder, pass-2 fill) */
+    /* Update if already registered (pass-1 placeholder → pass-2 fill) */
     for (size_t i = 0; i < bc->function_count; i++) {
         if (!strcmp(bc->functions[i].name, name)) {
             if (start_ip != 0xFFFFFFFF)

@@ -2,13 +2,13 @@
  * vm.c — OCL Bytecode Virtual Machine
  */
 
-#include "vm.h"
-#include "stdlib.h"
-#include "common.h"
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#include "vm.h"
+#include "stdlib.h"
+#include "common.h"
 
 /* ═══════════════════════════════════════════════════════════════════
    Lifecycle
@@ -90,6 +90,7 @@ static CallFrame *current_frame(VM *vm) {
 }
 
 static void ensure_local(VM *vm, CallFrame *f, uint32_t idx) {
+    (void)vm;
     if (idx >= f->local_capacity) {
         uint32_t new_cap = idx + 16;
         f->locals = ocl_realloc(f->locals, new_cap * sizeof(Value));
@@ -102,8 +103,7 @@ static void ensure_local(VM *vm, CallFrame *f, uint32_t idx) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════
-   Built-in helpers (print / printf stay here — they need direct
-   printf access and are called too frequently to go through dispatch)
+   Built-in helpers (print / printf stay here for performance)
 ═══════════════════════════════════════════════════════════════════ */
 
 static void builtin_print(VM *vm, int argc) {
@@ -144,7 +144,7 @@ static void builtin_printf(VM *vm, int argc) {
         return;
     }
 
-    const char *fmt     = args[0].data.string_val;
+    const char *fmt      = args[0].data.string_val;
     int         next_arg = 1;
 
     for (size_t i = 0; fmt[i]; i++) {
@@ -299,7 +299,8 @@ int vm_execute(VM *vm) {
             case OP_MULTIPLY: ARITH_OP(a.data.int_val * b.data.int_val, af * bf); break;
             case OP_DIVIDE: {
                 Value b = vm_pop(vm); Value a = vm_pop(vm);
-                bool bz = (b.type == VALUE_FLOAT) ? (b.data.float_val == 0.0) : (b.data.int_val == 0);
+                bool bz = (b.type == VALUE_FLOAT) ? (b.data.float_val == 0.0)
+                                                  : (b.data.int_val == 0);
                 if (bz) {
                     fprintf(stderr, "RUNTIME ERROR: Division by zero [%d:%d]\n",
                             ins.location.line, ins.location.column);
@@ -428,9 +429,9 @@ int vm_execute(VM *vm) {
 
                 int local_cap = fe->local_count > (int)argc
                                 ? fe->local_count + 8 : (int)argc + 8;
-                frame->locals          = ocl_malloc((size_t)local_cap * sizeof(Value));
-                frame->local_count     = (size_t)local_cap;
-                frame->local_capacity  = (size_t)local_cap;
+                frame->locals         = ocl_malloc((size_t)local_cap * sizeof(Value));
+                frame->local_count    = (size_t)local_cap;
+                frame->local_capacity = (size_t)local_cap;
                 for (int i = 0; i < local_cap; i++) frame->locals[i] = value_null();
 
                 for (int i = (int)argc - 1; i >= 0; i--)
@@ -495,7 +496,8 @@ int vm_execute(VM *vm) {
                     case VALUE_INT:    vm_push(vm, a); break;
                     case VALUE_FLOAT:  vm_push(vm, value_int((int64_t)a.data.float_val)); break;
                     case VALUE_BOOL:   vm_push(vm, value_int(a.data.bool_val ? 1 : 0)); break;
-                    case VALUE_STRING: vm_push(vm, value_int(a.data.string_val ? (int64_t)strtoll(a.data.string_val, NULL, 10) : 0)); break;
+                    case VALUE_STRING: vm_push(vm, value_int(a.data.string_val
+                                           ? (int64_t)strtoll(a.data.string_val, NULL, 10) : 0)); break;
                     default:           vm_push(vm, value_int(0)); break;
                 }
                 break;
@@ -531,7 +533,6 @@ int vm_execute(VM *vm) {
             case OP_ARRAY_GET:
             case OP_ARRAY_SET:
             case OP_ARRAY_LEN:
-                /* Phase 5 — placeholder */
                 fprintf(stderr, "RUNTIME ERROR: Array operations not yet implemented\n");
                 vm_push(vm, value_null());
                 break;

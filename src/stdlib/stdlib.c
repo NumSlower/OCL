@@ -8,15 +8,17 @@
  *   - MUST push exactly one return value before returning
  */
 
-#include "stdlib.h"
-#include "vm.h"
-#include "common.h"
-
+/* Pull in system headers BEFORE our local stdlib.h, which shares the
+   same filename and would otherwise shadow <stdlib.h> on some toolchains. */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
 #include <ctype.h>
+
+#include "common.h"
+#include "stdlib.h"
+#include "vm.h"
 
 /* ═══════════════════════════════════════════════════════════════════
    Internal helpers
@@ -85,7 +87,6 @@ static void builtin_readline(VM *vm, int argc) {
    Math  (IDs 10-20)
 ═══════════════════════════════════════════════════════════════════ */
 
-/* abs(x) -> numeric */
 static void builtin_abs(VM *vm, int argc) {
     Value *args = pop_args(vm, argc);
     if (argc < 1) { ocl_free(args); vm_push(vm, value_int(0)); return; }
@@ -97,7 +98,6 @@ static void builtin_abs(VM *vm, int argc) {
         vm_push(vm, value_float(fabs(to_double(a))));
 }
 
-/* sqrt(x) -> Float */
 static void builtin_sqrt(VM *vm, int argc) {
     Value *args = pop_args(vm, argc);
     double x = (argc >= 1) ? to_double(args[0]) : 0.0;
@@ -110,7 +110,6 @@ static void builtin_sqrt(VM *vm, int argc) {
     }
 }
 
-/* pow(base, exp) -> Float */
 static void builtin_pow(VM *vm, int argc) {
     Value *args = pop_args(vm, argc);
     double base = (argc >= 1) ? to_double(args[0]) : 0.0;
@@ -119,7 +118,6 @@ static void builtin_pow(VM *vm, int argc) {
     vm_push(vm, value_float(pow(base, exp)));
 }
 
-/* sin(x) -> Float */
 static void builtin_sin(VM *vm, int argc) {
     Value *args = pop_args(vm, argc);
     double x = (argc >= 1) ? to_double(args[0]) : 0.0;
@@ -127,7 +125,6 @@ static void builtin_sin(VM *vm, int argc) {
     vm_push(vm, value_float(sin(x)));
 }
 
-/* cos(x) -> Float */
 static void builtin_cos(VM *vm, int argc) {
     Value *args = pop_args(vm, argc);
     double x = (argc >= 1) ? to_double(args[0]) : 0.0;
@@ -135,7 +132,6 @@ static void builtin_cos(VM *vm, int argc) {
     vm_push(vm, value_float(cos(x)));
 }
 
-/* tan(x) -> Float */
 static void builtin_tan(VM *vm, int argc) {
     Value *args = pop_args(vm, argc);
     double x = (argc >= 1) ? to_double(args[0]) : 0.0;
@@ -143,7 +139,6 @@ static void builtin_tan(VM *vm, int argc) {
     vm_push(vm, value_float(tan(x)));
 }
 
-/* floor(x) -> Float */
 static void builtin_floor(VM *vm, int argc) {
     Value *args = pop_args(vm, argc);
     double x = (argc >= 1) ? to_double(args[0]) : 0.0;
@@ -151,7 +146,6 @@ static void builtin_floor(VM *vm, int argc) {
     vm_push(vm, value_float(floor(x)));
 }
 
-/* ceil(x) -> Float */
 static void builtin_ceil(VM *vm, int argc) {
     Value *args = pop_args(vm, argc);
     double x = (argc >= 1) ? to_double(args[0]) : 0.0;
@@ -159,7 +153,6 @@ static void builtin_ceil(VM *vm, int argc) {
     vm_push(vm, value_float(ceil(x)));
 }
 
-/* round(x) -> Float */
 static void builtin_round(VM *vm, int argc) {
     Value *args = pop_args(vm, argc);
     double x = (argc >= 1) ? to_double(args[0]) : 0.0;
@@ -167,7 +160,6 @@ static void builtin_round(VM *vm, int argc) {
     vm_push(vm, value_float(round(x)));
 }
 
-/* max(a, b) -> numeric */
 static void builtin_max(VM *vm, int argc) {
     Value *args = pop_args(vm, argc);
     if (argc < 2) { vm_push(vm, argc >= 1 ? args[0] : value_null()); ocl_free(args); return; }
@@ -181,7 +173,6 @@ static void builtin_max(VM *vm, int argc) {
     }
 }
 
-/* min(a, b) -> numeric */
 static void builtin_min(VM *vm, int argc) {
     Value *args = pop_args(vm, argc);
     if (argc < 2) { vm_push(vm, argc >= 1 ? args[0] : value_null()); ocl_free(args); return; }
@@ -199,7 +190,6 @@ static void builtin_min(VM *vm, int argc) {
    String  (IDs 30-38)
 ═══════════════════════════════════════════════════════════════════ */
 
-/* strLen(s) -> Int */
 static void builtin_strlen(VM *vm, int argc) {
     Value *args = pop_args(vm, argc);
     if (argc < 1 || args[0].type != VALUE_STRING) {
@@ -210,7 +200,6 @@ static void builtin_strlen(VM *vm, int argc) {
     vm_push(vm, value_int(len));
 }
 
-/* substr(s, start, length?) -> String  (0-based start) */
 static void builtin_substr(VM *vm, int argc) {
     Value *args = pop_args(vm, argc);
     if (argc < 2 || args[0].type != VALUE_STRING) {
@@ -233,7 +222,6 @@ static void builtin_substr(VM *vm, int argc) {
     vm_push(vm, value_string(result));
 }
 
-/* toUpperCase(s) -> String */
 static void builtin_toupper(VM *vm, int argc) {
     Value *args = pop_args(vm, argc);
     if (argc < 1 || args[0].type != VALUE_STRING) {
@@ -245,7 +233,6 @@ static void builtin_toupper(VM *vm, int argc) {
     vm_push(vm, value_string(result));
 }
 
-/* toLowerCase(s) -> String */
 static void builtin_tolower(VM *vm, int argc) {
     Value *args = pop_args(vm, argc);
     if (argc < 1 || args[0].type != VALUE_STRING) {
@@ -257,7 +244,6 @@ static void builtin_tolower(VM *vm, int argc) {
     vm_push(vm, value_string(result));
 }
 
-/* strContains(haystack, needle) -> Bool */
 static void builtin_strcontains(VM *vm, int argc) {
     Value *args = pop_args(vm, argc);
     if (argc < 2) { ocl_free(args); vm_push(vm, value_bool(false)); return; }
@@ -268,7 +254,6 @@ static void builtin_strcontains(VM *vm, int argc) {
     vm_push(vm, value_bool(found));
 }
 
-/* strIndexOf(haystack, needle) -> Int  (-1 if not found) */
 static void builtin_strindexof(VM *vm, int argc) {
     Value *args = pop_args(vm, argc);
     if (argc < 2) { ocl_free(args); vm_push(vm, value_int(-1)); return; }
@@ -279,7 +264,6 @@ static void builtin_strindexof(VM *vm, int argc) {
     vm_push(vm, value_int(pos ? (int64_t)(pos - hay) : -1));
 }
 
-/* strReplace(s, old, new) -> String  — replaces ALL occurrences */
 static void builtin_strreplace(VM *vm, int argc) {
     Value *args = pop_args(vm, argc);
     if (argc < 3 || args[0].type != VALUE_STRING) {
@@ -299,7 +283,6 @@ static void builtin_strreplace(VM *vm, int argc) {
     size_t old_len = strlen(old_str);
     if (old_len == 0) { vm_push(vm, value_string(ocl_strdup(src))); return; }
 
-    /* Count occurrences to pre-allocate */
     size_t count = 0;
     const char *cur = src;
     while ((cur = strstr(cur, old_str)) != NULL) { count++; cur += old_len; }
@@ -322,7 +305,6 @@ static void builtin_strreplace(VM *vm, int argc) {
     vm_push(vm, value_string(result));
 }
 
-/* strTrim(s) -> String */
 static void builtin_strtrim(VM *vm, int argc) {
     Value *args = pop_args(vm, argc);
     if (argc < 1 || args[0].type != VALUE_STRING) {
@@ -339,7 +321,6 @@ static void builtin_strtrim(VM *vm, int argc) {
     vm_push(vm, value_string(result));
 }
 
-/* strSplit(s, delimiter) -> Int  (returns token count; array support in Phase 5) */
 static void builtin_strsplit(VM *vm, int argc) {
     Value *args = pop_args(vm, argc);
     if (argc < 2 || args[0].type != VALUE_STRING) {
@@ -361,7 +342,6 @@ static void builtin_strsplit(VM *vm, int argc) {
    Type conversions  (IDs 40-44)
 ═══════════════════════════════════════════════════════════════════ */
 
-/* toInt(x) -> Int */
 static void builtin_to_int(VM *vm, int argc) {
     Value *args = pop_args(vm, argc);
     Value a = (argc >= 1) ? args[0] : value_null();
@@ -369,7 +349,6 @@ static void builtin_to_int(VM *vm, int argc) {
     vm_push(vm, value_int(to_int64(a)));
 }
 
-/* toFloat(x) -> Float */
 static void builtin_to_float(VM *vm, int argc) {
     Value *args = pop_args(vm, argc);
     Value a = (argc >= 1) ? args[0] : value_null();
@@ -377,7 +356,6 @@ static void builtin_to_float(VM *vm, int argc) {
     vm_push(vm, value_float(to_double(a)));
 }
 
-/* toString(x) -> String */
 static void builtin_to_string(VM *vm, int argc) {
     Value *args = pop_args(vm, argc);
     if (argc < 1) { ocl_free(args); vm_push(vm, value_string(ocl_strdup(""))); return; }
@@ -386,7 +364,6 @@ static void builtin_to_string(VM *vm, int argc) {
     vm_push(vm, value_string(ocl_strdup(s)));
 }
 
-/* toBool(x) -> Bool */
 static void builtin_to_bool(VM *vm, int argc) {
     Value *args = pop_args(vm, argc);
     if (argc < 1) { ocl_free(args); vm_push(vm, value_bool(false)); return; }
@@ -403,18 +380,17 @@ static void builtin_to_bool(VM *vm, int argc) {
     vm_push(vm, value_bool(result));
 }
 
-/* typeOf(x) -> String */
 static void builtin_typeof(VM *vm, int argc) {
     Value *args = pop_args(vm, argc);
     if (argc < 1) { ocl_free(args); vm_push(vm, value_string(ocl_strdup("null"))); return; }
     const char *name;
     switch (args[0].type) {
-        case VALUE_INT:    name = "Int";    break;
-        case VALUE_FLOAT:  name = "Float";  break;
-        case VALUE_STRING: name = "String"; break;
-        case VALUE_BOOL:   name = "Bool";   break;
-        case VALUE_CHAR:   name = "Char";   break;
-        case VALUE_NULL:   name = "null";   break;
+        case VALUE_INT:    name = "Int";     break;
+        case VALUE_FLOAT:  name = "Float";   break;
+        case VALUE_STRING: name = "String";  break;
+        case VALUE_BOOL:   name = "Bool";    break;
+        case VALUE_CHAR:   name = "Char";    break;
+        case VALUE_NULL:   name = "null";    break;
         default:           name = "unknown"; break;
     }
     ocl_free(args);
@@ -425,7 +401,6 @@ static void builtin_typeof(VM *vm, int argc) {
    Utilities  (IDs 50-56)
 ═══════════════════════════════════════════════════════════════════ */
 
-/* exit(code?) */
 static void builtin_exit(VM *vm, int argc) {
     Value *args = pop_args(vm, argc);
     int code = (argc >= 1) ? (int)to_int64(args[0]) : 0;
@@ -435,7 +410,6 @@ static void builtin_exit(VM *vm, int argc) {
     vm_push(vm, value_null());
 }
 
-/* assert(cond, message?) */
 static void builtin_assert(VM *vm, int argc) {
     Value *args = pop_args(vm, argc);
     if (argc < 1) { ocl_free(args); vm_push(vm, value_null()); return; }
@@ -456,7 +430,6 @@ static void builtin_assert(VM *vm, int argc) {
     vm_push(vm, value_null());
 }
 
-/* isNull(x) -> Bool */
 static void builtin_is_null(VM *vm, int argc) {
     Value *args = pop_args(vm, argc);
     bool r = (argc < 1 || args[0].type == VALUE_NULL);
@@ -464,7 +437,6 @@ static void builtin_is_null(VM *vm, int argc) {
     vm_push(vm, value_bool(r));
 }
 
-/* isInt(x) -> Bool */
 static void builtin_is_int(VM *vm, int argc) {
     Value *args = pop_args(vm, argc);
     bool r = (argc >= 1 && args[0].type == VALUE_INT);
@@ -472,7 +444,6 @@ static void builtin_is_int(VM *vm, int argc) {
     vm_push(vm, value_bool(r));
 }
 
-/* isFloat(x) -> Bool */
 static void builtin_is_float(VM *vm, int argc) {
     Value *args = pop_args(vm, argc);
     bool r = (argc >= 1 && args[0].type == VALUE_FLOAT);
@@ -480,7 +451,6 @@ static void builtin_is_float(VM *vm, int argc) {
     vm_push(vm, value_bool(r));
 }
 
-/* isString(x) -> Bool */
 static void builtin_is_string(VM *vm, int argc) {
     Value *args = pop_args(vm, argc);
     bool r = (argc >= 1 && args[0].type == VALUE_STRING);
@@ -488,7 +458,6 @@ static void builtin_is_string(VM *vm, int argc) {
     vm_push(vm, value_bool(r));
 }
 
-/* isBool(x) -> Bool */
 static void builtin_is_bool(VM *vm, int argc) {
     Value *args = pop_args(vm, argc);
     bool r = (argc >= 1 && args[0].type == VALUE_BOOL);
@@ -501,10 +470,8 @@ static void builtin_is_bool(VM *vm, int argc) {
 ═══════════════════════════════════════════════════════════════════ */
 
 static const StdlibEntry STDLIB_TABLE[] = {
-    /* I/O */
     { BUILTIN_INPUT,        "input",        builtin_input       },
     { BUILTIN_READLINE,     "readLine",     builtin_readline    },
-    /* Math */
     { BUILTIN_ABS,          "abs",          builtin_abs         },
     { BUILTIN_SQRT,         "sqrt",         builtin_sqrt        },
     { BUILTIN_POW,          "pow",          builtin_pow         },
@@ -516,7 +483,6 @@ static const StdlibEntry STDLIB_TABLE[] = {
     { BUILTIN_ROUND,        "round",        builtin_round       },
     { BUILTIN_MAX,          "max",          builtin_max         },
     { BUILTIN_MIN,          "min",          builtin_min         },
-    /* String */
     { BUILTIN_STRLEN,       "strLen",       builtin_strlen      },
     { BUILTIN_SUBSTR,       "substr",       builtin_substr      },
     { BUILTIN_TOUPPER,      "toUpperCase",  builtin_toupper     },
@@ -526,13 +492,11 @@ static const StdlibEntry STDLIB_TABLE[] = {
     { BUILTIN_STRREPLACE,   "strReplace",   builtin_strreplace  },
     { BUILTIN_STRTRIM,      "strTrim",      builtin_strtrim     },
     { BUILTIN_STRSPLIT,     "strSplit",     builtin_strsplit    },
-    /* Type conversions */
     { BUILTIN_TO_INT,       "toInt",        builtin_to_int      },
     { BUILTIN_TO_FLOAT,     "toFloat",      builtin_to_float    },
     { BUILTIN_TO_STRING,    "toString",     builtin_to_string   },
     { BUILTIN_TO_BOOL,      "toBool",       builtin_to_bool     },
     { BUILTIN_TYPEOF,       "typeOf",       builtin_typeof      },
-    /* Utilities */
     { BUILTIN_EXIT,         "exit",         builtin_exit        },
     { BUILTIN_ASSERT,       "assert",       builtin_assert      },
     { BUILTIN_IS_NULL,      "isNull",       builtin_is_null     },
@@ -549,8 +513,8 @@ static const size_t STDLIB_TABLE_SIZE =
    Public API
 ═══════════════════════════════════════════════════════════════════ */
 
-void stdlib_init(void)    { /* reserved for future use */ }
-void stdlib_cleanup(void) { /* reserved for future use */ }
+void stdlib_init(void)    { }
+void stdlib_cleanup(void) { }
 
 bool stdlib_dispatch(VM *vm, int id, int argc) {
     for (size_t i = 0; i < STDLIB_TABLE_SIZE; i++) {
