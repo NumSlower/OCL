@@ -1,6 +1,5 @@
 func int main() {
-    Let greet:String = "Welcome to the OCL interpreter made in";
-    Let number:Int = 2026;
-    printf("Hello world %s %d \n": greet, number);
+    int x = 5;
+    print(x);
     return 0;
 }

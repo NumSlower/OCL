@@ -17,6 +17,12 @@ typedef struct {
     int id;  /* Special ID for built-in functions */
 } BuiltinFunction;
 
+/* User-defined function tracking */
+typedef struct {
+    char *name;
+    uint32_t bytecode_offset;  /* Instruction address where function starts */
+} UserDefinedFunction;
+
 /* Code generator */
 typedef struct {
     Bytecode *bytecode;
@@ -33,6 +39,11 @@ typedef struct {
     BuiltinFunction *builtins;
     size_t builtin_count;
     size_t builtin_capacity;
+    
+    /* User-defined function tracking */
+    UserDefinedFunction *functions;
+    size_t function_count;
+    size_t function_capacity;
 } CodeGenerator;
 
 /* Code generator functions */

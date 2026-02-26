@@ -1,3 +1,4 @@
+/# This is only required if the comppiler is bening used. #/
 Import <CoreSX.sxh>
 
 /# 
@@ -21,6 +22,14 @@ The return type must be written before the function name.
 
 You may specify int64 or int32, but the default is 64-bit. This is optional and applies to all types.
 #/
+
+func month() {
+    return "Feb";
+}
+
+func year() {
+    return 2026;
+}
 
 func hello() {
     print("Hello");
@@ -54,6 +63,8 @@ func int main() {
     printf(add(9,8));  /# Prints 17 #/
     multiply(9,8);     /# Returns 72, but does not print it. You could use printf to display it. #/
     hello();           /# Parentheses are still required #/
+    year();
+    month();
 
     return 0;
 }

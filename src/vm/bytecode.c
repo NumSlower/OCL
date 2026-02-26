@@ -1,86 +1,129 @@
 #include "bytecode.h"
 #include "common.h"
-#include <stdlib.h>
 #include <stdio.h>
+#include <string.h>
 
 Bytecode *bytecode_create(void) {
-    Bytecode *bytecode = ocl_malloc(sizeof(Bytecode));
-    bytecode->instructions = NULL;
-    bytecode->instruction_count = 0;
-    bytecode->capacity = 0;
-    bytecode->constants = NULL;
-    bytecode->constant_count = 0;
-    bytecode->constant_capacity = 0;
-    return bytecode;
+    Bytecode *bc            = ocl_malloc(sizeof(Bytecode));
+    bc->instructions        = NULL;
+    bc->instruction_count   = 0;
+    bc->instruction_capacity= 0;
+    bc->constants           = NULL;
+    bc->constant_count      = 0;
+    bc->constant_capacity   = 0;
+    bc->functions           = NULL;
+    bc->function_count      = 0;
+    bc->function_capacity   = 0;
+    return bc;
 }
 
-void bytecode_free(Bytecode *bytecode) {
-    if (!bytecode) return;
-    
-    ocl_free(bytecode->instructions);
-    for (size_t i = 0; i < bytecode->constant_count; i++) {
-        value_free(bytecode->constants[i]);
+void bytecode_free(Bytecode *bc) {
+    if (!bc) return;
+    ocl_free(bc->instructions);
+    for (size_t i = 0; i < bc->constant_count; i++)
+        value_free(bc->constants[i]);
+    ocl_free(bc->constants);
+    for (size_t i = 0; i < bc->function_count; i++)
+        ocl_free(bc->functions[i].name);
+    ocl_free(bc->functions);
+    ocl_free(bc);
+}
+
+void bytecode_emit(Bytecode *bc, Opcode op, uint32_t op1, uint32_t op2, SourceLocation loc) {
+    if (!bc) return;
+    if (bc->instruction_count >= bc->instruction_capacity) {
+        bc->instruction_capacity = bc->instruction_capacity ? bc->instruction_capacity * 2 : 256;
+        bc->instructions = ocl_realloc(bc->instructions,
+                                        bc->instruction_capacity * sizeof(Instruction));
     }
-    ocl_free(bytecode->constants);
-    ocl_free(bytecode);
+    Instruction *ins = &bc->instructions[bc->instruction_count++];
+    ins->opcode   = op;
+    ins->operand1 = op1;
+    ins->operand2 = op2;
+    ins->location = loc;
 }
 
-void bytecode_emit(Bytecode *bytecode, Opcode op, uint32_t operand1, uint32_t operand2, SourceLocation loc) {
-    if (!bytecode) return;
-    
-    if (bytecode->instruction_count >= bytecode->capacity) {
-        bytecode->capacity = (bytecode->capacity == 0) ? 256 : bytecode->capacity * 2;
-        bytecode->instructions = ocl_realloc(bytecode->instructions, 
-                                             bytecode->capacity * sizeof(Instruction));
+uint32_t bytecode_add_constant(Bytecode *bc, Value v) {
+    if (!bc) return 0;
+    if (bc->constant_count >= bc->constant_capacity) {
+        bc->constant_capacity = bc->constant_capacity ? bc->constant_capacity * 2 : 64;
+        bc->constants = ocl_realloc(bc->constants,
+                                     bc->constant_capacity * sizeof(Value));
     }
-    
-    Instruction *instr = &bytecode->instructions[bytecode->instruction_count];
-    instr->opcode = op;
-    instr->operand1 = operand1;
-    instr->operand2 = operand2;
-    instr->location = loc;
-    
-    bytecode->instruction_count++;
+    /* Deep-copy string values so constants table owns its strings independently */
+    if (v.type == VALUE_STRING && v.data.string_val)
+        v.data.string_val = ocl_strdup(v.data.string_val);
+    bc->constants[bc->constant_count] = v;
+    return (uint32_t)bc->constant_count++;
 }
 
-uint32_t bytecode_add_constant(Bytecode *bytecode, Value value) {
-    if (!bytecode) return 0;
-    
-    if (bytecode->constant_count >= bytecode->constant_capacity) {
-        bytecode->constant_capacity = (bytecode->constant_capacity == 0) ? 64 : bytecode->constant_capacity * 2;
-        bytecode->constants = ocl_realloc(bytecode->constants, 
-                                          bytecode->constant_capacity * sizeof(Value));
+uint32_t bytecode_add_function(Bytecode *bc, const char *name,
+                                 uint32_t start_ip, int param_count) {
+    if (!bc) return 0;
+    /* Update if already registered (pass-1 placeholder, pass-2 fill) */
+    for (size_t i = 0; i < bc->function_count; i++) {
+        if (!strcmp(bc->functions[i].name, name)) {
+            if (start_ip != 0xFFFFFFFF)
+                bc->functions[i].start_ip = start_ip;
+            bc->functions[i].param_count = param_count;
+            return (uint32_t)i;
+        }
     }
-    
-    bytecode->constants[bytecode->constant_count] = value;
-    return bytecode->constant_count++;
+    if (bc->function_count >= bc->function_capacity) {
+        bc->function_capacity = bc->function_capacity ? bc->function_capacity * 2 : 16;
+        bc->functions = ocl_realloc(bc->functions,
+                                     bc->function_capacity * sizeof(FuncEntry));
+    }
+    FuncEntry *fe   = &bc->functions[bc->function_count];
+    fe->name        = ocl_strdup(name);
+    fe->start_ip    = start_ip;
+    fe->param_count = param_count;
+    fe->local_count = 0;
+    return (uint32_t)bc->function_count++;
 }
 
-void bytecode_dump(Bytecode *bytecode) {
-    if (!bytecode) return;
-    
+int bytecode_find_function(Bytecode *bc, const char *name) {
+    if (!bc) return -1;
+    for (size_t i = 0; i < bc->function_count; i++)
+        if (!strcmp(bc->functions[i].name, name)) return (int)i;
+    return -1;
+}
+
+void bytecode_dump(Bytecode *bc) {
+    if (!bc) return;
     printf("=== Bytecode Disassembly ===\n");
-    printf("Instructions: %zu\n", bytecode->instruction_count);
-    printf("Constants: %zu\n\n", bytecode->constant_count);
-    
-    const char *opcode_names[] = {
-        "PUSH_CONST", "POP", "LOAD_VAR", "STORE_VAR", "LOAD_GLOBAL", 
-        "STORE_GLOBAL", "ADD", "SUBTRACT", "MULTIPLY", "DIVIDE", "MODULO",
-        "NEGATE", "NOT", "EQUAL", "NOT_EQUAL", "LESS", "LESS_EQUAL",
-        "GREATER", "GREATER_EQUAL", "AND", "OR", "JUMP", "JUMP_IF_FALSE",
-        "JUMP_IF_TRUE", "CALL", "RETURN", "HALT", "PRINT", "PRINTF",
-        "TO_INT", "TO_FLOAT", "TO_STRING", "ARRAY_NEW", "ARRAY_GET",
-        "ARRAY_SET", "ARRAY_LEN"
+    printf("Instructions: %zu\nConstants: %zu\nFunctions: %zu\n\n",
+           bc->instruction_count, bc->constant_count, bc->function_count);
+
+    if (bc->function_count > 0) {
+        printf("--- Function Table ---\n");
+        for (size_t i = 0; i < bc->function_count; i++)
+            printf("  [%zu] %-20s  ip=%u  params=%d  locals=%d\n",
+                   i, bc->functions[i].name,
+                   bc->functions[i].start_ip,
+                   bc->functions[i].param_count,
+                   bc->functions[i].local_count);
+        printf("\n");
+    }
+
+    static const char *names[] = {
+        "PUSH_CONST","POP","LOAD_VAR","STORE_VAR","LOAD_GLOBAL","STORE_GLOBAL",
+        "ADD","SUBTRACT","MULTIPLY","DIVIDE","MODULO","NEGATE","NOT",
+        "EQUAL","NOT_EQUAL","LESS","LESS_EQUAL","GREATER","GREATER_EQUAL",
+        "AND","OR",
+        "JUMP","JUMP_IF_FALSE","JUMP_IF_TRUE",
+        "CALL","RETURN","HALT","CALL_BUILTIN",
+        "TO_INT","TO_FLOAT","TO_STRING","CONCAT",
+        "ARRAY_NEW","ARRAY_GET","ARRAY_SET","ARRAY_LEN"
     };
-    
-    for (size_t i = 0; i < bytecode->instruction_count; i++) {
-        Instruction *instr = &bytecode->instructions[i];
-        int opcode_index = (int)instr->opcode;
-        const char *opcode_name = (opcode_index >= 0 && opcode_index < 35) ? 
-                                  opcode_names[opcode_index] : "UNKNOWN";
-        
-        printf("[%04zu] %-16s  (%u, %u)  [%d:%d]\n", 
-               i, opcode_name, instr->operand1, instr->operand2,
-               instr->location.line, instr->location.column);
+    const int name_count = (int)(sizeof(names)/sizeof(names[0]));
+
+    for (size_t i = 0; i < bc->instruction_count; i++) {
+        Instruction *ins = &bc->instructions[i];
+        const char *nm = (ins->opcode >= 0 && (int)ins->opcode < name_count)
+                         ? names[ins->opcode] : "???";
+        printf("[%04zu] %-16s  (%u, %u)  [%d:%d]\n",
+               i, nm, ins->operand1, ins->operand2,
+               ins->location.line, ins->location.column);
     }
 }
