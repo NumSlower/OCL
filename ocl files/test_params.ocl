@@ -1,7 +1,0 @@
-func int add(a:int, b:int) {
-    return a + b;
-}
-
-func int main() {
-    return 0;
-}

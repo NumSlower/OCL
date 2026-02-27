@@ -1,5 +1,0 @@
-func int main() {
-    print(42);
-    print("Hello");
-    return 0;
-}

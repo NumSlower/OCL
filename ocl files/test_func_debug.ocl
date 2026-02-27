@@ -1,8 +1,0 @@
-func int add(a:int, b:int) {
-    return a + b;
-}
-
-func int main() {
-    print(3);
-    return 0;
-}

@@ -1,4 +1,0 @@
-Let x:Int = 42;
-func int main() {
-    return 0;
-}
