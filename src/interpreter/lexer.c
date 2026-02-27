@@ -1,4 +1,4 @@
-#include <stdlib.h>
+#include <stdlib.h>    /* strtod, strtoll — MUST be first to avoid implicit declaration */
 #include <string.h>
 #include <ctype.h>
 #include "lexer.h"
@@ -118,7 +118,7 @@ static Token read_number(Lexer *l) {
     tok.lexeme_length = len;
     if (is_float) {
         tok.type              = TOKEN_FLOAT;
-        tok.value.float_value = strtod(buf, NULL);
+        tok.value.float_value = strtod(buf, NULL);   /* strtod declared via <stdlib.h> above */
     } else {
         tok.type            = TOKEN_INT;
         tok.value.int_value = (int64_t)strtoll(buf, NULL, 10);

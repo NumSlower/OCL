@@ -1,0 +1,529 @@
+/#
+=============================================================
+  OCL Showcase Program
+  Demonstrates every feature of the OCL language:
+    - All types (Int, Float, String, Bool, Char)
+    - All operators (arithmetic, comparison, logical)
+    - All control flow (if/else, while, for)
+    - Functions (void, typed return, parameters)
+    - All standard library functions
+    - Comments (block and multi-line)
+=============================================================
+#/
+
+
+/# ─────────────────────────────────────────────
+   SECTION 1 — Global variables (all types)
+───────────────────────────────────────────── #/
+
+Let appName:String  = "OCL Showcase";
+Let version:Float   = 1.0;
+Let buildYear:Int   = 2026;
+Let isDebug:Bool    = false;
+Let grade:Char      = 'A';
+
+
+/# ─────────────────────────────────────────────
+   SECTION 2 — Helper: print a section banner
+───────────────────────────────────────────── #/
+
+func void banner(title:string) {
+    print("─────────────────────────────────────");
+    printf("[%s]\n": title);
+    print("─────────────────────────────────────");
+}
+
+
+/# ─────────────────────────────────────────────
+   SECTION 3 — Arithmetic operators
+   +  -  *  /  %
+───────────────────────────────────────────── #/
+
+func void demoArithmetic() {
+    banner("Arithmetic Operators");
+
+    int a = 17;
+    int b = 5;
+
+    printf("a = %d,  b = %d\n": a, b);
+    printf("a + b  = %d\n": a + b);
+    printf("a - b  = %d\n": a - b);
+    printf("a * b  = %d\n": a * b);
+    printf("a / b  = %d\n": a / b);
+    printf("a %% b = %d\n": a % b);
+
+    /# Floating-point arithmetic #/
+    float x = 9.5;
+    float y = 2.0;
+    printf("x + y  = %f\n": x + y);
+    printf("x * y  = %f\n": x * y);
+    printf("x / y  = %f\n": x / y);
+
+    /# String concatenation with + #/
+    Let s1:String = "Hello, ";
+    Let s2:String = "world!";
+    Let s3:String = s1 + s2;
+    printf("concat = %s\n": s3);
+}
+
+
+/# ─────────────────────────────────────────────
+   SECTION 4 — Comparison operators
+   ==  !=  <  <=  >  >=
+───────────────────────────────────────────── #/
+
+func void demoComparison() {
+    banner("Comparison Operators");
+
+    int p = 10;
+    int q = 20;
+
+    printf("%d == %d  → %b\n": p, q, p == q);
+    printf("%d != %d  → %b\n": p, q, p != q);
+    printf("%d <  %d  → %b\n": p, q, p < q);
+    printf("%d <= %d  → %b\n": p, q, p <= q);
+    printf("%d >  %d  → %b\n": p, q, p > q);
+    printf("%d >= %d  → %b\n": p, q, p >= q);
+}
+
+
+/# ─────────────────────────────────────────────
+   SECTION 5 — Logical operators
+   &&  ||  !
+───────────────────────────────────────────── #/
+
+func void demoLogical() {
+    banner("Logical Operators");
+
+    bool t = true;
+    bool f = false;
+
+    printf("true  && false = %b\n": t && f);
+    printf("true  || false = %b\n": t || f);
+    printf("!true          = %b\n": !t);
+    printf("!false         = %b\n": !f);
+    printf("true  && true  = %b\n": t && t);
+    printf("false || false = %b\n": f || f);
+}
+
+
+/# ─────────────────────────────────────────────
+   SECTION 6 — If / else if / else
+───────────────────────────────────────────── #/
+
+func string classify(score:int) {
+    if (score >= 90) {
+        return "A";
+    } else if (score >= 80) {
+        return "B";
+    } else if (score >= 70) {
+        return "C";
+    } else if (score >= 60) {
+        return "D";
+    } else {
+        return "F";
+    }
+}
+
+func void demoIfElse() {
+    banner("If / Else If / Else");
+
+    int scores = 95;
+    printf("Score %d → grade %s\n": scores, classify(scores));
+    scores = 83;
+    printf("Score %d → grade %s\n": scores, classify(scores));
+    scores = 71;
+    printf("Score %d → grade %s\n": scores, classify(scores));
+    scores = 55;
+    printf("Score %d → grade %s\n": scores, classify(scores));
+}
+
+
+/# ─────────────────────────────────────────────
+   SECTION 7 — While loop
+───────────────────────────────────────────── #/
+
+func void demoWhile() {
+    banner("While Loop");
+
+    /# Countdown #/
+    int countdown = 5;
+    printf("Countdown: ");
+    while (countdown > 0) {
+        printf("%d ": countdown);
+        countdown = countdown - 1;
+    }
+    print("");
+
+    /# Accumulate sum with while #/
+    int sum = 0;
+    int i   = 1;
+    while (i <= 10) {
+        sum = sum + i;
+        i = i + 1;
+    }
+    printf("Sum 1..10 = %d\n": sum);
+}
+
+
+/# ─────────────────────────────────────────────
+   SECTION 8 — For loop
+───────────────────────────────────────────── #/
+
+func void demoFor() {
+    banner("For Loop");
+
+    /# Simple counter #/
+    printf("Squares: ");
+    for (int n = 1; n <= 6; n = n + 1) {
+        printf("%d ": n * n);
+    }
+    print("");
+
+    /# Nested for — multiplication table (3x3) #/
+    print("3x3 multiplication table:");
+    for (int row = 1; row <= 3; row = row + 1) {
+        for (int col = 1; col <= 3; col = col + 1) {
+            printf("%d ": row * col);
+        }
+        print("");
+    }
+}
+
+
+/# ─────────────────────────────────────────────
+   SECTION 9 — Math standard library
+   abs  sqrt  pow  sin  cos  tan
+   floor  ceil  round  max  min
+───────────────────────────────────────────── #/
+
+func void demoMath() {
+    banner("Math Standard Library");
+
+    printf("abs(-42)      = %d\n": abs(-42));
+    printf("sqrt(144)     = %f\n": sqrt(144));
+    printf("pow(2, 10)    = %f\n": pow(2, 10));
+    printf("sin(0)        = %f\n": sin(0));
+    printf("cos(0)        = %f\n": cos(0));
+    printf("tan(0)        = %f\n": tan(0));
+    printf("floor(4.9)    = %f\n": floor(4.9));
+    printf("ceil(4.1)     = %f\n": ceil(4.1));
+    printf("round(4.5)    = %f\n": round(4.5));
+    printf("max(7, 13)    = %f\n": max(7, 13));
+    printf("min(7, 13)    = %f\n": min(7, 13));
+}
+
+
+/# ─────────────────────────────────────────────
+   SECTION 10 — String standard library
+   strLen  substr  toUpperCase  toLowerCase
+   strContains  strIndexOf  strReplace
+   strTrim  strSplit
+───────────────────────────────────────────── #/
+
+func void demoStrings() {
+    banner("String Standard Library");
+
+    Let s:String = "  Hello, OCL World!  ";
+
+    Let trimmed:String = strTrim(s);
+    printf("original  : '%s'\n": s);
+    printf("trimmed   : '%s'\n": trimmed);
+    printf("strLen    : %d\n":   strLen(trimmed));
+    printf("upper     : %s\n":   toUpperCase(trimmed));
+    printf("lower     : %s\n":   toLowerCase(trimmed));
+    printf("substr(7,3): %s\n":  substr(trimmed, 7, 3));
+
+    printf("contains 'OCL'  : %b\n": strContains(trimmed, "OCL"));
+    printf("contains 'Java' : %b\n": strContains(trimmed, "Java"));
+    printf("indexOf 'World' : %d\n": strIndexOf(trimmed, "World"));
+
+    Let replaced:String = strReplace(trimmed, "OCL", "the OCL");
+    printf("replaced  : %s\n": replaced);
+
+    /# strSplit returns a count (full split not yet returning array) #/
+    Let csv:String  = "one,two,three,four";
+    Let parts:Int   = strSplit(csv, ",");
+    printf("strSplit '%s' by ',' → %d parts\n": csv, parts);
+}
+
+
+/# ─────────────────────────────────────────────
+   SECTION 11 — Type conversion standard library
+   toInt  toFloat  toString  toBool  typeOf
+───────────────────────────────────────────── #/
+
+func void demoTypeConversion() {
+    banner("Type Conversion Standard Library");
+
+    /# toInt #/
+    Let fi:Float  = 3.99;
+    Let si:String = "42";
+    printf("toInt(3.99)  = %d\n": toInt(fi));
+    printf("toInt('42')  = %d\n": toInt(si));
+    printf("toInt(true)  = %d\n": toInt(true));
+
+    /# toFloat #/
+    Let iv:Int = 7;
+    printf("toFloat(7)   = %f\n": toFloat(iv));
+
+    /# toString #/
+    Let num:Int    = 2026;
+    Let asStr:String = toString(num);
+    printf("toString(2026) = %s\n": asStr);
+    printf("typeOf result  = %s\n": typeOf(asStr));
+
+    /# toBool #/
+    printf("toBool(0)    = %b\n": toBool(0));
+    printf("toBool(1)    = %b\n": toBool(1));
+    printf("toBool('')   = %b\n": toBool(""));
+    printf("toBool('hi') = %b\n": toBool("hi"));
+
+    /# typeOf #/
+    printf("typeOf(42)    = %s\n": typeOf(42));
+    printf("typeOf(3.14)  = %s\n": typeOf(3.14));
+    printf("typeOf('hi')  = %s\n": typeOf("hi"));
+    printf("typeOf(true)  = %s\n": typeOf(true));
+}
+
+
+/# ─────────────────────────────────────────────
+   SECTION 12 — Type inspection standard library
+   isNull  isInt  isFloat  isString  isBool
+───────────────────────────────────────────── #/
+
+func void demoTypeInspection() {
+    banner("Type Inspection Standard Library");
+
+    Let n:Int    = 99;
+    Let f:Float  = 1.5;
+    Let s:String = "test";
+    Let b:Bool   = true;
+
+    printf("isInt(99)      = %b\n": isInt(n));
+    printf("isFloat(1.5)   = %b\n": isFloat(f));
+    printf("isString('test')= %b\n": isString(s));
+    printf("isBool(true)   = %b\n": isBool(b));
+    printf("isNull(99)     = %b\n": isNull(n));
+}
+
+
+/# ─────────────────────────────────────────────
+   SECTION 13 — Utility standard library
+   assert
+   (exit is called last to avoid early termination)
+───────────────────────────────────────────── #/
+
+func void demoUtilities() {
+    banner("Utility Standard Library");
+
+    /# assert passes silently when true #/
+    assert(1 == 1);
+    assert(2 + 2 == 4);
+    print("assert(1 == 1) passed");
+    print("assert(2+2 == 4) passed");
+
+    /# assert with a message #/
+    assert(10 > 5, "10 should be greater than 5");
+    print("assert with message passed");
+}
+
+
+/# ─────────────────────────────────────────────
+   SECTION 14 — Functions: all return types,
+   recursion, multiple parameters
+───────────────────────────────────────────── #/
+
+/# Recursive factorial — returns Int #/
+func int factorial(n:int) {
+    if (n <= 1) {
+        return 1;
+    }
+    return n * factorial(n - 1);
+}
+
+/# Recursive fibonacci — returns Int #/
+func int fibonacci(n:int) {
+    if (n <= 0) {
+        return 0;
+    }
+    if (n == 1) {
+        return 1;
+    }
+    return fibonacci(n - 1) + fibonacci(n - 2);
+}
+
+/# Returns a Float #/
+func float celsiusToFahrenheit(c:float) {
+    return c * 1.8 + 32.0;
+}
+
+/# Returns a Bool #/
+func bool isEven(n:int) {
+    return n % 2 == 0;
+}
+
+/# Returns a String #/
+func string repeat(s:string, times:int) {
+    Let result:String = "";
+    int i = 0;
+    while (i < times) {
+        result = result + s;
+        i = i + 1;
+    }
+    return result;
+}
+
+/# Void with multiple params #/
+func void printRange(start:int, stop:int, step:int) {
+    int current = start;
+    while (current <= stop) {
+        printf("%d ": current);
+        current = current + step;
+    }
+    print("");
+}
+
+func void demoFunctions() {
+    banner("Functions");
+
+    /# Factorial #/
+    for (int k = 0; k <= 7; k = k + 1) {
+        printf("%d! = %d\n": k, factorial(k));
+    }
+
+    /# Fibonacci sequence #/
+    print("Fibonacci(0..9):");
+    for (int j = 0; j < 10; j = j + 1) {
+        printf("%d ": fibonacci(j));
+    }
+    print("");
+
+    /# Float return #/
+    printf("0 C  = %f F\n":  celsiusToFahrenheit(0.0));
+    printf("100 C = %f F\n": celsiusToFahrenheit(100.0));
+    printf("37 C  = %f F\n": celsiusToFahrenheit(37.0));
+
+    /# Bool return #/
+    printf("isEven(4)  = %b\n": isEven(4));
+    printf("isEven(7)  = %b\n": isEven(7));
+
+    /# String return + string concat #/
+    printf("repeat('ab',4) = %s\n": repeat("ab", 4));
+
+    /# Void multi-param #/
+    printf("range(1,10,2): ");
+    printRange(1, 10, 2);
+}
+
+
+/# ─────────────────────────────────────────────
+   SECTION 15 — Global variable access from
+   inside functions
+───────────────────────────────────────────── #/
+
+func void demoGlobals() {
+    banner("Global Variables");
+
+    printf("appName   = %s\n":  appName);
+    printf("version   = %f\n":  version);
+    printf("buildYear = %d\n":  buildYear);
+    printf("isDebug   = %b\n":  isDebug);
+    printf("grade     = %s\n":  toString(grade));
+}
+
+
+/# ─────────────────────────────────────────────
+   SECTION 16 — Complex expression combining
+   multiple operators and function calls
+───────────────────────────────────────────── #/
+
+func void demoComplexExpressions() {
+    banner("Complex Expressions");
+
+    /# Operator precedence: * before +, parens override #/
+    int r1 = 2 + 3 * 4;
+    int r2 = (2 + 3) * 4;
+    printf("2 + 3 * 4   = %d\n": r1);
+    printf("(2 + 3) * 4 = %d\n": r2);
+
+    /# Chained comparisons with logical operators #/
+    int val = 15;
+    bool inRange = val > 10 && val < 20;
+    printf("%d in (10,20)? %b\n": val, inRange);
+
+    /# Negation combined with comparison #/
+    bool notZero = !(val == 0);
+    printf("!(%d == 0) = %b\n": val, notZero);
+
+    /# Mixed int/float arithmetic #/
+    float area = 3.14159 * 5.0 * 5.0;
+    printf("area of circle r=5: %f\n": area);
+
+    /# Nested function calls #/
+    float hyp = sqrt(pow(3.0, 2) + pow(4.0, 2));
+    printf("hypotenuse(3,4) = %f\n": hyp);
+
+    /# String built from number #/
+    Let label:String = "Result: " + toString(r1 + r2);
+    printf("%s\n": label);
+}
+
+
+/# ─────────────────────────────────────────────
+   MAIN ENTRY POINT
+───────────────────────────────────────────── #/
+
+func int main() {
+
+    printf("\n Welcome to %s v%f (build %d)\n\n": appName, version, buildYear);
+
+    demoArithmetic();
+    print("");
+
+    demoComparison();
+    print("");
+
+    demoLogical();
+    print("");
+
+    demoIfElse();
+    print("");
+
+    demoWhile();
+    print("");
+
+    demoFor();
+    print("");
+
+    demoMath();
+    print("");
+
+    demoStrings();
+    print("");
+
+    demoTypeConversion();
+    print("");
+
+    demoTypeInspection();
+    print("");
+
+    demoUtilities();
+    print("");
+
+    demoFunctions();
+    print("");
+
+    demoGlobals();
+    print("");
+
+    demoComplexExpressions();
+    print("");
+
+    banner("All sections complete");
+
+    /# exit() is the last stdlib function — called with code 0 #/
+    exit(0);
+
+    return 0;
+}

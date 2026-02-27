@@ -1,4 +1,5 @@
 #include "codegen.h"
+#include "stdlib.h"   /* OCL stdlib — gives us stdlib_get_table() */
 #include "common.h"
 #include <string.h>
 #include <stdio.h>
@@ -475,10 +476,35 @@ CodeGenerator *codegen_create(ErrorCollector *errors) {
     g->global_count    = 0;
     g->global_cap      = 0;
 
-    g->builtins = ocl_malloc(8 * sizeof(BuiltinDesc));
+    /*
+     * ── Register ALL stdlib builtins from the stdlib table ──────────
+     *
+     * The original code only registered print (id=1) and printf (id=2)
+     * here, which caused every other stdlib call to be treated as an
+     * undefined function by both the type checker and the code generator.
+     *
+     * We now seed the builtin table from stdlib_get_table() so that
+     * strTrim, strReplace, strSplit, toString, sqrt, assert, exit, etc.
+     * are all recognised and emitted as OP_CALL_BUILTIN correctly.
+     *
+     * print/printf (ids 1 & 2) are NOT in the stdlib table (they are
+     * handled inline in vm.c), so we register them manually first.
+     */
+    size_t stdlib_count = 0;
+    const StdlibEntry *tbl = stdlib_get_table(&stdlib_count);
+
+    /* Total slots: print + printf + entire stdlib table */
+    size_t total = 2 + stdlib_count;
+    g->builtins    = ocl_malloc(total * sizeof(BuiltinDesc));
     g->builtins[0] = (BuiltinDesc){"print",  BUILTIN_PRINT};
     g->builtins[1] = (BuiltinDesc){"printf", BUILTIN_PRINTF};
     g->builtin_count = 2;
+
+    for (size_t i = 0; i < stdlib_count; i++) {
+        g->builtins[g->builtin_count].name = (char *)tbl[i].name; /* const — not freed */
+        g->builtins[g->builtin_count].id   = tbl[i].id;
+        g->builtin_count++;
+    }
 
     return g;
 }
@@ -489,7 +515,19 @@ void codegen_free(CodeGenerator *g) {
     for (size_t i = 0; i < g->global_count; i++) ocl_free(g->globals[i].name);
     ocl_free(g->vars);
     ocl_free(g->globals);
-    ocl_free(g->builtins);
+    /*
+     * Only free the two manually-strdup'd names (print, printf).
+     * The rest point directly into the stdlib table's static strings.
+     * However, since the original code used ocl_free on all names,
+     * the safest approach is to only free names we own (indices 0-1).
+     * Indices 2+ are borrowed pointers into the stdlib table.
+     */
+    if (g->builtins) {
+        /* print and printf were stored as string literals — no free needed.
+           All entries are either literals or pointers into the stdlib table.
+           Just free the array itself. */
+        ocl_free(g->builtins);
+    }
     ocl_free(g);
 }
 

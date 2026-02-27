@@ -1,4 +1,5 @@
 #include "type_checker.h"
+#include "stdlib.h"   /* OCL stdlib — gives us stdlib_lookup_by_name() */
 #include "common.h"
 #include <string.h>
 #include <stdio.h>
@@ -125,8 +126,7 @@ static TypeNode *check_expr(TypeChecker *tc, ExprNode *expr);
 
 /*
  * Return a static TypeNode for each builtin type.
- * This avoids allocating a new node on every expression visit,
- * which was the source of all the type_checker leaks.
+ * This avoids allocating a new node on every expression visit.
  * Callers must NEVER free the returned pointer.
  */
 static TypeNode *builtin_type(BuiltinType bt) {
@@ -153,6 +153,21 @@ static void tc_error(TypeChecker *tc, SourceLocation loc, const char *fmt, ...) 
     else
         fprintf(stderr, "TYPE ERROR [%d:%d]: %s\n", loc.line, loc.column, buf);
     tc->error_count++;
+}
+
+/*
+ * is_builtin_function — returns true if the name is print, printf,
+ * or any function registered in the stdlib table.
+ *
+ * This is the key fix: the original code only checked for "print" and
+ * "printf" here, so strTrim, strReplace, toString, sqrt, assert, exit
+ * etc. all fell through to the symbol-table lookup and were reported as
+ * "Undefined function".  Now we also ask the stdlib whether it knows the
+ * name before concluding it is missing.
+ */
+static bool is_builtin_function(const char *name) {
+    if (!strcmp(name, "print") || !strcmp(name, "printf")) return true;
+    return stdlib_lookup_by_name(name) != NULL;
 }
 
 /* ── Expression type inference ─────────────────────────────── */
@@ -212,10 +227,22 @@ static TypeNode *check_expr(TypeChecker *tc, ExprNode *expr) {
         }
         case AST_CALL: {
             CallNode *c = (CallNode *)expr;
-            if (!strcmp(c->function_name,"print") ||
-                !strcmp(c->function_name,"printf"))
-                return builtin_type(TYPE_VOID);
 
+            /*
+             * ── Built-in check ──────────────────────────────────────
+             * If the function is a known builtin (print, printf, or any
+             * stdlib entry), skip the symbol-table lookup entirely and
+             * just type-check the arguments.  Return UNKNOWN so the
+             * caller can use the result however it likes — runtime will
+             * push the real value.
+             */
+            if (is_builtin_function(c->function_name)) {
+                for (size_t i = 0; i < c->argument_count; i++)
+                    check_expr(tc, c->arguments[i]);
+                return builtin_type(TYPE_UNKNOWN);
+            }
+
+            /* User-defined function lookup */
             Symbol *sym = symbol_table_lookup(tc->symbol_table, c->function_name);
             if (!sym) {
                 tc_error(tc, c->base.location,

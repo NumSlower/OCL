@@ -30,8 +30,17 @@ VM *vm_create(Bytecode *bytecode) {
 
 void vm_free(VM *vm) {
     if (!vm) return;
-    for (size_t i = 0; i < vm->frame_top; i++)
+    /* Free any remaining values on the stack */
+    for (size_t i = 0; i < vm->stack_top; i++)
+        value_free(vm->stack[i]);
+    for (size_t i = 0; i < vm->frame_top; i++) {
+        for (size_t j = 0; j < vm->frames[i].local_count; j++)
+            value_free(vm->frames[i].locals[j]);
         ocl_free(vm->frames[i].locals);
+    }
+    /* Free globals */
+    for (size_t i = 0; i < vm->global_count; i++)
+        value_free(vm->globals[i]);
     ocl_free(vm->globals);
     ocl_free(vm);
 }
@@ -43,6 +52,7 @@ void vm_free(VM *vm) {
 void vm_push(VM *vm, Value v) {
     if (vm->stack_top >= VM_STACK_MAX) {
         fprintf(stderr, "RUNTIME ERROR: Stack overflow\n");
+        value_free(v);
         vm->halted    = true;
         vm->exit_code = 1;
         return;
@@ -58,6 +68,15 @@ Value vm_pop(VM *vm) {
         return value_null();
     }
     return vm->stack[--vm->stack_top];
+}
+
+/*
+ * vm_pop_free — pop a value and immediately free it.
+ * Used by OP_POP when the value is being discarded entirely.
+ */
+static void vm_pop_free(VM *vm) {
+    Value v = vm_pop(vm);
+    value_free(v);
 }
 
 Value vm_peek(VM *vm, size_t depth) {
@@ -126,6 +145,8 @@ static void builtin_print(VM *vm, int argc) {
         }
     }
     printf("\n");
+    /* Free string args — they may be heap-allocated results from builtins */
+    for (int i = 0; i < argc; i++) value_free(args[i]);
     ocl_free(args);
     vm_push(vm, value_null());
 }
@@ -139,6 +160,7 @@ static void builtin_printf(VM *vm, int argc) {
 
     if (args[0].type != VALUE_STRING) {
         printf("%s", value_to_string(args[0]));
+        for (int i = 0; i < argc; i++) value_free(args[i]);
         ocl_free(args);
         vm_push(vm, value_null());
         return;
@@ -172,6 +194,7 @@ static void builtin_printf(VM *vm, int argc) {
                         Value a = args[next_arg++];
                         if      (a.type == VALUE_FLOAT) printf("%g",  a.data.float_val);
                         else if (a.type == VALUE_INT)   printf("%g",  (double)a.data.int_val);
+                        else                            printf("%s",  value_to_string(a));
                     } break;
                 case 's':
                     if (next_arg < argc) {
@@ -199,6 +222,8 @@ static void builtin_printf(VM *vm, int argc) {
         }
     }
 
+    /* Free all args — string values in args may be heap-allocated */
+    for (int i = 0; i < argc; i++) value_free(args[i]);
     ocl_free(args);
     vm_push(vm, value_null());
 }
@@ -237,20 +262,43 @@ int vm_execute(VM *vm) {
 
             /* ── Stack ───────────────────────────────────────── */
             case OP_PUSH_CONST:
-                vm_push(vm, ins.operand1 < vm->bytecode->constant_count
-                            ? vm->bytecode->constants[ins.operand1]
-                            : value_null());
+                /*
+                 * Constants in the pool are owned by the Bytecode object.
+                 * We push a shallow copy onto the stack.  String constants
+                 * are deep-copied by bytecode_add_constant already, so we
+                 * must NOT free the copy when it is popped — that would
+                 * double-free the constant.  We therefore push a fresh
+                 * copy of string constants so each stack value owns its
+                 * own memory and can be safely freed.
+                 */
+                if (ins.operand1 < vm->bytecode->constant_count) {
+                    Value c = vm->bytecode->constants[ins.operand1];
+                    if (c.type == VALUE_STRING && c.data.string_val)
+                        vm_push(vm, value_string_copy(c.data.string_val));
+                    else
+                        vm_push(vm, c);
+                } else {
+                    vm_push(vm, value_null());
+                }
                 break;
 
             case OP_POP:
-                vm_pop(vm);
+                vm_pop_free(vm);
                 break;
 
             /* ── Variables ───────────────────────────────────── */
             case OP_LOAD_VAR: {
                 CallFrame *f = current_frame(vm);
-                vm_push(vm, (f && ins.operand1 < (uint32_t)f->local_count)
-                             ? f->locals[ins.operand1] : value_null());
+                if (f && ins.operand1 < (uint32_t)f->local_count) {
+                    Value v = f->locals[ins.operand1];
+                    /* push a copy — strings need their own heap allocation */
+                    if (v.type == VALUE_STRING && v.data.string_val)
+                        vm_push(vm, value_string_copy(v.data.string_val));
+                    else
+                        vm_push(vm, v);
+                } else {
+                    vm_push(vm, value_null());
+                }
                 break;
             }
             case OP_STORE_VAR: {
@@ -258,20 +306,28 @@ int vm_execute(VM *vm) {
                 if (f) {
                     Value v = vm_pop(vm);
                     ensure_local(vm, f, ins.operand1);
+                    value_free(f->locals[ins.operand1]);  /* free old value */
                     f->locals[ins.operand1] = v;
                 } else {
-                    vm_pop(vm);
+                    vm_pop_free(vm);
                 }
                 break;
             }
             case OP_LOAD_GLOBAL:
                 ensure_global(vm, ins.operand1);
-                vm_push(vm, vm->globals[ins.operand1]);
+                {
+                    Value g = vm->globals[ins.operand1];
+                    if (g.type == VALUE_STRING && g.data.string_val)
+                        vm_push(vm, value_string_copy(g.data.string_val));
+                    else
+                        vm_push(vm, g);
+                }
                 break;
 
             case OP_STORE_GLOBAL: {
                 Value v = vm_pop(vm);
                 ensure_global(vm, ins.operand1);
+                value_free(vm->globals[ins.operand1]);  /* free old value */
                 vm->globals[ins.operand1] = v;
                 break;
             }
@@ -285,6 +341,7 @@ int vm_execute(VM *vm) {
                     size_t len = strlen(as) + strlen(bs);
                     char  *s   = ocl_malloc(len + 1);
                     strcpy(s, as); strcat(s, bs);
+                    value_free(a); value_free(b);
                     vm_push(vm, value_string(s));
                 } else if (a.type == VALUE_INT && b.type == VALUE_INT) {
                     vm_push(vm, value_int(a.data.int_val + b.data.int_val));
@@ -353,6 +410,7 @@ int vm_execute(VM *vm) {
                         default: break;
                     }
                 }
+                value_free(a); value_free(b);
                 vm_push(vm, value_bool(r));
                 break;
             }
@@ -369,6 +427,7 @@ int vm_execute(VM *vm) {
                         default: break;
                     }
                 }
+                value_free(a); value_free(b);
                 vm_push(vm, value_bool(r));
                 break;
             }
@@ -396,12 +455,16 @@ int vm_execute(VM *vm) {
 
             case OP_JUMP_IF_FALSE: {
                 Value cond = vm_pop(vm);
-                if (!value_is_truthy(cond)) { vm->pc = ins.operand1; continue; }
+                bool taken = !value_is_truthy(cond);
+                value_free(cond);
+                if (taken) { vm->pc = ins.operand1; continue; }
                 break;
             }
             case OP_JUMP_IF_TRUE: {
                 Value cond = vm_pop(vm);
-                if (value_is_truthy(cond)) { vm->pc = ins.operand1; continue; }
+                bool taken = value_is_truthy(cond);
+                value_free(cond);
+                if (taken) { vm->pc = ins.operand1; continue; }
                 break;
             }
 
@@ -434,6 +497,7 @@ int vm_execute(VM *vm) {
                 frame->local_capacity = (size_t)local_cap;
                 for (int i = 0; i < local_cap; i++) frame->locals[i] = value_null();
 
+                /* Move arguments (already on stack) into local slots */
                 for (int i = (int)argc - 1; i >= 0; i--)
                     if (vm->stack_top > 0) frame->locals[i] = vm_pop(vm);
 
@@ -447,14 +511,23 @@ int vm_execute(VM *vm) {
                 if (vm->frame_top == 0) {
                     if (ret_val.type == VALUE_INT)
                         vm->exit_code = (int)ret_val.data.int_val;
+                    value_free(ret_val);
                     vm->halted = true;
                     break;
                 }
 
                 CallFrame *frame = &vm->frames[--vm->frame_top];
                 uint32_t   ret_ip = frame->return_ip;
+
+                /* Free all locals in the returning frame */
+                for (size_t i = 0; i < frame->local_count; i++)
+                    value_free(frame->locals[i]);
                 ocl_free(frame->locals);
-                vm->stack_top = frame->stack_base;
+
+                /* Discard any leftover stack values from the frame */
+                while (vm->stack_top > frame->stack_base)
+                    vm_pop_free(vm);
+
                 vm_push(vm, ret_val);
                 vm->pc = ret_ip;
                 continue;
@@ -481,7 +554,7 @@ int vm_execute(VM *vm) {
                     default:
                         if (!stdlib_dispatch(vm, bid, argc)) {
                             fprintf(stderr, "RUNTIME ERROR: Unknown built-in id %d\n", bid);
-                            for (int i = 0; i < argc; i++) vm_pop(vm);
+                            for (int i = 0; i < argc; i++) vm_pop_free(vm);
                             vm_push(vm, value_null());
                         }
                         break;
@@ -492,29 +565,37 @@ int vm_execute(VM *vm) {
             /* ── Type conversions ────────────────────────────── */
             case OP_TO_INT: {
                 Value a = vm_pop(vm);
+                int64_t result;
                 switch (a.type) {
-                    case VALUE_INT:    vm_push(vm, a); break;
-                    case VALUE_FLOAT:  vm_push(vm, value_int((int64_t)a.data.float_val)); break;
-                    case VALUE_BOOL:   vm_push(vm, value_int(a.data.bool_val ? 1 : 0)); break;
-                    case VALUE_STRING: vm_push(vm, value_int(a.data.string_val
-                                           ? (int64_t)strtoll(a.data.string_val, NULL, 10) : 0)); break;
-                    default:           vm_push(vm, value_int(0)); break;
+                    case VALUE_INT:    result = a.data.int_val; break;
+                    case VALUE_FLOAT:  result = (int64_t)a.data.float_val; break;
+                    case VALUE_BOOL:   result = a.data.bool_val ? 1 : 0; break;
+                    case VALUE_STRING: result = a.data.string_val
+                                           ? (int64_t)strtoll(a.data.string_val, NULL, 10) : 0; break;
+                    default:           result = 0; break;
                 }
+                value_free(a);
+                vm_push(vm, value_int(result));
                 break;
             }
             case OP_TO_FLOAT: {
                 Value a = vm_pop(vm);
+                double result;
                 switch (a.type) {
-                    case VALUE_FLOAT: vm_push(vm, a); break;
-                    case VALUE_INT:   vm_push(vm, value_float((double)a.data.int_val)); break;
-                    case VALUE_BOOL:  vm_push(vm, value_float(a.data.bool_val ? 1.0 : 0.0)); break;
-                    default:          vm_push(vm, value_float(0.0)); break;
+                    case VALUE_FLOAT: result = a.data.float_val; break;
+                    case VALUE_INT:   result = (double)a.data.int_val; break;
+                    case VALUE_BOOL:  result = a.data.bool_val ? 1.0 : 0.0; break;
+                    default:          result = 0.0; break;
                 }
+                value_free(a);
+                vm_push(vm, value_float(result));
                 break;
             }
             case OP_TO_STRING: {
                 Value a = vm_pop(vm);
-                vm_push(vm, value_string_copy(value_to_string(a)));
+                Value s = value_string_copy(value_to_string(a));
+                value_free(a);
+                vm_push(vm, s);
                 break;
             }
             case OP_CONCAT: {
@@ -524,6 +605,7 @@ int vm_execute(VM *vm) {
                 size_t len = strlen(as) + strlen(bs);
                 char  *s   = ocl_malloc(len + 1);
                 strcpy(s, as); strcat(s, bs);
+                value_free(a); value_free(b);
                 vm_push(vm, value_string(s));
                 break;
             }
