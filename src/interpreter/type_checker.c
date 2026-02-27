@@ -84,7 +84,9 @@ TypeChecker *type_checker_create(ErrorCollector *errors) {
 }
 
 void type_checker_free(TypeChecker *tc) {
-    if (!tc) return; symbol_table_free(tc->symbol_table); ocl_free(tc);
+    if (!tc) return;
+    symbol_table_free(tc->symbol_table);
+    ocl_free(tc);
 }
 
 static void check_node(TypeChecker *tc, ASTNode *node);

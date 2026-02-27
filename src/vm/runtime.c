@@ -15,12 +15,15 @@ CallFrame *runtime_frame_alloc(int total_locals) {
 }
 
 void runtime_frame_free(CallFrame *f) {
-    if (!f) return; ocl_free(f->locals); ocl_free(f);
+    if (!f) return;
+    ocl_free(f->locals);
+    ocl_free(f);
 }
 
 void runtime_ensure_local(CallFrame *f, uint32_t idx) {
     if (idx < (uint32_t)f->local_capacity) {
-        if (idx >= (uint32_t)f->local_count) f->local_count = idx + 1; return;
+        if (idx >= (uint32_t)f->local_count) f->local_count = idx + 1;
+        return;
     }
     uint32_t new_cap = idx + 16;
     f->locals = ocl_realloc(f->locals, new_cap * sizeof(Value));
