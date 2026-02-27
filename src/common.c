@@ -3,7 +3,6 @@
 #include <stdio.h>
 #include <string.h>
 
-/* ── Value constructors ─────────────────────────────────────── */
 Value value_int(int64_t i)   { return (Value){VALUE_INT,  {.int_val   = i}}; }
 Value value_float(double f)  { return (Value){VALUE_FLOAT,{.float_val = f}}; }
 Value value_bool(bool b)     { return (Value){VALUE_BOOL, {.bool_val  = b}}; }
@@ -19,7 +18,6 @@ Value value_string_copy(const char *s) {
     return (Value){VALUE_STRING, {.string_val = dup}};
 }
 
-/* ── Truthiness ─────────────────────────────────────────────── */
 bool value_is_truthy(Value v) {
     switch (v.type) {
         case VALUE_BOOL:   return v.data.bool_val;
@@ -32,7 +30,6 @@ bool value_is_truthy(Value v) {
     }
 }
 
-/* ── String conversion (static buffer, do not free) ──────────── */
 char *value_to_string(Value v) {
     static char buf[256];
     switch (v.type) {
@@ -46,13 +43,11 @@ char *value_to_string(Value v) {
     }
 }
 
-/* ── Free heap-owned strings ─────────────────────────────────── */
 void value_free(Value v) {
     if (v.type == VALUE_STRING && v.data.string_val)
         free(v.data.string_val);
 }
 
-/* ── Memory helpers ──────────────────────────────────────────── */
 void *ocl_malloc(size_t size) {
     void *p = malloc(size);
     if (!p && size > 0) { fputs("OCL: out of memory\n", stderr); exit(1); }

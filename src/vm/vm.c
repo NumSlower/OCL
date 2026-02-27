@@ -7,7 +7,7 @@
 #include <string.h>
 
 #include "vm.h"
-#include "stdlib.h"
+#include "ocl_stdlib.h"
 #include "common.h"
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -235,25 +235,42 @@ static void builtin_printf(VM *vm, int argc) {
 int vm_execute(VM *vm) {
     if (!vm || !vm->bytecode) return 1;
 
+/*
+ * ARITH_OP — binary arithmetic helper.
+ * Pops b then a, frees both (handles owned strings safely since
+ * arithmetic is only defined on non-string types), pushes result.
+ */
 #define ARITH_OP(OP_INT, OP_FLOAT) do {                                     \
     Value b = vm_pop(vm); Value a = vm_pop(vm);                             \
-    if (a.type == VALUE_INT && b.type == VALUE_INT)                         \
-        vm_push(vm, value_int(OP_INT));                                     \
-    else {                                                                   \
+    Value _result;                                                           \
+    if (a.type == VALUE_INT && b.type == VALUE_INT) {                       \
+        _result = value_int(OP_INT);                                         \
+    } else {                                                                 \
         double af = (a.type == VALUE_FLOAT) ? a.data.float_val : (double)a.data.int_val; \
         double bf = (b.type == VALUE_FLOAT) ? b.data.float_val : (double)b.data.int_val; \
-        vm_push(vm, value_float(OP_FLOAT));                                 \
-    } } while(0)
+        _result = value_float(OP_FLOAT);                                     \
+    }                                                                        \
+    value_free(a); value_free(b);                                            \
+    vm_push(vm, _result);                                                    \
+} while(0)
 
+/*
+ * CMP_OP — binary comparison helper.
+ * Pops b then a, frees both, pushes bool result.
+ */
 #define CMP_OP(OP_INT, OP_FLOAT) do {                                       \
     Value b = vm_pop(vm); Value a = vm_pop(vm);                             \
     bool r;                                                                  \
-    if (a.type == VALUE_INT && b.type == VALUE_INT) r = OP_INT;             \
-    else {                                                                   \
+    if (a.type == VALUE_INT && b.type == VALUE_INT) {                       \
+        r = OP_INT;                                                          \
+    } else {                                                                 \
         double af = (a.type==VALUE_FLOAT)?a.data.float_val:(double)a.data.int_val; \
         double bf = (b.type==VALUE_FLOAT)?b.data.float_val:(double)b.data.int_val; \
         r = OP_FLOAT;                                                        \
-    } vm_push(vm, value_bool(r)); } while(0)
+    }                                                                        \
+    value_free(a); value_free(b);                                            \
+    vm_push(vm, value_bool(r));                                              \
+} while(0)
 
     while (!vm->halted && vm->pc < (uint32_t)vm->bytecode->instruction_count) {
         Instruction ins = vm->bytecode->instructions[vm->pc];
@@ -262,6 +279,7 @@ int vm_execute(VM *vm) {
 
             /* ── Stack ───────────────────────────────────────── */
             case OP_PUSH_CONST:
+
                 /*
                  * Constants in the pool are owned by the Bytecode object.
                  * We push a shallow copy onto the stack.  String constants
@@ -344,10 +362,13 @@ int vm_execute(VM *vm) {
                     value_free(a); value_free(b);
                     vm_push(vm, value_string(s));
                 } else if (a.type == VALUE_INT && b.type == VALUE_INT) {
-                    vm_push(vm, value_int(a.data.int_val + b.data.int_val));
+                    int64_t result = a.data.int_val + b.data.int_val;
+                    value_free(a); value_free(b);
+                    vm_push(vm, value_int(result));
                 } else {
                     double af = (a.type == VALUE_FLOAT) ? a.data.float_val : (double)a.data.int_val;
                     double bf = (b.type == VALUE_FLOAT) ? b.data.float_val : (double)b.data.int_val;
+                    value_free(a); value_free(b);
                     vm_push(vm, value_float(af + bf));
                 }
                 break;
@@ -361,34 +382,46 @@ int vm_execute(VM *vm) {
                 if (bz) {
                     fprintf(stderr, "RUNTIME ERROR: Division by zero [%d:%d]\n",
                             ins.location.line, ins.location.column);
+                    value_free(a); value_free(b);
                     vm_push(vm, value_null());
                 } else if (a.type == VALUE_INT && b.type == VALUE_INT) {
-                    vm_push(vm, value_int(a.data.int_val / b.data.int_val));
+                    int64_t result = a.data.int_val / b.data.int_val;
+                    value_free(a); value_free(b);
+                    vm_push(vm, value_int(result));
                 } else {
                     double af = (a.type == VALUE_FLOAT) ? a.data.float_val : (double)a.data.int_val;
                     double bf = (b.type == VALUE_FLOAT) ? b.data.float_val : (double)b.data.int_val;
+                    value_free(a); value_free(b);
                     vm_push(vm, value_float(af / bf));
                 }
                 break;
             }
             case OP_MODULO: {
                 Value b = vm_pop(vm); Value a = vm_pop(vm);
+                Value result;
                 if (a.type == VALUE_INT && b.type == VALUE_INT && b.data.int_val != 0)
-                    vm_push(vm, value_int(a.data.int_val % b.data.int_val));
+                    result = value_int(a.data.int_val % b.data.int_val);
                 else
-                    vm_push(vm, value_null());
+                    result = value_null();
+                value_free(a); value_free(b);
+                vm_push(vm, result);
                 break;
             }
             case OP_NEGATE: {
                 Value a = vm_pop(vm);
-                if      (a.type == VALUE_INT)   vm_push(vm, value_int(-a.data.int_val));
-                else if (a.type == VALUE_FLOAT) vm_push(vm, value_float(-a.data.float_val));
-                else                            vm_push(vm, value_null());
+                Value result;
+                if      (a.type == VALUE_INT)   result = value_int(-a.data.int_val);
+                else if (a.type == VALUE_FLOAT) result = value_float(-a.data.float_val);
+                else                            result = value_null();
+                value_free(a);
+                vm_push(vm, result);
                 break;
             }
             case OP_NOT: {
                 Value a = vm_pop(vm);
-                vm_push(vm, value_bool(!value_is_truthy(a)));
+                bool r = !value_is_truthy(a);
+                value_free(a);
+                vm_push(vm, value_bool(r));
                 break;
             }
 
@@ -439,12 +472,16 @@ int vm_execute(VM *vm) {
             /* ── Logical ─────────────────────────────────────── */
             case OP_AND: {
                 Value b = vm_pop(vm); Value a = vm_pop(vm);
-                vm_push(vm, value_bool(value_is_truthy(a) && value_is_truthy(b)));
+                bool r = value_is_truthy(a) && value_is_truthy(b);
+                value_free(a); value_free(b);
+                vm_push(vm, value_bool(r));
                 break;
             }
             case OP_OR: {
                 Value b = vm_pop(vm); Value a = vm_pop(vm);
-                vm_push(vm, value_bool(value_is_truthy(a) || value_is_truthy(b)));
+                bool r = value_is_truthy(a) || value_is_truthy(b);
+                value_free(a); value_free(b);
+                vm_push(vm, value_bool(r));
                 break;
             }
 
