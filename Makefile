@@ -26,6 +26,7 @@ OBJS := $(patsubst $(SRC_DIR)/%.c, $(BUILD_DIR)/%.o, $(SRCS))
 # ── Flags ─────────────────────────────────────────────────────────────────────
 CFLAGS_COMMON := \
     -std=c11 \
+	-g \
     -Wall \
     -Wextra \
     -Wpedantic \
@@ -54,6 +55,13 @@ endif
 all: CFLAGS := $(CFLAGS_DEBUG)
 all: LFLAGS := $(LDFLAGS_DEBUG)
 all: $(TARGET)
+
+# ── Valgrind build (debug with no optimisations) ─────────────────────────────
+.PHONY: valgrind
+valgrind: CFLAGS := $(CFLAGS_COMMON) -g -O0
+valgrind: LFLAGS := $(LDFLAGS)
+valgrind: clean $(TARGET)
+	@echo "Valgrind build complete: ./$(TARGET)"
 
 # ── Release build ─────────────────────────────────────────────────────────────
 .PHONY: release
