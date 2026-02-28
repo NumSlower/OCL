@@ -1,4 +1,3 @@
-
 #include "codegen.h"
 #include "ocl_stdlib.h"
 #include "common.h"
@@ -7,6 +6,8 @@
 
 #define BUILTIN_PRINT   1
 #define BUILTIN_PRINTF  2
+
+/* ── helpers ──────────────────────────────────────────────────────── */
 
 static int lookup_builtin(CodeGenerator *g, const char *name) {
     for (size_t i = 0; i < g->builtin_count; i++)
@@ -68,8 +69,69 @@ static void exit_scope(CodeGenerator *g) {
     g->scope_level--;
 }
 
+/* ── loop context ─────────────────────────────────────────────────── */
+
+static void loop_push(CodeGenerator *g) {
+    if (g->loop_depth >= CODEGEN_MAX_LOOP_DEPTH) {
+        if (g->errors)
+            error_add(g->errors, ERROR_PARSER,
+                      (SourceLocation){0,0,NULL}, "Loop nesting too deep");
+        return;
+    }
+    LoopContext *ctx = &g->loop_stack[g->loop_depth++];
+    ctx->continue_target  = 0;
+    ctx->continue_known   = false;
+    ctx->break_count      = 0;
+    ctx->continue_count   = 0;
+}
+
+static void loop_pop(CodeGenerator *g) {
+    if (g->loop_depth > 0) g->loop_depth--;
+}
+
+static LoopContext *loop_current(CodeGenerator *g) {
+    if (g->loop_depth == 0) return NULL;
+    return &g->loop_stack[g->loop_depth - 1];
+}
+
+/* Record a break jump that needs to be patched to the loop-exit ip. */
+static void loop_add_break(CodeGenerator *g, uint32_t patch_idx) {
+    LoopContext *ctx = loop_current(g);
+    if (!ctx) return;
+    if (ctx->break_count < CODEGEN_MAX_BREAKS)
+        ctx->breaks[ctx->break_count++].patch_idx = patch_idx;
+}
+
+/* Record a continue jump that needs to be patched to the continue target. */
+static void loop_add_continue(CodeGenerator *g, uint32_t patch_idx) {
+    LoopContext *ctx = loop_current(g);
+    if (!ctx) return;
+    if (ctx->continue_count < CODEGEN_MAX_BREAKS)
+        ctx->continues[ctx->continue_count++].patch_idx = patch_idx;
+}
+
+/* Patch all recorded break jumps to point to exit_ip. */
+static void loop_patch_breaks(CodeGenerator *g, uint32_t exit_ip) {
+    LoopContext *ctx = loop_current(g);
+    if (!ctx) return;
+    for (int i = 0; i < ctx->break_count; i++)
+        bytecode_patch(g->bytecode, ctx->breaks[i].patch_idx, exit_ip);
+}
+
+/* Patch all recorded continue jumps to point to continue_ip. */
+static void loop_patch_continues(CodeGenerator *g, uint32_t continue_ip) {
+    LoopContext *ctx = loop_current(g);
+    if (!ctx) return;
+    for (int i = 0; i < ctx->continue_count; i++)
+        bytecode_patch(g->bytecode, ctx->continues[i].patch_idx, continue_ip);
+}
+
+/* ── forward declarations ─────────────────────────────────────────── */
+
 static void emit_node(CodeGenerator *g, ASTNode *node);
 static void emit_expr(CodeGenerator *g, ExprNode *expr);
+
+/* ── expression emitter ───────────────────────────────────────────── */
 
 static void emit_expr(CodeGenerator *g, ExprNode *expr) {
     if (!expr) return;
@@ -157,6 +219,8 @@ static void emit_expr(CodeGenerator *g, ExprNode *expr) {
     }
 }
 
+/* ── statement emitter ────────────────────────────────────────────── */
+
 static void emit_node(CodeGenerator *g, ASTNode *node) {
     if (!node) return;
     Bytecode *bc = g->bytecode;
@@ -184,6 +248,7 @@ static void emit_node(CodeGenerator *g, ASTNode *node) {
             break;
         }
         case AST_IMPORT: break;
+
         case AST_VAR_DECL: {
             VarDeclNode *v = (VarDeclNode *)node;
             if (g->in_global_scope) {
@@ -200,6 +265,7 @@ static void emit_node(CodeGenerator *g, ASTNode *node) {
             }
             break;
         }
+
         case AST_FUNC_DECL: {
             FuncDeclNode *f = (FuncDeclNode *)node;
             uint32_t fidx = bytecode_add_function(bc, f->name, 0, (int)f->param_count);
@@ -244,6 +310,7 @@ static void emit_node(CodeGenerator *g, ASTNode *node) {
             bytecode_patch(bc, jump_over, (uint32_t)bc->instruction_count);
             break;
         }
+
         case AST_BLOCK: {
             BlockNode *blk = (BlockNode *)node;
             enter_scope(g);
@@ -251,6 +318,7 @@ static void emit_node(CodeGenerator *g, ASTNode *node) {
             exit_scope(g);
             break;
         }
+
         case AST_IF_STMT: {
             IfStmtNode *s = (IfStmtNode *)node;
             emit_expr(g, s->condition);
@@ -272,42 +340,96 @@ static void emit_node(CodeGenerator *g, ASTNode *node) {
             }
             break;
         }
+
         case AST_WHILE_LOOP: {
             LoopNode *lp = (LoopNode *)node;
+            loop_push(g);
+
+            /*
+             * Layout:
+             *   [loop_start] evaluate condition
+             *   JUMP_IF_FALSE → exit
+             *   ... body ...
+             *   [continue_target] JUMP → loop_start
+             *   [exit_ip]
+             *
+             * 'continue' jumps back to loop_start (re-evaluates condition).
+             * 'break' jumps to exit_ip.
+             */
             uint32_t loop_start = (uint32_t)bc->instruction_count;
             emit_expr(g, lp->condition);
             uint32_t jf_idx = (uint32_t)bc->instruction_count;
             bytecode_emit(bc, OP_JUMP_IF_FALSE, 0, 0, lp->base.location);
+
             enter_scope(g);
             if (lp->body) for (size_t i = 0; i < lp->body->statement_count; i++) emit_node(g, lp->body->statements[i]);
             exit_scope(g);
+
+            /* The backwards jump is also the continue target */
+            uint32_t continue_ip = (uint32_t)bc->instruction_count;
             bytecode_emit(bc, OP_JUMP, loop_start, 0, lp->base.location);
-            bytecode_patch(bc, jf_idx, (uint32_t)bc->instruction_count);
+
+            uint32_t exit_ip = (uint32_t)bc->instruction_count;
+            bytecode_patch(bc, jf_idx, exit_ip);
+
+            loop_patch_breaks(g, exit_ip);
+            loop_patch_continues(g, continue_ip);
+            loop_pop(g);
             break;
         }
+
         case AST_FOR_LOOP: {
             LoopNode *lp = (LoopNode *)node;
+            loop_push(g);
+
+            /*
+             * Layout:
+             *   init
+             *   [loop_start] evaluate condition
+             *   JUMP_IF_FALSE → exit
+             *   ... body ...
+             *   [continue_target] increment
+             *   JUMP → loop_start
+             *   [exit_ip]
+             *
+             * 'continue' jumps to continue_target (runs increment, then re-checks).
+             * 'break' jumps to exit_ip.
+             */
             enter_scope(g);
             if (lp->init) emit_node(g, lp->init);
+
             uint32_t loop_start = (uint32_t)bc->instruction_count;
             uint32_t jf_idx = 0;
-            if (lp->condition) {
+            bool has_condition = (lp->condition != NULL);
+            if (has_condition) {
                 emit_expr(g, lp->condition);
                 jf_idx = (uint32_t)bc->instruction_count;
                 bytecode_emit(bc, OP_JUMP_IF_FALSE, 0, 0, lp->base.location);
             }
+
             if (lp->body) for (size_t i = 0; i < lp->body->statement_count; i++) emit_node(g, lp->body->statements[i]);
+
+            /* continue lands here — run the increment before looping */
+            uint32_t continue_ip = (uint32_t)bc->instruction_count;
             if (lp->increment) {
                 ExprNode *inc_expr = (ExprNode *)lp->increment;
                 if (inc_expr->base.type == AST_BIN_OP && !strcmp(((BinOpNode *)inc_expr)->operator, "="))
                     emit_expr(g, inc_expr);
                 else { emit_expr(g, inc_expr); bytecode_emit(bc, OP_POP, 0, 0, lp->base.location); }
             }
+
             bytecode_emit(bc, OP_JUMP, loop_start, 0, lp->base.location);
-            if (lp->condition) bytecode_patch(bc, jf_idx, (uint32_t)bc->instruction_count);
+
+            uint32_t exit_ip = (uint32_t)bc->instruction_count;
+            if (has_condition) bytecode_patch(bc, jf_idx, exit_ip);
+
+            loop_patch_breaks(g, exit_ip);
+            loop_patch_continues(g, continue_ip);
+            loop_pop(g);
             exit_scope(g);
             break;
         }
+
         case AST_RETURN: {
             ReturnNode *r = (ReturnNode *)node;
             if (r->value) emit_expr(g, r->value);
@@ -315,12 +437,48 @@ static void emit_node(CodeGenerator *g, ASTNode *node) {
             bytecode_emit(bc, OP_RETURN, 0, 0, r->base.location);
             break;
         }
-        case AST_BREAK:
-        case AST_CONTINUE:
+
+        case AST_BREAK: {
+            /*
+             * Emit an unconditional jump whose target will be patched to
+             * the loop's exit ip once the loop finishes emitting.
+             */
+            if (loop_current(g) == NULL) {
+                if (g->errors)
+                    error_add(g->errors, ERROR_PARSER, node->location,
+                              "'break' used outside of a loop");
+                break;
+            }
+            uint32_t patch_idx = (uint32_t)bc->instruction_count;
+            bytecode_emit(bc, OP_JUMP, 0, 0, node->location);
+            loop_add_break(g, patch_idx);
             break;
+        }
+
+        case AST_CONTINUE: {
+            /*
+             * For while-loops the continue target is the backwards jump
+             * (which re-evaluates the condition).  For for-loops it is
+             * the increment.  Either way the target is patched after the
+             * loop body is emitted.
+             */
+            if (loop_current(g) == NULL) {
+                if (g->errors)
+                    error_add(g->errors, ERROR_PARSER, node->location,
+                              "'continue' used outside of a loop");
+                break;
+            }
+            uint32_t patch_idx = (uint32_t)bc->instruction_count;
+            bytecode_emit(bc, OP_JUMP, 0, 0, node->location);
+            loop_add_continue(g, patch_idx);
+            break;
+        }
+
         default: break;
     }
 }
+
+/* ── public API ───────────────────────────────────────────────────── */
 
 CodeGenerator *codegen_create(ErrorCollector *errors) {
     CodeGenerator *g = ocl_malloc(sizeof(CodeGenerator));
@@ -328,6 +486,7 @@ CodeGenerator *codegen_create(ErrorCollector *errors) {
     g->vars = NULL; g->var_count = 0; g->var_cap = 0; g->scope_level = 0;
     g->local_stack[0] = 0; g->local_stack_top = 1; g->in_global_scope = true;
     g->globals = NULL; g->global_count = 0; g->global_cap = 0;
+    g->loop_depth = 0;
 
     size_t stdlib_count = 0;
     const StdlibEntry *tbl = stdlib_get_table(&stdlib_count);
@@ -357,6 +516,7 @@ bool codegen_generate(CodeGenerator *g, ProgramNode *program, Bytecode *output) 
     if (!g || !program || !output) return false;
     g->bytecode = output; g->in_global_scope = true; g->scope_level = 0;
     g->var_count = 0; g->global_count = 0; g->local_stack[0] = 0; g->local_stack_top = 1;
+    g->loop_depth = 0;
 
     for (size_t i = 0; i < program->node_count; i++) {
         ASTNode *n = program->nodes[i];
