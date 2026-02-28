@@ -18,7 +18,7 @@
  *   OP_STORE_GLOBAL— calls value_own_copy() before storing
  *   OP_ADD (str)   — allocates a new owned concatenation
  *   OP_CONCAT      — allocates a new owned concatenation
- *   OP_RETURN      — locals freed (only owned strings are actually freed)
+ *   OP_RETURN      — value_own_copy() called BEFORE freeing locals (UAF fix)
  *   OP_POP         — value_free() is a no-op for borrowed strings
  *   builtins       — pop args (borrow-safe via value_free), push owned results
  */
@@ -150,10 +150,7 @@ static void ensure_local(VM *vm, CallFrame *f, uint32_t idx) {
 /*
  * pop_args_for_builtin — collects argc values from the stack into a
  * temporary owned array.  Each popped value may be borrowed or owned;
- * we leave it as-is in the array and let the callee call value_free()
- * on each slot when done.  For owned strings this frees the allocation;
- * for borrowed strings it's a no-op — which is safe because the
- * constant pool or local/global slot outlives this call.
+ * we leave it as-is and let the callee call value_free() on each slot.
  */
 static Value *pop_args_for_builtin(VM *vm, int argc) {
     if (argc <= 0) return NULL;
@@ -266,12 +263,6 @@ static void builtin_printf(VM *vm, int argc) {
 int vm_execute(VM *vm) {
     if (!vm || !vm->bytecode) return 1;
 
-/*
- * ARITH_OP — binary arithmetic helper.
- * Pops b then a.  value_free is safe for borrowed strings: it's a
- * no-op.  Arithmetic is only valid on numeric types so no string
- * allocation happens here.
- */
 #define ARITH_OP(OP_INT, OP_FLOAT) do {                                     \
     Value b = vm_pop(vm); Value a = vm_pop(vm);                             \
     Value _result;                                                           \
@@ -288,9 +279,6 @@ int vm_execute(VM *vm) {
     vm_push(vm, _result);                                                    \
 } while(0)
 
-/*
- * CMP_OP — binary comparison helper.
- */
 #define CMP_OP(OP_INT, OP_FLOAT) do {                                       \
     Value b = vm_pop(vm); Value a = vm_pop(vm);                             \
     bool r;                                                                  \
@@ -314,13 +302,6 @@ int vm_execute(VM *vm) {
 
             /* ── Stack ───────────────────────────────────────── */
             case OP_PUSH_CONST:
-                /*
-                 * Push a BORROWED view of the constant — no allocation.
-                 * The constant pool (Bytecode) owns these strings and
-                 * frees them in bytecode_free().  value_free() on a
-                 * borrowed Value is a no-op, so OP_POP and stack cleanup
-                 * in vm_free() are both safe.
-                 */
                 if (ins.operand1 < (uint32_t)vm->bytecode->constant_count) {
                     Value c = vm->bytecode->constants[ins.operand1];
                     if (c.type == VALUE_STRING)
@@ -338,12 +319,6 @@ int vm_execute(VM *vm) {
 
             /* ── Variables ───────────────────────────────────── */
             case OP_LOAD_VAR: {
-                /*
-                 * Push a BORROWED view of the local slot's string.
-                 * The slot itself owns the string; borrowing is safe for
-                 * the duration of the expression since the slot is not
-                 * modified until OP_STORE_VAR.
-                 */
                 CallFrame *f = current_frame(vm);
                 if (f && ins.operand1 < (uint32_t)f->local_count) {
                     Value v = f->locals[ins.operand1];
@@ -357,17 +332,11 @@ int vm_execute(VM *vm) {
                 break;
             }
             case OP_STORE_VAR: {
-                /*
-                 * Ensure the stored value owns its string before placing
-                 * it in the local slot.  If the popped value was a
-                 * borrowed borrow, value_own_copy() allocates a fresh copy.
-                 * If it was already owned, it passes through unchanged.
-                 */
                 CallFrame *f = current_frame(vm);
                 if (f) {
                     Value v = value_own_copy(vm_pop(vm));
                     ensure_local(vm, f, ins.operand1);
-                    value_free(f->locals[ins.operand1]);   /* free old value */
+                    value_free(f->locals[ins.operand1]);
                     f->locals[ins.operand1] = v;
                 } else {
                     vm_pop_free(vm);
@@ -375,9 +344,6 @@ int vm_execute(VM *vm) {
                 break;
             }
             case OP_LOAD_GLOBAL:
-                /*
-                 * Push a BORROWED view of the global slot's string.
-                 */
                 ensure_global(vm, ins.operand1);
                 {
                     Value g = vm->globals[ins.operand1];
@@ -389,12 +355,9 @@ int vm_execute(VM *vm) {
                 break;
 
             case OP_STORE_GLOBAL: {
-                /*
-                 * Same as OP_STORE_VAR: ensure ownership before storing.
-                 */
                 Value v = value_own_copy(vm_pop(vm));
                 ensure_global(vm, ins.operand1);
-                value_free(vm->globals[ins.operand1]);     /* free old value */
+                value_free(vm->globals[ins.operand1]);
                 vm->globals[ins.operand1] = v;
                 break;
             }
@@ -403,14 +366,13 @@ int vm_execute(VM *vm) {
             case OP_ADD: {
                 Value b = vm_pop(vm); Value a = vm_pop(vm);
                 if (a.type == VALUE_STRING && b.type == VALUE_STRING) {
-                    /* Both may be borrowed — read ptrs before freeing */
                     const char *as = a.data.string_val ? a.data.string_val : "";
                     const char *bs = b.data.string_val ? b.data.string_val : "";
                     size_t len = strlen(as) + strlen(bs);
                     char  *s   = ocl_malloc(len + 1);
                     strcpy(s, as); strcat(s, bs);
-                    value_free(a); value_free(b);          /* no-op if borrowed */
-                    vm_push(vm, value_string(s));          /* new owned string */
+                    value_free(a); value_free(b);
+                    vm_push(vm, value_string(s));
                 } else if (a.type == VALUE_INT && b.type == VALUE_INT) {
                     int64_t result = a.data.int_val + b.data.int_val;
                     value_free(a); value_free(b);
@@ -594,11 +556,7 @@ int vm_execute(VM *vm) {
                 frame->local_capacity = (size_t)local_cap;
                 for (int i = 0; i < local_cap; i++) frame->locals[i] = value_null();
 
-                /*
-                 * Move arguments from the stack into local slots.
-                 * Parameters must be owned — value_own_copy() copies any
-                 * borrowed string, is a no-op for owned ones.
-                 */
+                /* Arguments must be owned before entering the new frame */
                 for (int i = (int)argc - 1; i >= 0; i--) {
                     if (vm->stack_top > 0)
                         frame->locals[i] = value_own_copy(vm_pop(vm));
@@ -609,44 +567,58 @@ int vm_execute(VM *vm) {
             }
 
             case OP_RETURN: {
-                Value ret_val = vm_pop(vm);
+                /*
+                 * ┌─────────────────────────────────────────────────────┐
+                 * │  FIX: value_own_copy() MUST happen BEFORE we free   │
+                 * │  the locals array.                                   │
+                 * │                                                      │
+                 * │  OP_LOAD_VAR pushes a *borrowed* pointer into a     │
+                 * │  local slot.  If that borrowed value is the return   │
+                 * │  expression, then:                                   │
+                 * │    ret_val.data.string_val → points into locals[]    │
+                 * │  Freeing locals[] first made that pointer dangling,  │
+                 * │  and the subsequent value_own_copy() was a UAF.      │
+                 * │                                                      │
+                 * │  Correct order:                                      │
+                 * │    1. pop return value from stack                    │
+                 * │    2. value_own_copy() — copy while locals still live│
+                 * │    3. free locals                                    │
+                 * │    4. discard leftover stack values                  │
+                 * │    5. push the (now-safe) owned return value         │
+                 * └─────────────────────────────────────────────────────┘
+                 */
+                Value ret_raw = vm_pop(vm);
 
                 if (vm->frame_top == 0) {
-                    if (ret_val.type == VALUE_INT)
-                        vm->exit_code = (int)ret_val.data.int_val;
-                    value_free(ret_val);
+                    /* Returning from the top level — just record exit code */
+                    if (ret_raw.type == VALUE_INT)
+                        vm->exit_code = (int)ret_raw.data.int_val;
+                    value_free(ret_raw);
                     vm->halted = true;
                     break;
                 }
 
+                /*
+                 * Step 2: copy NOW, before anything is freed.
+                 * For a borrowed string this allocates a fresh heap copy.
+                 * For an owned string or non-string this is a cheap no-op.
+                 */
+                Value ret_owned = value_own_copy(ret_raw);
+
                 CallFrame *frame  = &vm->frames[--vm->frame_top];
                 uint32_t   ret_ip = frame->return_ip;
 
-                /* Free all locals (owned strings freed, borrowed skipped) */
+                /* Step 3: free all locals (owned strings freed, borrowed skipped) */
                 for (size_t i = 0; i < frame->local_count; i++)
                     value_free(frame->locals[i]);
                 ocl_free(frame->locals);
 
-                /* Discard any leftover stack values from within this frame */
+                /* Step 4: discard any leftover stack values from this frame */
                 while (vm->stack_top > frame->stack_base)
                     vm_pop_free(vm);
 
-                /*
-                 * The return value must be owned before crossing the frame
-                 * boundary — if it was a borrowed view of a local that we
-                 * just freed above, we would have a dangling pointer.
-                 *
-                 * value_own_copy() behaviour:
-                 *   borrowed string → allocates and returns a fresh owned copy
-                 *   owned string    → returns the value unchanged (no extra alloc)
-                 *   non-string      → returns the value unchanged
-                 *
-                 * In the borrowed case the original ret_val is just a pointer
-                 * into freed memory — we must not call value_free() on it.
-                 * In the owned case the Value is moved onto the stack as-is.
-                 * Either way no double-free occurs.
-                 */
-                vm_push(vm, value_own_copy(ret_val));
+                /* Step 5: push the already-owned return value */
+                vm_push(vm, ret_owned);
 
                 vm->pc = ret_ip;
                 continue;
@@ -712,7 +684,7 @@ int vm_execute(VM *vm) {
             }
             case OP_TO_STRING: {
                 Value a = vm_pop(vm);
-                Value s = value_string_copy(value_to_string(a));   /* always owned */
+                Value s = value_string_copy(value_to_string(a));
                 value_free(a);
                 vm_push(vm, s);
                 break;
@@ -725,7 +697,7 @@ int vm_execute(VM *vm) {
                 char  *s   = ocl_malloc(len + 1);
                 strcpy(s, as); strcat(s, bs);
                 value_free(a); value_free(b);
-                vm_push(vm, value_string(s));   /* owned */
+                vm_push(vm, value_string(s));
                 break;
             }
 
