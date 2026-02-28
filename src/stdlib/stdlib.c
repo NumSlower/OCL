@@ -7,12 +7,23 @@
 #include "ocl_stdlib.h"
 #include "vm.h"
 
+/*
+ * pop_args — collect argc values from the VM stack into a temporary array.
+ *
+ * Popped values may be borrowed (e.g. string literals just pushed via
+ * OP_PUSH_CONST) or owned (e.g. results of previous builtin calls).
+ * We leave the owned/borrowed flag intact so that the callee can call
+ * value_free() on each slot when done: for owned strings this frees the
+ * allocation; for borrowed strings it is a no-op.
+ */
 static Value *pop_args(VM *vm, int argc) {
     if (argc <= 0) return NULL;
     Value *args = ocl_malloc((size_t)argc * sizeof(Value));
     for (int i = argc - 1; i >= 0; i--) args[i] = vm_pop(vm);
     return args;
 }
+
+/* ── Numeric helpers ──────────────────────────────────────────────── */
 
 static double to_double(Value v) {
     switch (v.type) {
@@ -28,29 +39,42 @@ static int64_t to_int64(Value v) {
         case VALUE_INT:    return v.data.int_val;
         case VALUE_FLOAT:  return (int64_t)v.data.float_val;
         case VALUE_BOOL:   return v.data.bool_val ? 1 : 0;
-        case VALUE_STRING: return (v.data.string_val) ? (int64_t)strtoll(v.data.string_val, NULL, 10) : 0;
+        case VALUE_STRING: return (v.data.string_val)
+                               ? (int64_t)strtoll(v.data.string_val, NULL, 10) : 0;
         default: return 0;
     }
 }
 
+/* ── I/O ──────────────────────────────────────────────────────────── */
+
 static void builtin_input(VM *vm, int argc) {
     Value *args = pop_args(vm, argc);
-    if (argc >= 1 && args[0].type == VALUE_STRING && args[0].data.string_val) printf("%s", args[0].data.string_val);
-    fflush(stdout); ocl_free(args);
+    if (argc >= 1 && args[0].type == VALUE_STRING && args[0].data.string_val)
+        printf("%s", args[0].data.string_val);
+    fflush(stdout);
+    for (int i = 0; i < argc; i++) value_free(args[i]);
+    ocl_free(args);
     char buf[4096];
-    if (!fgets(buf, sizeof(buf), stdin)) { vm_push(vm, value_string(ocl_strdup(""))); return; }
+    if (!fgets(buf, sizeof(buf), stdin)) {
+        vm_push(vm, value_string(ocl_strdup("")));  /* owned empty string */
+        return;
+    }
     size_t len = strlen(buf);
     if (len > 0 && buf[len-1] == '\n') buf[--len] = '\0';
     if (len > 0 && buf[len-1] == '\r') buf[--len] = '\0';
-    vm_push(vm, value_string(ocl_strdup(buf)));
+    vm_push(vm, value_string(ocl_strdup(buf)));     /* owned */
 }
 
 static void builtin_readline(VM *vm, int argc) { builtin_input(vm, argc); }
 
+/* ── Math ─────────────────────────────────────────────────────────── */
+
 static void builtin_abs(VM *vm, int argc) {
     Value *args = pop_args(vm, argc);
     if (argc < 1) { ocl_free(args); vm_push(vm, value_int(0)); return; }
-    Value a = args[0]; ocl_free(args);
+    Value a = args[0];
+    for (int i = 0; i < argc; i++) value_free(args[i]);
+    ocl_free(args);
     if (a.type == VALUE_INT)
         vm_push(vm, value_int(a.data.int_val < 0 ? -a.data.int_val : a.data.int_val));
     else
@@ -59,205 +83,370 @@ static void builtin_abs(VM *vm, int argc) {
 
 static void builtin_sqrt(VM *vm, int argc) {
     Value *args = pop_args(vm, argc);
-    double x = (argc >= 1) ? to_double(args[0]) : 0.0; ocl_free(args);
+    double x = (argc >= 1) ? to_double(args[0]) : 0.0;
+    for (int i = 0; i < argc; i++) value_free(args[i]);
+    ocl_free(args);
     vm_push(vm, value_float(x < 0.0 ? 0.0 : sqrt(x)));
 }
 
 static void builtin_pow(VM *vm, int argc) {
     Value *args = pop_args(vm, argc);
     double base = (argc >= 1) ? to_double(args[0]) : 0.0;
-    double exp  = (argc >= 2) ? to_double(args[1]) : 1.0; ocl_free(args);
+    double exp  = (argc >= 2) ? to_double(args[1]) : 1.0;
+    for (int i = 0; i < argc; i++) value_free(args[i]);
+    ocl_free(args);
     vm_push(vm, value_float(pow(base, exp)));
 }
 
-static void builtin_sin(VM *vm, int argc) { Value *a = pop_args(vm, argc); double x = argc>=1?to_double(a[0]):0; ocl_free(a); vm_push(vm, value_float(sin(x))); }
-static void builtin_cos(VM *vm, int argc) { Value *a = pop_args(vm, argc); double x = argc>=1?to_double(a[0]):0; ocl_free(a); vm_push(vm, value_float(cos(x))); }
-static void builtin_tan(VM *vm, int argc) { Value *a = pop_args(vm, argc); double x = argc>=1?to_double(a[0]):0; ocl_free(a); vm_push(vm, value_float(tan(x))); }
-static void builtin_floor(VM *vm, int argc) { Value *a = pop_args(vm, argc); double x = argc>=1?to_double(a[0]):0; ocl_free(a); vm_push(vm, value_float(floor(x))); }
-static void builtin_ceil(VM *vm, int argc) { Value *a = pop_args(vm, argc); double x = argc>=1?to_double(a[0]):0; ocl_free(a); vm_push(vm, value_float(ceil(x))); }
-static void builtin_round(VM *vm, int argc) { Value *a = pop_args(vm, argc); double x = argc>=1?to_double(a[0]):0; ocl_free(a); vm_push(vm, value_float(round(x))); }
+#define MATH1(name, fn) \
+static void builtin_##name(VM *vm, int argc) { \
+    Value *a = pop_args(vm, argc); \
+    double x = argc >= 1 ? to_double(a[0]) : 0; \
+    for (int i = 0; i < argc; i++) value_free(a[i]); \
+    ocl_free(a); \
+    vm_push(vm, value_float(fn(x))); \
+}
+MATH1(sin,   sin)
+MATH1(cos,   cos)
+MATH1(tan,   tan)
+MATH1(floor, floor)
+MATH1(ceil,  ceil)
+MATH1(round, round)
+#undef MATH1
 
 static void builtin_max(VM *vm, int argc) {
     Value *args = pop_args(vm, argc);
-    if (argc < 2) { vm_push(vm, argc >= 1 ? args[0] : value_null()); ocl_free(args); return; }
-    Value a = args[0], b = args[1]; ocl_free(args);
+    if (argc < 2) {
+        Value r = argc >= 1 ? args[0] : value_null();
+        /* If we took args[0], don't free it — we're returning it.
+         * Free remaining args. */
+        for (int i = 1; i < argc; i++) value_free(args[i]);
+        ocl_free(args);
+        vm_push(vm, r);
+        return;
+    }
+    Value a = args[0], b = args[1];
+    for (int i = 0; i < argc; i++) value_free(args[i]);
+    ocl_free(args);
     if (a.type == VALUE_INT && b.type == VALUE_INT)
-        vm_push(vm, value_int(a.data.int_val >= b.data.int_val ? a.data.int_val : b.data.int_val));
-    else { double da = to_double(a), db = to_double(b); vm_push(vm, value_float(da >= db ? da : db)); }
+        vm_push(vm, value_int(a.data.int_val >= b.data.int_val
+                              ? a.data.int_val : b.data.int_val));
+    else {
+        double da = to_double(a), db = to_double(b);
+        vm_push(vm, value_float(da >= db ? da : db));
+    }
 }
 
 static void builtin_min(VM *vm, int argc) {
     Value *args = pop_args(vm, argc);
-    if (argc < 2) { vm_push(vm, argc >= 1 ? args[0] : value_null()); ocl_free(args); return; }
-    Value a = args[0], b = args[1]; ocl_free(args);
+    if (argc < 2) {
+        Value r = argc >= 1 ? args[0] : value_null();
+        for (int i = 1; i < argc; i++) value_free(args[i]);
+        ocl_free(args);
+        vm_push(vm, r);
+        return;
+    }
+    Value a = args[0], b = args[1];
+    for (int i = 0; i < argc; i++) value_free(args[i]);
+    ocl_free(args);
     if (a.type == VALUE_INT && b.type == VALUE_INT)
-        vm_push(vm, value_int(a.data.int_val <= b.data.int_val ? a.data.int_val : b.data.int_val));
-    else { double da = to_double(a), db = to_double(b); vm_push(vm, value_float(da <= db ? da : db)); }
+        vm_push(vm, value_int(a.data.int_val <= b.data.int_val
+                              ? a.data.int_val : b.data.int_val));
+    else {
+        double da = to_double(a), db = to_double(b);
+        vm_push(vm, value_float(da <= db ? da : db));
+    }
 }
+
+/* ── String ───────────────────────────────────────────────────────── */
 
 static void builtin_strlen(VM *vm, int argc) {
     Value *args = pop_args(vm, argc);
-    if (argc < 1 || args[0].type != VALUE_STRING) { ocl_free(args); vm_push(vm, value_int(0)); return; }
-    int64_t len = (int64_t)(args[0].data.string_val ? strlen(args[0].data.string_val) : 0);
-    ocl_free(args); vm_push(vm, value_int(len));
+    int64_t len = 0;
+    if (argc >= 1 && args[0].type == VALUE_STRING)
+        len = (int64_t)(args[0].data.string_val ? strlen(args[0].data.string_val) : 0);
+    for (int i = 0; i < argc; i++) value_free(args[i]);
+    ocl_free(args);
+    vm_push(vm, value_int(len));
 }
 
 static void builtin_substr(VM *vm, int argc) {
     Value *args = pop_args(vm, argc);
-    if (argc < 2 || args[0].type != VALUE_STRING) { ocl_free(args); vm_push(vm, value_string(ocl_strdup(""))); return; }
-    const char *s = args[0].data.string_val ? args[0].data.string_val : "";
-    size_t slen = strlen(s);
-    int64_t start = to_int64(args[1]);
+    if (argc < 2 || args[0].type != VALUE_STRING) {
+        for (int i = 0; i < argc; i++) value_free(args[i]);
+        ocl_free(args);
+        vm_push(vm, value_string(ocl_strdup("")));
+        return;
+    }
+    /* Copy inputs before freeing args — owned strings would be freed otherwise */
+    const char *sp   = args[0].data.string_val ? args[0].data.string_val : "";
+    size_t      slen = strlen(sp);
+    int64_t start  = to_int64(args[1]);
     int64_t length = (argc >= 3) ? to_int64(args[2]) : (int64_t)slen;
+    /* Take a local copy of the source so we can safely free args */
+    char *s = ocl_strdup(sp);
+    for (int i = 0; i < argc; i++) value_free(args[i]);
     ocl_free(args);
     if (start < 0) start = 0;
-    if ((size_t)start >= slen) { vm_push(vm, value_string(ocl_strdup(""))); return; }
+    if ((size_t)start >= slen) { ocl_free(s); vm_push(vm, value_string(ocl_strdup(""))); return; }
     if (length < 0) length = 0;
     if ((size_t)(start + length) > slen) length = (int64_t)(slen - (size_t)start);
     char *result = ocl_malloc((size_t)length + 1);
-    memcpy(result, s + start, (size_t)length); result[length] = '\0';
-    vm_push(vm, value_string(result));
+    memcpy(result, s + start, (size_t)length);
+    result[length] = '\0';
+    ocl_free(s);
+    vm_push(vm, value_string(result));   /* owned */
 }
 
 static void builtin_toupper(VM *vm, int argc) {
     Value *args = pop_args(vm, argc);
-    if (argc < 1 || args[0].type != VALUE_STRING) { ocl_free(args); vm_push(vm, value_string(ocl_strdup(""))); return; }
+    if (argc < 1 || args[0].type != VALUE_STRING) {
+        for (int i = 0; i < argc; i++) value_free(args[i]);
+        ocl_free(args);
+        vm_push(vm, value_string(ocl_strdup("")));
+        return;
+    }
     char *result = ocl_strdup(args[0].data.string_val ? args[0].data.string_val : "");
+    for (int i = 0; i < argc; i++) value_free(args[i]);
     ocl_free(args);
     for (char *p = result; *p; p++) *p = (char)toupper((unsigned char)*p);
-    vm_push(vm, value_string(result));
+    vm_push(vm, value_string(result));   /* owned */
 }
 
 static void builtin_tolower(VM *vm, int argc) {
     Value *args = pop_args(vm, argc);
-    if (argc < 1 || args[0].type != VALUE_STRING) { ocl_free(args); vm_push(vm, value_string(ocl_strdup(""))); return; }
+    if (argc < 1 || args[0].type != VALUE_STRING) {
+        for (int i = 0; i < argc; i++) value_free(args[i]);
+        ocl_free(args);
+        vm_push(vm, value_string(ocl_strdup("")));
+        return;
+    }
     char *result = ocl_strdup(args[0].data.string_val ? args[0].data.string_val : "");
+    for (int i = 0; i < argc; i++) value_free(args[i]);
     ocl_free(args);
     for (char *p = result; *p; p++) *p = (char)tolower((unsigned char)*p);
-    vm_push(vm, value_string(result));
+    vm_push(vm, value_string(result));   /* owned */
 }
 
 static void builtin_strcontains(VM *vm, int argc) {
     Value *args = pop_args(vm, argc);
-    if (argc < 2) { ocl_free(args); vm_push(vm, value_bool(false)); return; }
-    const char *hay = (args[0].type==VALUE_STRING && args[0].data.string_val) ? args[0].data.string_val : "";
-    const char *needle = (args[1].type==VALUE_STRING && args[1].data.string_val) ? args[1].data.string_val : "";
-    bool found = (strstr(hay, needle) != NULL); ocl_free(args); vm_push(vm, value_bool(found));
+    bool found = false;
+    if (argc >= 2) {
+        /* Read and copy before freeing — owned strings get freed by value_free */
+        char *hay    = ocl_strdup((args[0].type==VALUE_STRING && args[0].data.string_val)
+                                  ? args[0].data.string_val : "");
+        char *needle = ocl_strdup((args[1].type==VALUE_STRING && args[1].data.string_val)
+                                  ? args[1].data.string_val : "");
+        for (int i = 0; i < argc; i++) value_free(args[i]);
+        ocl_free(args);
+        found = (strstr(hay, needle) != NULL);
+        ocl_free(hay); ocl_free(needle);
+    } else {
+        for (int i = 0; i < argc; i++) value_free(args[i]);
+        ocl_free(args);
+    }
+    vm_push(vm, value_bool(found));
 }
 
 static void builtin_strindexof(VM *vm, int argc) {
     Value *args = pop_args(vm, argc);
-    if (argc < 2) { ocl_free(args); vm_push(vm, value_int(-1)); return; }
-    const char *hay = (args[0].type==VALUE_STRING && args[0].data.string_val) ? args[0].data.string_val : "";
-    const char *needle = (args[1].type==VALUE_STRING && args[1].data.string_val) ? args[1].data.string_val : "";
-    const char *pos = strstr(hay, needle); ocl_free(args);
-    vm_push(vm, value_int(pos ? (int64_t)(pos - hay) : -1));
+    int64_t idx = -1;
+    if (argc >= 2) {
+        char *hay    = ocl_strdup((args[0].type==VALUE_STRING && args[0].data.string_val)
+                                  ? args[0].data.string_val : "");
+        char *needle = ocl_strdup((args[1].type==VALUE_STRING && args[1].data.string_val)
+                                  ? args[1].data.string_val : "");
+        for (int i = 0; i < argc; i++) value_free(args[i]);
+        ocl_free(args);
+        const char *pos = strstr(hay, needle);
+        if (pos) idx = (int64_t)(pos - hay);
+        ocl_free(hay); ocl_free(needle);
+    } else {
+        for (int i = 0; i < argc; i++) value_free(args[i]);
+        ocl_free(args);
+    }
+    vm_push(vm, value_int(idx));
 }
 
 static void builtin_strreplace(VM *vm, int argc) {
     Value *args = pop_args(vm, argc);
     if (argc < 3 || args[0].type != VALUE_STRING) {
         Value r = (argc >= 1 && args[0].type == VALUE_STRING)
-                  ? value_string(ocl_strdup(args[0].data.string_val ? args[0].data.string_val : ""))
+                  ? value_string(ocl_strdup(args[0].data.string_val
+                                            ? args[0].data.string_val : ""))
                   : value_string(ocl_strdup(""));
-        ocl_free(args); vm_push(vm, r); return;
+        for (int i = 0; i < argc; i++) value_free(args[i]);
+        ocl_free(args);
+        vm_push(vm, r);
+        return;
     }
-    const char *src = args[0].data.string_val ? args[0].data.string_val : "";
-    const char *old_str = (args[1].type==VALUE_STRING && args[1].data.string_val) ? args[1].data.string_val : "";
-    const char *new_str = (args[2].type==VALUE_STRING && args[2].data.string_val) ? args[2].data.string_val : "";
+    /*
+     * Copy the three strings out of args[] *before* freeing them.
+     * If any arg is an owned string, value_free() will free its buffer,
+     * which would leave src/old_str/new_str dangling.
+     */
+    char *src     = ocl_strdup(args[0].data.string_val ? args[0].data.string_val : "");
+    char *old_str = ocl_strdup((args[1].type==VALUE_STRING && args[1].data.string_val)
+                                ? args[1].data.string_val : "");
+    char *new_str = ocl_strdup((args[2].type==VALUE_STRING && args[2].data.string_val)
+                                ? args[2].data.string_val : "");
+    for (int i = 0; i < argc; i++) value_free(args[i]);
     ocl_free(args);
+
     size_t old_len = strlen(old_str);
-    if (old_len == 0) { vm_push(vm, value_string(ocl_strdup(src))); return; }
-    size_t count = 0; const char *cur = src;
+    size_t new_len = strlen(new_str);
+    size_t src_len = strlen(src);
+
+    if (old_len == 0) {
+        ocl_free(old_str); ocl_free(new_str);
+        vm_push(vm, value_string(src));   /* src is already a heap alloc — owned */
+        return;
+    }
+
+    size_t count = 0;
+    const char *cur = src;
     while ((cur = strstr(cur, old_str)) != NULL) { count++; cur += old_len; }
-    size_t new_len = strlen(new_str), src_len = strlen(src);
-    size_t result_len = src_len + count * (new_len > old_len ? new_len - old_len : old_len - new_len) + 1;
-    char *result = ocl_malloc(result_len); char *dest = result;
-    cur = src; const char *found;
+
+    size_t result_len = src_len
+        + count * (new_len > old_len ? new_len - old_len : old_len - new_len) + 1;
+    char *result = ocl_malloc(result_len);
+    char *dest = result;
+    cur = src;
+    const char *found;
     while ((found = strstr(cur, old_str)) != NULL) {
         size_t chunk = (size_t)(found - cur);
         memcpy(dest, cur, chunk); dest += chunk;
         memcpy(dest, new_str, new_len); dest += new_len;
         cur = found + old_len;
     }
-    strcpy(dest, cur); vm_push(vm, value_string(result));
+    strcpy(dest, cur);
+
+    ocl_free(src); ocl_free(old_str); ocl_free(new_str);
+    vm_push(vm, value_string(result));   /* owned */
 }
 
 static void builtin_strtrim(VM *vm, int argc) {
     Value *args = pop_args(vm, argc);
-    if (argc < 1 || args[0].type != VALUE_STRING) { ocl_free(args); vm_push(vm, value_string(ocl_strdup(""))); return; }
-    const char *s = args[0].data.string_val ? args[0].data.string_val : ""; ocl_free(args);
-    while (isspace((unsigned char)*s)) s++;
-    size_t len = strlen(s);
-    while (len > 0 && isspace((unsigned char)s[len-1])) len--;
-    char *result = ocl_malloc(len + 1); memcpy(result, s, len); result[len] = '\0';
-    vm_push(vm, value_string(result));
+    if (argc < 1 || args[0].type != VALUE_STRING) {
+        for (int i = 0; i < argc; i++) value_free(args[i]);
+        ocl_free(args);
+        vm_push(vm, value_string(ocl_strdup("")));
+        return;
+    }
+    /* Copy before freeing — owned string would be freed by value_free */
+    char *s = ocl_strdup(args[0].data.string_val ? args[0].data.string_val : "");
+    for (int i = 0; i < argc; i++) value_free(args[i]);
+    ocl_free(args);
+    char *p = s;
+    while (isspace((unsigned char)*p)) p++;
+    size_t len = strlen(p);
+    while (len > 0 && isspace((unsigned char)p[len-1])) len--;
+    char *result = ocl_malloc(len + 1);
+    memcpy(result, p, len);
+    result[len] = '\0';
+    ocl_free(s);
+    vm_push(vm, value_string(result));   /* owned */
 }
 
 static void builtin_strsplit(VM *vm, int argc) {
     Value *args = pop_args(vm, argc);
-    if (argc < 2 || args[0].type != VALUE_STRING) { ocl_free(args); vm_push(vm, value_int(0)); return; }
-    const char *s = args[0].data.string_val ? args[0].data.string_val : "";
-    const char *delim = (args[1].type==VALUE_STRING && args[1].data.string_val) ? args[1].data.string_val : " ";
+    if (argc < 2 || args[0].type != VALUE_STRING) {
+        for (int i = 0; i < argc; i++) value_free(args[i]);
+        ocl_free(args);
+        vm_push(vm, value_int(0));
+        return;
+    }
+    /* Copy both strings before freeing args */
+    char *copy  = ocl_strdup(args[0].data.string_val ? args[0].data.string_val : "");
+    char *delim = ocl_strdup((args[1].type==VALUE_STRING && args[1].data.string_val)
+                              ? args[1].data.string_val : " ");
+    for (int i = 0; i < argc; i++) value_free(args[i]);
     ocl_free(args);
-    char *copy = ocl_strdup(s); int64_t count = 0;
+    int64_t count = 0;
     char *tok = strtok(copy, delim);
     while (tok) { count++; tok = strtok(NULL, delim); }
-    ocl_free(copy); vm_push(vm, value_int(count));
+    ocl_free(copy); ocl_free(delim);
+    vm_push(vm, value_int(count));
 }
 
+/* ── Type conversions ─────────────────────────────────────────────── */
+
 static void builtin_to_int(VM *vm, int argc) {
-    Value *args = pop_args(vm, argc); Value a = (argc >= 1) ? args[0] : value_null(); ocl_free(args);
-    vm_push(vm, value_int(to_int64(a)));
+    Value *args = pop_args(vm, argc);
+    int64_t result = (argc >= 1) ? to_int64(args[0]) : 0;
+    for (int i = 0; i < argc; i++) value_free(args[i]);
+    ocl_free(args);
+    vm_push(vm, value_int(result));
 }
 
 static void builtin_to_float(VM *vm, int argc) {
-    Value *args = pop_args(vm, argc); Value a = (argc >= 1) ? args[0] : value_null(); ocl_free(args);
-    vm_push(vm, value_float(to_double(a)));
+    Value *args = pop_args(vm, argc);
+    double result = (argc >= 1) ? to_double(args[0]) : 0.0;
+    for (int i = 0; i < argc; i++) value_free(args[i]);
+    ocl_free(args);
+    vm_push(vm, value_float(result));
 }
 
 static void builtin_to_string(VM *vm, int argc) {
     Value *args = pop_args(vm, argc);
-    if (argc < 1) { ocl_free(args); vm_push(vm, value_string(ocl_strdup(""))); return; }
-    char *s = value_to_string(args[0]); ocl_free(args);
-    vm_push(vm, value_string(ocl_strdup(s)));
+    if (argc < 1) {
+        ocl_free(args);
+        vm_push(vm, value_string(ocl_strdup("")));
+        return;
+    }
+    char *s = value_to_string(args[0]);          /* static buf or existing ptr */
+    Value result = value_string(ocl_strdup(s));  /* always make an owned copy  */
+    for (int i = 0; i < argc; i++) value_free(args[i]);
+    ocl_free(args);
+    vm_push(vm, result);
 }
 
 static void builtin_to_bool(VM *vm, int argc) {
     Value *args = pop_args(vm, argc);
-    if (argc < 1) { ocl_free(args); vm_push(vm, value_bool(false)); return; }
-    Value a = args[0]; ocl_free(args);
-    bool result;
-    switch (a.type) {
-        case VALUE_BOOL:   result = a.data.bool_val; break;
-        case VALUE_INT:    result = (a.data.int_val != 0); break;
-        case VALUE_FLOAT:  result = (a.data.float_val != 0.0); break;
-        case VALUE_STRING: result = (a.data.string_val && a.data.string_val[0] != '\0'); break;
-        default:           result = false; break;
+    bool result = false;
+    if (argc >= 1) {
+        switch (args[0].type) {
+            case VALUE_BOOL:   result = args[0].data.bool_val; break;
+            case VALUE_INT:    result = (args[0].data.int_val != 0); break;
+            case VALUE_FLOAT:  result = (args[0].data.float_val != 0.0); break;
+            case VALUE_STRING: result = (args[0].data.string_val
+                                        && args[0].data.string_val[0] != '\0'); break;
+            default:           result = false; break;
+        }
     }
+    for (int i = 0; i < argc; i++) value_free(args[i]);
+    ocl_free(args);
     vm_push(vm, value_bool(result));
 }
 
 static void builtin_typeof(VM *vm, int argc) {
     Value *args = pop_args(vm, argc);
-    if (argc < 1) { ocl_free(args); vm_push(vm, value_string(ocl_strdup("null"))); return; }
-    const char *name;
-    switch (args[0].type) {
-        case VALUE_INT:    name = "Int";     break;
-        case VALUE_FLOAT:  name = "Float";   break;
-        case VALUE_STRING: name = "String";  break;
-        case VALUE_BOOL:   name = "Bool";    break;
-        case VALUE_CHAR:   name = "Char";    break;
-        case VALUE_NULL:   name = "null";    break;
-        default:           name = "unknown"; break;
+    const char *name = "null";
+    if (argc >= 1) {
+        switch (args[0].type) {
+            case VALUE_INT:    name = "Int";     break;
+            case VALUE_FLOAT:  name = "Float";   break;
+            case VALUE_STRING: name = "String";  break;
+            case VALUE_BOOL:   name = "Bool";    break;
+            case VALUE_CHAR:   name = "Char";    break;
+            case VALUE_NULL:   name = "null";    break;
+            default:           name = "unknown"; break;
+        }
     }
-    ocl_free(args); vm_push(vm, value_string(ocl_strdup(name)));
+    for (int i = 0; i < argc; i++) value_free(args[i]);
+    ocl_free(args);
+    vm_push(vm, value_string(ocl_strdup(name)));   /* owned */
 }
+
+/* ── Utilities ────────────────────────────────────────────────────── */
 
 static void builtin_exit(VM *vm, int argc) {
     Value *args = pop_args(vm, argc);
-    int code = (argc >= 1) ? (int)to_int64(args[0]) : 0; ocl_free(args);
-    vm->halted = true; vm->exit_code = code; vm_push(vm, value_null());
+    int code = (argc >= 1) ? (int)to_int64(args[0]) : 0;
+    for (int i = 0; i < argc; i++) value_free(args[i]);
+    ocl_free(args);
+    vm->halted = true; vm->exit_code = code;
+    vm_push(vm, value_null());
 }
 
 static void builtin_assert(VM *vm, int argc) {
@@ -267,17 +456,51 @@ static void builtin_assert(VM *vm, int argc) {
     if (!ok) {
         if (argc >= 2 && args[1].type == VALUE_STRING && args[1].data.string_val)
             fprintf(stderr, "ASSERTION FAILED: %s\n", args[1].data.string_val);
-        else fprintf(stderr, "ASSERTION FAILED\n");
-        ocl_free(args); vm->halted = true; vm->exit_code = 1; vm_push(vm, value_null()); return;
+        else
+            fprintf(stderr, "ASSERTION FAILED\n");
+        for (int i = 0; i < argc; i++) value_free(args[i]);
+        ocl_free(args);
+        vm->halted = true; vm->exit_code = 1;
+        vm_push(vm, value_null());
+        return;
     }
-    ocl_free(args); vm_push(vm, value_null());
+    for (int i = 0; i < argc; i++) value_free(args[i]);
+    ocl_free(args);
+    vm_push(vm, value_null());
 }
 
-static void builtin_is_null(VM *vm, int argc)   { Value *a=pop_args(vm,argc); bool r=(argc<1||a[0].type==VALUE_NULL); ocl_free(a); vm_push(vm,value_bool(r)); }
-static void builtin_is_int(VM *vm, int argc)    { Value *a=pop_args(vm,argc); bool r=(argc>=1&&a[0].type==VALUE_INT); ocl_free(a); vm_push(vm,value_bool(r)); }
-static void builtin_is_float(VM *vm, int argc)  { Value *a=pop_args(vm,argc); bool r=(argc>=1&&a[0].type==VALUE_FLOAT); ocl_free(a); vm_push(vm,value_bool(r)); }
-static void builtin_is_string(VM *vm, int argc) { Value *a=pop_args(vm,argc); bool r=(argc>=1&&a[0].type==VALUE_STRING); ocl_free(a); vm_push(vm,value_bool(r)); }
-static void builtin_is_bool(VM *vm, int argc)   { Value *a=pop_args(vm,argc); bool r=(argc>=1&&a[0].type==VALUE_BOOL); ocl_free(a); vm_push(vm,value_bool(r)); }
+static void builtin_is_null(VM *vm, int argc) {
+    Value *a = pop_args(vm, argc);
+    bool r = (argc < 1 || a[0].type == VALUE_NULL);
+    for (int i = 0; i < argc; i++) value_free(a[i]);
+    ocl_free(a); vm_push(vm, value_bool(r));
+}
+static void builtin_is_int(VM *vm, int argc) {
+    Value *a = pop_args(vm, argc);
+    bool r = (argc >= 1 && a[0].type == VALUE_INT);
+    for (int i = 0; i < argc; i++) value_free(a[i]);
+    ocl_free(a); vm_push(vm, value_bool(r));
+}
+static void builtin_is_float(VM *vm, int argc) {
+    Value *a = pop_args(vm, argc);
+    bool r = (argc >= 1 && a[0].type == VALUE_FLOAT);
+    for (int i = 0; i < argc; i++) value_free(a[i]);
+    ocl_free(a); vm_push(vm, value_bool(r));
+}
+static void builtin_is_string(VM *vm, int argc) {
+    Value *a = pop_args(vm, argc);
+    bool r = (argc >= 1 && a[0].type == VALUE_STRING);
+    for (int i = 0; i < argc; i++) value_free(a[i]);
+    ocl_free(a); vm_push(vm, value_bool(r));
+}
+static void builtin_is_bool(VM *vm, int argc) {
+    Value *a = pop_args(vm, argc);
+    bool r = (argc >= 1 && a[0].type == VALUE_BOOL);
+    for (int i = 0; i < argc; i++) value_free(a[i]);
+    ocl_free(a); vm_push(vm, value_bool(r));
+}
+
+/* ── Dispatch table ───────────────────────────────────────────────── */
 
 static const StdlibEntry STDLIB_TABLE[] = {
     { BUILTIN_INPUT,       "input",       builtin_input       },
@@ -316,14 +539,18 @@ static const StdlibEntry STDLIB_TABLE[] = {
     { BUILTIN_IS_BOOL,     "isBool",      builtin_is_bool     },
 };
 
-static const size_t STDLIB_TABLE_SIZE = sizeof(STDLIB_TABLE)/sizeof(STDLIB_TABLE[0]);
+static const size_t STDLIB_TABLE_SIZE =
+    sizeof(STDLIB_TABLE) / sizeof(STDLIB_TABLE[0]);
 
-void stdlib_init(void) {}
+void stdlib_init(void)    {}
 void stdlib_cleanup(void) {}
 
 bool stdlib_dispatch(VM *vm, int id, int argc) {
     for (size_t i = 0; i < STDLIB_TABLE_SIZE; i++) {
-        if (STDLIB_TABLE[i].id == id) { STDLIB_TABLE[i].fn(vm, argc); return true; }
+        if (STDLIB_TABLE[i].id == id) {
+            STDLIB_TABLE[i].fn(vm, argc);
+            return true;
+        }
     }
     return false;
 }

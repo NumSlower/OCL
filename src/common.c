@@ -3,20 +3,23 @@
 #include <stdio.h>
 #include <string.h>
 
-Value value_int(int64_t i)   { return (Value){VALUE_INT,  {.int_val   = i}}; }
-Value value_float(double f)  { return (Value){VALUE_FLOAT,{.float_val = f}}; }
-Value value_bool(bool b)     { return (Value){VALUE_BOOL, {.bool_val  = b}}; }
-Value value_char(char c)     { return (Value){VALUE_CHAR, {.char_val  = c}}; }
-Value value_null(void)       { return (Value){VALUE_NULL, {.int_val   = 0}}; }
-
-Value value_string(char *s) {
-    return (Value){VALUE_STRING, {.string_val = s}};
-}
+/* ── String constructors ──────────────────────────────────────────── */
 
 Value value_string_copy(const char *s) {
     char *dup = ocl_strdup(s ? s : "");
-    return (Value){VALUE_STRING, {.string_val = dup}};
+    return (Value){VALUE_STRING, true, {.string_val = dup}};
 }
+
+Value value_own_copy(Value v) {
+    if (v.type == VALUE_STRING && !v.owned) {
+        /* Borrow → owned copy */
+        const char *src = v.data.string_val ? v.data.string_val : "";
+        return value_string_copy(src);
+    }
+    return v;   /* already owned (or non-string) — return as-is */
+}
+
+/* ── Truthiness ───────────────────────────────────────────────────── */
 
 bool value_is_truthy(Value v) {
     switch (v.type) {
@@ -30,23 +33,35 @@ bool value_is_truthy(Value v) {
     }
 }
 
+/* ── String representation ────────────────────────────────────────── */
+
 char *value_to_string(Value v) {
     static char buf[256];
     switch (v.type) {
-        case VALUE_INT:    snprintf(buf, sizeof(buf), "%ld",  (long)v.data.int_val);   return buf;
-        case VALUE_FLOAT:  snprintf(buf, sizeof(buf), "%g",   v.data.float_val);       return buf;
+        case VALUE_INT:    snprintf(buf, sizeof(buf), "%ld", (long)v.data.int_val);  return buf;
+        case VALUE_FLOAT:  snprintf(buf, sizeof(buf), "%g",  v.data.float_val);      return buf;
         case VALUE_STRING: return v.data.string_val ? v.data.string_val : "";
         case VALUE_BOOL:   return v.data.bool_val ? "true" : "false";
-        case VALUE_CHAR:   buf[0] = v.data.char_val; buf[1] = '\0';                   return buf;
+        case VALUE_CHAR:   buf[0] = v.data.char_val; buf[1] = '\0';                  return buf;
         case VALUE_NULL:   return "null";
         default:           return "?";
     }
 }
 
+/* ── Free ─────────────────────────────────────────────────────────── */
+
 void value_free(Value v) {
-    if (v.type == VALUE_STRING && v.data.string_val)
+    /*
+     * Only free the string allocation if this Value owns it.
+     * Borrowed strings (owned == false) point into memory managed
+     * elsewhere (constant pool, another local/global slot) and must
+     * not be freed here.
+     */
+    if (v.type == VALUE_STRING && v.owned && v.data.string_val)
         free(v.data.string_val);
 }
+
+/* ── Memory helpers ───────────────────────────────────────────────── */
 
 void *ocl_malloc(size_t size) {
     void *p = malloc(size);

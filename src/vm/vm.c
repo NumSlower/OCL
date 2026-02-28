@@ -1,5 +1,26 @@
 /*
  * vm.c — OCL Bytecode Virtual Machine
+ *
+ * String memory model
+ * ───────────────────
+ * Every Value carries an `owned` flag (see common.h).  Only owned string
+ * Values free their char* on value_free().  This lets us push *borrowed*
+ * views of constant-pool strings (zero allocation per push) and only
+ * allocate a fresh copy when the string is stored somewhere that must
+ * outlive the current expression (OP_STORE_VAR, OP_STORE_GLOBAL, and
+ * the argument arrays built in builtin_print / builtin_printf).
+ *
+ * Ownership rules enforced in this file:
+ *   OP_PUSH_CONST  — pushes a borrowed view (no alloc)
+ *   OP_LOAD_VAR    — pushes a borrowed view of the local slot
+ *   OP_LOAD_GLOBAL — pushes a borrowed view of the global slot
+ *   OP_STORE_VAR   — calls value_own_copy() before storing
+ *   OP_STORE_GLOBAL— calls value_own_copy() before storing
+ *   OP_ADD (str)   — allocates a new owned concatenation
+ *   OP_CONCAT      — allocates a new owned concatenation
+ *   OP_RETURN      — locals freed (only owned strings are actually freed)
+ *   OP_POP         — value_free() is a no-op for borrowed strings
+ *   builtins       — pop args (borrow-safe via value_free), push owned results
  */
 
 #include <stdio.h>
@@ -33,6 +54,7 @@ void vm_free(VM *vm) {
     /* Free any remaining values on the stack */
     for (size_t i = 0; i < vm->stack_top; i++)
         value_free(vm->stack[i]);
+    /* Free call frames */
     for (size_t i = 0; i < vm->frame_top; i++) {
         for (size_t j = 0; j < vm->frames[i].local_count; j++)
             value_free(vm->frames[i].locals[j]);
@@ -72,11 +94,11 @@ Value vm_pop(VM *vm) {
 
 /*
  * vm_pop_free — pop a value and immediately free it.
- * Used by OP_POP when the value is being discarded entirely.
+ * For owned strings this frees the allocation; for borrowed strings
+ * and all other types this is a no-op (value_free handles both cases).
  */
 static void vm_pop_free(VM *vm) {
-    Value v = vm_pop(vm);
-    value_free(v);
+    value_free(vm_pop(vm));
 }
 
 Value vm_peek(VM *vm, size_t depth) {
@@ -122,30 +144,42 @@ static void ensure_local(VM *vm, CallFrame *f, uint32_t idx) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════
-   Built-in helpers (print / printf stay here for performance)
+   Built-in helpers  (print / printf stay here for performance)
 ═══════════════════════════════════════════════════════════════════ */
 
+/*
+ * pop_args_for_builtin — collects argc values from the stack into a
+ * temporary owned array.  Each popped value may be borrowed or owned;
+ * we leave it as-is in the array and let the callee call value_free()
+ * on each slot when done.  For owned strings this frees the allocation;
+ * for borrowed strings it's a no-op — which is safe because the
+ * constant pool or local/global slot outlives this call.
+ */
+static Value *pop_args_for_builtin(VM *vm, int argc) {
+    if (argc <= 0) return NULL;
+    Value *args = ocl_malloc((size_t)argc * sizeof(Value));
+    for (int i = argc - 1; i >= 0; i--)
+        args[i] = vm_pop(vm);
+    return args;
+}
+
 static void builtin_print(VM *vm, int argc) {
-    Value *args = NULL;
-    if (argc > 0) {
-        args = ocl_malloc((size_t)argc * sizeof(Value));
-        for (int i = argc - 1; i >= 0; i--)
-            args[i] = vm_pop(vm);
-    }
+    Value *args = pop_args_for_builtin(vm, argc);
     for (int i = 0; i < argc; i++) {
         if (i > 0) printf(" ");
         switch (args[i].type) {
             case VALUE_INT:    printf("%ld",  (long)args[i].data.int_val);  break;
             case VALUE_FLOAT:  printf("%g",   args[i].data.float_val);      break;
-            case VALUE_STRING: printf("%s",   args[i].data.string_val ? args[i].data.string_val : ""); break;
-            case VALUE_BOOL:   printf("%s",   args[i].data.bool_val ? "true" : "false"); break;
+            case VALUE_STRING: printf("%s",   args[i].data.string_val
+                                             ? args[i].data.string_val : ""); break;
+            case VALUE_BOOL:   printf("%s",   args[i].data.bool_val
+                                             ? "true" : "false"); break;
             case VALUE_CHAR:   printf("%c",   args[i].data.char_val);       break;
             case VALUE_NULL:   printf("null");                               break;
             default: break;
         }
     }
     printf("\n");
-    /* Free string args — they may be heap-allocated results from builtins */
     for (int i = 0; i < argc; i++) value_free(args[i]);
     ocl_free(args);
     vm_push(vm, value_null());
@@ -154,9 +188,7 @@ static void builtin_print(VM *vm, int argc) {
 static void builtin_printf(VM *vm, int argc) {
     if (argc < 1) { vm_push(vm, value_null()); return; }
 
-    Value *args = ocl_malloc((size_t)argc * sizeof(Value));
-    for (int i = argc - 1; i >= 0; i--)
-        args[i] = vm_pop(vm);
+    Value *args = pop_args_for_builtin(vm, argc);
 
     if (args[0].type != VALUE_STRING) {
         printf("%s", value_to_string(args[0]));
@@ -222,7 +254,6 @@ static void builtin_printf(VM *vm, int argc) {
         }
     }
 
-    /* Free all args — string values in args may be heap-allocated */
     for (int i = 0; i < argc; i++) value_free(args[i]);
     ocl_free(args);
     vm_push(vm, value_null());
@@ -237,8 +268,9 @@ int vm_execute(VM *vm) {
 
 /*
  * ARITH_OP — binary arithmetic helper.
- * Pops b then a, frees both (handles owned strings safely since
- * arithmetic is only defined on non-string types), pushes result.
+ * Pops b then a.  value_free is safe for borrowed strings: it's a
+ * no-op.  Arithmetic is only valid on numeric types so no string
+ * allocation happens here.
  */
 #define ARITH_OP(OP_INT, OP_FLOAT) do {                                     \
     Value b = vm_pop(vm); Value a = vm_pop(vm);                             \
@@ -246,8 +278,10 @@ int vm_execute(VM *vm) {
     if (a.type == VALUE_INT && b.type == VALUE_INT) {                       \
         _result = value_int(OP_INT);                                         \
     } else {                                                                 \
-        double af = (a.type == VALUE_FLOAT) ? a.data.float_val : (double)a.data.int_val; \
-        double bf = (b.type == VALUE_FLOAT) ? b.data.float_val : (double)b.data.int_val; \
+        double af = (a.type == VALUE_FLOAT) ? a.data.float_val              \
+                                            : (double)a.data.int_val;       \
+        double bf = (b.type == VALUE_FLOAT) ? b.data.float_val              \
+                                            : (double)b.data.int_val;       \
         _result = value_float(OP_FLOAT);                                     \
     }                                                                        \
     value_free(a); value_free(b);                                            \
@@ -256,7 +290,6 @@ int vm_execute(VM *vm) {
 
 /*
  * CMP_OP — binary comparison helper.
- * Pops b then a, frees both, pushes bool result.
  */
 #define CMP_OP(OP_INT, OP_FLOAT) do {                                       \
     Value b = vm_pop(vm); Value a = vm_pop(vm);                             \
@@ -264,8 +297,10 @@ int vm_execute(VM *vm) {
     if (a.type == VALUE_INT && b.type == VALUE_INT) {                       \
         r = OP_INT;                                                          \
     } else {                                                                 \
-        double af = (a.type==VALUE_FLOAT)?a.data.float_val:(double)a.data.int_val; \
-        double bf = (b.type==VALUE_FLOAT)?b.data.float_val:(double)b.data.int_val; \
+        double af = (a.type==VALUE_FLOAT) ? a.data.float_val                \
+                                          : (double)a.data.int_val;         \
+        double bf = (b.type==VALUE_FLOAT) ? b.data.float_val                \
+                                          : (double)b.data.int_val;         \
         r = OP_FLOAT;                                                        \
     }                                                                        \
     value_free(a); value_free(b);                                            \
@@ -279,20 +314,17 @@ int vm_execute(VM *vm) {
 
             /* ── Stack ───────────────────────────────────────── */
             case OP_PUSH_CONST:
-
                 /*
-                 * Constants in the pool are owned by the Bytecode object.
-                 * We push a shallow copy onto the stack.  String constants
-                 * are deep-copied by bytecode_add_constant already, so we
-                 * must NOT free the copy when it is popped — that would
-                 * double-free the constant.  We therefore push a fresh
-                 * copy of string constants so each stack value owns its
-                 * own memory and can be safely freed.
+                 * Push a BORROWED view of the constant — no allocation.
+                 * The constant pool (Bytecode) owns these strings and
+                 * frees them in bytecode_free().  value_free() on a
+                 * borrowed Value is a no-op, so OP_POP and stack cleanup
+                 * in vm_free() are both safe.
                  */
-                if (ins.operand1 < vm->bytecode->constant_count) {
+                if (ins.operand1 < (uint32_t)vm->bytecode->constant_count) {
                     Value c = vm->bytecode->constants[ins.operand1];
-                    if (c.type == VALUE_STRING && c.data.string_val)
-                        vm_push(vm, value_string_copy(c.data.string_val));
+                    if (c.type == VALUE_STRING)
+                        vm_push(vm, value_string_borrow(c.data.string_val));
                     else
                         vm_push(vm, c);
                 } else {
@@ -306,12 +338,17 @@ int vm_execute(VM *vm) {
 
             /* ── Variables ───────────────────────────────────── */
             case OP_LOAD_VAR: {
+                /*
+                 * Push a BORROWED view of the local slot's string.
+                 * The slot itself owns the string; borrowing is safe for
+                 * the duration of the expression since the slot is not
+                 * modified until OP_STORE_VAR.
+                 */
                 CallFrame *f = current_frame(vm);
                 if (f && ins.operand1 < (uint32_t)f->local_count) {
                     Value v = f->locals[ins.operand1];
-                    /* push a copy — strings need their own heap allocation */
-                    if (v.type == VALUE_STRING && v.data.string_val)
-                        vm_push(vm, value_string_copy(v.data.string_val));
+                    if (v.type == VALUE_STRING)
+                        vm_push(vm, value_string_borrow(v.data.string_val));
                     else
                         vm_push(vm, v);
                 } else {
@@ -320,11 +357,17 @@ int vm_execute(VM *vm) {
                 break;
             }
             case OP_STORE_VAR: {
+                /*
+                 * Ensure the stored value owns its string before placing
+                 * it in the local slot.  If the popped value was a
+                 * borrowed borrow, value_own_copy() allocates a fresh copy.
+                 * If it was already owned, it passes through unchanged.
+                 */
                 CallFrame *f = current_frame(vm);
                 if (f) {
-                    Value v = vm_pop(vm);
+                    Value v = value_own_copy(vm_pop(vm));
                     ensure_local(vm, f, ins.operand1);
-                    value_free(f->locals[ins.operand1]);  /* free old value */
+                    value_free(f->locals[ins.operand1]);   /* free old value */
                     f->locals[ins.operand1] = v;
                 } else {
                     vm_pop_free(vm);
@@ -332,20 +375,26 @@ int vm_execute(VM *vm) {
                 break;
             }
             case OP_LOAD_GLOBAL:
+                /*
+                 * Push a BORROWED view of the global slot's string.
+                 */
                 ensure_global(vm, ins.operand1);
                 {
                     Value g = vm->globals[ins.operand1];
-                    if (g.type == VALUE_STRING && g.data.string_val)
-                        vm_push(vm, value_string_copy(g.data.string_val));
+                    if (g.type == VALUE_STRING)
+                        vm_push(vm, value_string_borrow(g.data.string_val));
                     else
                         vm_push(vm, g);
                 }
                 break;
 
             case OP_STORE_GLOBAL: {
-                Value v = vm_pop(vm);
+                /*
+                 * Same as OP_STORE_VAR: ensure ownership before storing.
+                 */
+                Value v = value_own_copy(vm_pop(vm));
                 ensure_global(vm, ins.operand1);
-                value_free(vm->globals[ins.operand1]);  /* free old value */
+                value_free(vm->globals[ins.operand1]);     /* free old value */
                 vm->globals[ins.operand1] = v;
                 break;
             }
@@ -354,20 +403,23 @@ int vm_execute(VM *vm) {
             case OP_ADD: {
                 Value b = vm_pop(vm); Value a = vm_pop(vm);
                 if (a.type == VALUE_STRING && b.type == VALUE_STRING) {
+                    /* Both may be borrowed — read ptrs before freeing */
                     const char *as = a.data.string_val ? a.data.string_val : "";
                     const char *bs = b.data.string_val ? b.data.string_val : "";
                     size_t len = strlen(as) + strlen(bs);
                     char  *s   = ocl_malloc(len + 1);
                     strcpy(s, as); strcat(s, bs);
-                    value_free(a); value_free(b);
-                    vm_push(vm, value_string(s));
+                    value_free(a); value_free(b);          /* no-op if borrowed */
+                    vm_push(vm, value_string(s));          /* new owned string */
                 } else if (a.type == VALUE_INT && b.type == VALUE_INT) {
                     int64_t result = a.data.int_val + b.data.int_val;
                     value_free(a); value_free(b);
                     vm_push(vm, value_int(result));
                 } else {
-                    double af = (a.type == VALUE_FLOAT) ? a.data.float_val : (double)a.data.int_val;
-                    double bf = (b.type == VALUE_FLOAT) ? b.data.float_val : (double)b.data.int_val;
+                    double af = (a.type == VALUE_FLOAT) ? a.data.float_val
+                                                        : (double)a.data.int_val;
+                    double bf = (b.type == VALUE_FLOAT) ? b.data.float_val
+                                                        : (double)b.data.int_val;
                     value_free(a); value_free(b);
                     vm_push(vm, value_float(af + bf));
                 }
@@ -378,7 +430,7 @@ int vm_execute(VM *vm) {
             case OP_DIVIDE: {
                 Value b = vm_pop(vm); Value a = vm_pop(vm);
                 bool bz = (b.type == VALUE_FLOAT) ? (b.data.float_val == 0.0)
-                                                  : (b.data.int_val == 0);
+                                                  : (b.data.int_val   == 0);
                 if (bz) {
                     fprintf(stderr, "RUNTIME ERROR: Division by zero [%d:%d]\n",
                             ins.location.line, ins.location.column);
@@ -389,8 +441,10 @@ int vm_execute(VM *vm) {
                     value_free(a); value_free(b);
                     vm_push(vm, value_int(result));
                 } else {
-                    double af = (a.type == VALUE_FLOAT) ? a.data.float_val : (double)a.data.int_val;
-                    double bf = (b.type == VALUE_FLOAT) ? b.data.float_val : (double)b.data.int_val;
+                    double af = (a.type == VALUE_FLOAT) ? a.data.float_val
+                                                        : (double)a.data.int_val;
+                    double bf = (b.type == VALUE_FLOAT) ? b.data.float_val
+                                                        : (double)b.data.int_val;
                     value_free(a); value_free(b);
                     vm_push(vm, value_float(af / bf));
                 }
@@ -437,7 +491,8 @@ int vm_execute(VM *vm) {
                         case VALUE_CHAR:   r = a.data.char_val  == b.data.char_val;  break;
                         case VALUE_STRING:
                             r = (a.data.string_val && b.data.string_val)
-                                ? !strcmp(a.data.string_val, b.data.string_val) : false;
+                                ? !strcmp(a.data.string_val, b.data.string_val)
+                                : (a.data.string_val == b.data.string_val);
                             break;
                         case VALUE_NULL: r = true; break;
                         default: break;
@@ -456,6 +511,11 @@ int vm_execute(VM *vm) {
                         case VALUE_FLOAT: r = a.data.float_val != b.data.float_val; break;
                         case VALUE_BOOL:  r = a.data.bool_val  != b.data.bool_val;  break;
                         case VALUE_CHAR:  r = a.data.char_val  != b.data.char_val;  break;
+                        case VALUE_STRING:
+                            r = (a.data.string_val && b.data.string_val)
+                                ? !!strcmp(a.data.string_val, b.data.string_val)
+                                : (a.data.string_val != b.data.string_val);
+                            break;
                         case VALUE_NULL:  r = false; break;
                         default: break;
                     }
@@ -534,9 +594,15 @@ int vm_execute(VM *vm) {
                 frame->local_capacity = (size_t)local_cap;
                 for (int i = 0; i < local_cap; i++) frame->locals[i] = value_null();
 
-                /* Move arguments (already on stack) into local slots */
-                for (int i = (int)argc - 1; i >= 0; i--)
-                    if (vm->stack_top > 0) frame->locals[i] = vm_pop(vm);
+                /*
+                 * Move arguments from the stack into local slots.
+                 * Parameters must be owned — value_own_copy() copies any
+                 * borrowed string, is a no-op for owned ones.
+                 */
+                for (int i = (int)argc - 1; i >= 0; i--) {
+                    if (vm->stack_top > 0)
+                        frame->locals[i] = value_own_copy(vm_pop(vm));
+                }
 
                 vm->pc = fe->start_ip;
                 continue;
@@ -553,19 +619,35 @@ int vm_execute(VM *vm) {
                     break;
                 }
 
-                CallFrame *frame = &vm->frames[--vm->frame_top];
+                CallFrame *frame  = &vm->frames[--vm->frame_top];
                 uint32_t   ret_ip = frame->return_ip;
 
-                /* Free all locals in the returning frame */
+                /* Free all locals (owned strings freed, borrowed skipped) */
                 for (size_t i = 0; i < frame->local_count; i++)
                     value_free(frame->locals[i]);
                 ocl_free(frame->locals);
 
-                /* Discard any leftover stack values from the frame */
+                /* Discard any leftover stack values from within this frame */
                 while (vm->stack_top > frame->stack_base)
                     vm_pop_free(vm);
 
-                vm_push(vm, ret_val);
+                /*
+                 * The return value must be owned before crossing the frame
+                 * boundary — if it was a borrowed view of a local that we
+                 * just freed above, we would have a dangling pointer.
+                 *
+                 * value_own_copy() behaviour:
+                 *   borrowed string → allocates and returns a fresh owned copy
+                 *   owned string    → returns the value unchanged (no extra alloc)
+                 *   non-string      → returns the value unchanged
+                 *
+                 * In the borrowed case the original ret_val is just a pointer
+                 * into freed memory — we must not call value_free() on it.
+                 * In the owned case the Value is moved onto the stack as-is.
+                 * Either way no double-free occurs.
+                 */
+                vm_push(vm, value_own_copy(ret_val));
+
                 vm->pc = ret_ip;
                 continue;
             }
@@ -608,7 +690,7 @@ int vm_execute(VM *vm) {
                     case VALUE_FLOAT:  result = (int64_t)a.data.float_val; break;
                     case VALUE_BOOL:   result = a.data.bool_val ? 1 : 0; break;
                     case VALUE_STRING: result = a.data.string_val
-                                           ? (int64_t)strtoll(a.data.string_val, NULL, 10) : 0; break;
+                                          ? (int64_t)strtoll(a.data.string_val, NULL, 10) : 0; break;
                     default:           result = 0; break;
                 }
                 value_free(a);
@@ -630,7 +712,7 @@ int vm_execute(VM *vm) {
             }
             case OP_TO_STRING: {
                 Value a = vm_pop(vm);
-                Value s = value_string_copy(value_to_string(a));
+                Value s = value_string_copy(value_to_string(a));   /* always owned */
                 value_free(a);
                 vm_push(vm, s);
                 break;
@@ -643,7 +725,7 @@ int vm_execute(VM *vm) {
                 char  *s   = ocl_malloc(len + 1);
                 strcpy(s, as); strcat(s, bs);
                 value_free(a); value_free(b);
-                vm_push(vm, value_string(s));
+                vm_push(vm, value_string(s));   /* owned */
                 break;
             }
 
