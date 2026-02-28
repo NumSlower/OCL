@@ -151,9 +151,12 @@ Token lexer_next_token(Lexer *l) {
     int start_line = l->line, start_col = l->column;
     advance(l);
     switch (c) {
-        case '+': return make_token(l, TOKEN_PLUS,      "+");
+        case '+':
+            if (cur(l) == '+') { advance(l); return make_token(l, TOKEN_PLUS_PLUS,   "++"); }
+            return make_token(l, TOKEN_PLUS, "+");
         case '-':
-            if (cur(l) == '>') { advance(l); return make_token(l, TOKEN_ARROW, "->"); }
+            if (cur(l) == '-') { advance(l); return make_token(l, TOKEN_MINUS_MINUS, "--"); }
+            if (cur(l) == '>') { advance(l); return make_token(l, TOKEN_ARROW,       "->"); }
             return make_token(l, TOKEN_MINUS, "-");
         case '*': return make_token(l, TOKEN_STAR,      "*");
         case '/': return make_token(l, TOKEN_SLASH,     "/");

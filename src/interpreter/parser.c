@@ -1,4 +1,3 @@
-
 #include "parser.h"
 #include "common.h"
 #include <stdio.h>
@@ -157,7 +156,56 @@ static ExprNode *parse_multiplication(Parser *p) {
     return e;
 }
 
+/*
+ * make_inc_dec — build the desugared assignment node for ++ / --.
+ *
+ * Both prefix and postfix desugar to:   name = name + 1   (or - 1).
+ * OCL has no concept of "expression value before vs after increment"
+ * at the statement level, so this simple desugaring is correct for
+ * all practical uses (loop increment, standalone statement).
+ *
+ * The identifier ExprNode passed in is consumed (used as both the
+ * LHS target and one operand of the addition), so do not free it
+ * separately — the resulting BinOpNode tree owns it.
+ */
+static ExprNode *make_inc_dec(SourceLocation loc, ExprNode *var, const char *op) {
+    /* right-hand side: var + 1  or  var - 1 */
+    ExprNode *one  = ast_create_literal(loc, value_int(1));
+
+    /* We need a second reference to the identifier for the RHS read.
+     * Duplicate the identifier name so each node owns its own string. */
+    char *dup_name = ocl_strdup(((IdentifierNode *)var)->name);
+    ExprNode *var2 = ast_create_identifier(loc, dup_name);
+
+    ExprNode *arith = ast_create_binary_op(loc, var2, op, one);   /* var + 1 */
+    return ast_create_binary_op(loc, var, "=", arith);            /* var = var + 1 */
+}
+
 static ExprNode *parse_unary(Parser *p) {
+    /* Prefix ++i */
+    if (match(p, TOKEN_PLUS_PLUS)) {
+        SourceLocation loc = prev_tok(p)->location;
+        Token *t = cur_tok(p);
+        if (t->type != TOKEN_IDENTIFIER) {
+            error_add(p->errors, ERROR_PARSER, loc, "Expected identifier after '++'");
+            return NULL;
+        }
+        char *name = dup_lexeme(t); p->current++;
+        ExprNode *var = ast_create_identifier(loc, name);
+        return make_inc_dec(loc, var, "+");
+    }
+    /* Prefix --i */
+    if (match(p, TOKEN_MINUS_MINUS)) {
+        SourceLocation loc = prev_tok(p)->location;
+        Token *t = cur_tok(p);
+        if (t->type != TOKEN_IDENTIFIER) {
+            error_add(p->errors, ERROR_PARSER, loc, "Expected identifier after '--'");
+            return NULL;
+        }
+        char *name = dup_lexeme(t); p->current++;
+        ExprNode *var = ast_create_identifier(loc, name);
+        return make_inc_dec(loc, var, "-");
+    }
     if (match(p, TOKEN_BANG)) {
         SourceLocation loc = prev_tok(p)->location;
         UnaryOpNode *u = ocl_malloc(sizeof(UnaryOpNode));
@@ -203,6 +251,16 @@ static ExprNode *parse_call_expr(Parser *p) {
         ocl_free(id->name); ocl_free(id);
         return ast_create_call(loc, fname, args, arg_cnt);
     }
+
+    /* Postfix i++ / i-- */
+    if (expr->base.type == AST_IDENTIFIER) {
+        SourceLocation loc = expr->base.location;
+        if (match(p, TOKEN_PLUS_PLUS))
+            return make_inc_dec(loc, expr, "+");
+        if (match(p, TOKEN_MINUS_MINUS))
+            return make_inc_dec(loc, expr, "-");
+    }
+
     while (match(p, TOKEN_LBRACKET)) {
         SourceLocation loc = prev_tok(p)->location;
         ExprNode *index = parse_expression(p);
@@ -222,7 +280,6 @@ static ExprNode *parse_primary(Parser *p) {
     if (check(p, TOKEN_INT))   { int64_t v = t->value.int_value; p->current++; return ast_create_literal(loc, value_int(v)); }
     if (check(p, TOKEN_FLOAT)) { 
         double v = t->value.float_value;
-
         p->current++; return ast_create_literal(loc, value_float(v)); 
     }
     if (check(p, TOKEN_STRING)) {
