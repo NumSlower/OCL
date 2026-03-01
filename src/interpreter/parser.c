@@ -584,7 +584,12 @@ ProgramNode *parser_parse(Parser *p) {
                     }
                 }
                 ocl_free(resolved);
+            } else {
+                error_add(p->errors, ERROR_PARSER, import_node->location,
+                          "Import not found: '%s'", imp->filename);
             }
+
+
             /* Keep the Import node itself (for the type checker / codegen to ignore) */
             prog->nodes = ocl_realloc(prog->nodes, (prog->node_count+1)*sizeof(ASTNode *));
             prog->nodes[prog->node_count++] = import_node;
