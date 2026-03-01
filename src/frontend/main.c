@@ -1,101 +1,190 @@
-#define _POSIX_C_SOURCE 199309L
+/*
+ * main.c — OCL interpreter entry point
+ *
+ * Pipeline:
+ *   source text → Lexer → tokens → Parser → AST → TypeChecker → AST
+ *              → CodeGenerator → Bytecode → VM → result
+ */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <time.h>
+
+#include "common.h"
+#include "errors.h"
 #include "lexer.h"
 #include "parser.h"
 #include "type_checker.h"
-#include "errors.h"
-#include "bytecode.h"
 #include "codegen.h"
+#include "bytecode.h"
 #include "vm.h"
-#include "common.h"
+#include "ocl_stdlib.h"
 
-static void print_usage(const char *program_name) {
-    printf("Usage: %s [options] <source_file.ocl>\n", program_name);
-    printf("Options:\n  --time    Print execution time\n");
+/* ── Helpers ──────────────────────────────────────────────────────── */
+
+static char *read_file(const char *path) {
+    FILE *f = fopen(path, "rb");
+    if (!f) { fprintf(stderr, "Error: cannot open '%s'\n", path); return NULL; }
+    fseek(f, 0, SEEK_END);
+    long size = ftell(f);
+    rewind(f);
+    char *buf = ocl_malloc((size_t)size + 1);
+    size_t read = fread(buf, 1, (size_t)size, f);
+    buf[read] = '\0';
+    fclose(f);
+    return buf;
 }
 
-static double now_seconds(void) {
-    struct timespec ts;
-    clock_gettime(CLOCK_MONOTONIC, &ts);
-    return (double)ts.tv_sec + (double)ts.tv_nsec * 1e-9;
+static void print_usage(const char *prog) {
+    fprintf(stderr,
+        "Usage: %s [options] <file.ocl>\n"
+        "Options:\n"
+        "  --dump-tokens    Print lexer tokens and exit\n"
+        "  --dump-ast       Print AST and exit\n"
+        "  --dump-bytecode  Print bytecode disassembly and exit\n"
+        "  --no-typecheck   Skip type checker\n"
+        "  -h, --help       Show this help\n",
+        prog);
 }
+
+/* ── Main ──────────────────────────────────────────────────────────── */
 
 int main(int argc, char *argv[]) {
-    const char *filename = NULL; bool show_time = false;
+    const char *filename    = NULL;
+    bool dump_tokens        = false;
+    bool dump_ast           = false;
+    bool dump_bytecode      = false;
+    bool skip_typecheck     = false;
+
     for (int i = 1; i < argc; i++) {
-        if (strcmp(argv[i], "--time") == 0) show_time = true;
-        else if (argv[i][0] == '-') { fprintf(stderr, "ERROR: Unknown option '%s'\n", argv[i]); print_usage(argv[0]); return 1; }
-        else { if (filename) { fprintf(stderr, "ERROR: Multiple source files\n"); return 1; } filename = argv[i]; }
+        if      (!strcmp(argv[i], "--dump-tokens"))    dump_tokens    = true;
+        else if (!strcmp(argv[i], "--dump-ast"))       dump_ast       = true;
+        else if (!strcmp(argv[i], "--dump-bytecode"))  dump_bytecode  = true;
+        else if (!strcmp(argv[i], "--no-typecheck"))   skip_typecheck = true;
+        else if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help")) {
+            print_usage(argv[0]); return 0;
+        } else if (argv[i][0] != '-') {
+            filename = argv[i];
+        } else {
+            fprintf(stderr, "Unknown option: %s\n", argv[i]);
+            print_usage(argv[0]);
+            return 1;
+        }
     }
-    if (!filename) { print_usage(argv[0]); return 1; }
 
-    FILE *file = fopen(filename, "r");
-    if (!file) { fprintf(stderr, "ERROR: Could not open file '%s'\n", filename); return 1; }
-    fseek(file, 0, SEEK_END); long file_size = ftell(file); fseek(file, 0, SEEK_SET);
-    char *source = ocl_malloc((size_t)file_size + 1);
-    size_t bytes_read = fread(source, 1, (size_t)file_size, file);
-    source[bytes_read] = '\0'; fclose(file);
+    if (!filename) {
+        print_usage(argv[0]);
+        return 1;
+    }
 
+    /* 1. Read source */
+    char *source = read_file(filename);
+    if (!source) return 1;
+
+    int exit_code = 0;
     ErrorCollector *errors = error_collector_create();
 
+    /* 2. Lex */
     Lexer *lexer = lexer_create(source, filename);
     size_t token_count = 0;
     Token *tokens = lexer_tokenize_all(lexer, &token_count);
-    lexer_free(lexer);
 
-    if (error_has_errors(errors)) {
-        error_print_all(errors); tokens_free(tokens, token_count);
-        ocl_free(source); error_collector_free(errors); return 1;
+    if (dump_tokens) {
+        for (size_t i = 0; i < token_count; i++) {
+            printf("[%4zu] line %-4d type %-20d  '%s'\n",
+                   i, tokens[i].location.line, tokens[i].type,
+                   tokens[i].lexeme ? tokens[i].lexeme : "");
+        }
+        goto cleanup_tokens;
     }
 
+    /* Check for lex errors — lexer produces TOKEN_ERROR entries */
+    {
+        bool lex_err = false;
+        for (size_t i = 0; i < token_count; i++) {
+            if (tokens[i].type == TOKEN_ERROR) {
+                fprintf(stderr, "Lex error at %s:%d:%d: %s\n",
+                        tokens[i].location.filename ? tokens[i].location.filename : filename,
+                        tokens[i].location.line, tokens[i].location.column,
+                        tokens[i].lexeme ? tokens[i].lexeme : "unknown");
+                lex_err = true;
+            }
+        }
+        if (lex_err) { exit_code = 1; goto cleanup_tokens; }
+    }
+
+    /* 3. Parse */
     Parser *parser = parser_create(tokens, token_count, filename, errors);
     ProgramNode *program = parser_parse(parser);
     parser_free(parser);
 
+    if (dump_ast && program) {
+        /* ast_print(program); */   /* uncomment if you implement ast_print */
+        fprintf(stderr, "(--dump-ast: ast_print not implemented)\n");
+        goto cleanup_ast;
+    }
+
     if (error_has_errors(errors)) {
-        error_print_all(errors); tokens_free(tokens, token_count);
-        ocl_free(source); ast_free((ASTNode *)program); error_collector_free(errors); return 1;
-    }
-    tokens_free(tokens, token_count); tokens = NULL;
-
-    TypeChecker *type_checker = type_checker_create(errors);
-    bool type_check_ok = type_checker_check(type_checker, program);
-    type_checker_free(type_checker);
-
-    if (!type_check_ok || error_has_errors(errors)) {
-        error_print_all(errors); ocl_free(source);
-        ast_free((ASTNode *)program); error_collector_free(errors); return 1;
+        fprintf(stderr, "Parse errors:\n");
+        error_print_all(errors);
+        exit_code = 1;
+        goto cleanup_ast;
     }
 
+    /* 4. Type check (optional) */
+    if (!skip_typecheck && program) {
+        TypeChecker *tc = type_checker_create(errors);
+        type_checker_check(tc, program);
+        type_checker_free(tc);
+
+        /* Print warnings even if no errors */
+        if (error_get_count(errors) > 0 || error_has_errors(errors)) {
+            error_print_all(errors);
+        }
+
+        if (error_has_errors(errors)) {
+            exit_code = 1;
+            goto cleanup_ast;
+        }
+    }
+
+    /* 5. Code generation */
     Bytecode *bytecode = bytecode_create();
-    CodeGenerator *codegen = codegen_create(errors);
-    bool codegen_ok = codegen_generate(codegen, program, bytecode);
-    codegen_free(codegen);
-    ast_free((ASTNode *)program); program = NULL;
+    CodeGenerator *gen = codegen_create(errors);
+    bool ok = codegen_generate(gen, program, bytecode);
+    codegen_free(gen);
 
-    if (!codegen_ok || error_has_errors(errors)) {
-        error_print_all(errors); ocl_free(source);
-        bytecode_free(bytecode); error_collector_free(errors); return 1;
+    if (!ok || error_has_errors(errors)) {
+        fprintf(stderr, "Codegen errors:\n");
+        error_print_all(errors);
+        exit_code = 1;
+        bytecode_free(bytecode);
+        goto cleanup_ast;
     }
 
-    double t_start = show_time ? now_seconds() : 0.0;
+    if (dump_bytecode) {
+        bytecode_dump(bytecode);
+        bytecode_free(bytecode);
+        goto cleanup_ast;
+    }
+
+    /* 6. Execute */
+    stdlib_init();
     VM *vm = vm_create(bytecode);
-    int exit_code = vm_execute(vm);
-    double t_end = show_time ? now_seconds() : 0.0;
+    exit_code = vm_execute(vm);
     vm_free(vm);
+    stdlib_cleanup();
     bytecode_free(bytecode);
 
-    if (show_time) {
-        double elapsed = t_end - t_start;
-        if (elapsed < 1e-3) fprintf(stderr, "\n[time] %.3f µs\n", elapsed * 1e6);
-        else if (elapsed < 1.0) fprintf(stderr, "\n[time] %.3f ms\n", elapsed * 1e3);
-        else fprintf(stderr, "\n[time] %.6f s\n", elapsed);
-    }
+cleanup_ast:
+    if (program) ast_free((ASTNode *)program);
 
-    ocl_free(source);
+cleanup_tokens:
+    tokens_free(tokens, token_count);
+    lexer_free(lexer);
+
     error_collector_free(errors);
+    ocl_free(source);
+
     return exit_code;
 }

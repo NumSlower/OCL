@@ -95,6 +95,7 @@ bool   value_is_truthy(Value v);
  * For all other types: no-op (no heap allocation).
  */
 void   value_free(Value v);
+const char *value_type_name(ValueType t);
 
 char  *value_to_string(Value v);
 
