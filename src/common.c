@@ -9,6 +9,8 @@ OclArray *ocl_array_new(size_t initial_cap) {
     OclArray *a = ocl_malloc(sizeof(OclArray));
     a->capacity = initial_cap > 0 ? initial_cap : 8;
     a->elements = ocl_malloc(a->capacity * sizeof(Value));
+    /* Zero-initialise every slot so value_free sees valid value_null()s */
+    for (size_t i = 0; i < a->capacity; i++) a->elements[i] = value_null();
     a->length   = 0;
     a->refcount = 0;
     return a;

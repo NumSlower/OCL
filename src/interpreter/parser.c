@@ -342,8 +342,12 @@ static ASTNode *parse_statement(Parser *p) {
     if (match(p, TOKEN_DECLARE)) {
         Token name_tok = consume(p, TOKEN_IDENTIFIER, "Expected identifier after 'declare'");
         char *name = dup_lexeme(&name_tok);
-        TypeNode *type = ast_create_type(TYPE_UNKNOWN, 0);
-        if (match(p, TOKEN_COLON)) type = parse_type(p);
+        TypeNode *type = NULL;
+        if (match(p, TOKEN_COLON)) {
+            type = parse_type(p);
+        } else {
+            type = ast_create_type(TYPE_UNKNOWN, 0);
+        }
         match(p, TOKEN_SEMICOLON);
         DeclareNode *dn = ocl_malloc(sizeof(DeclareNode));
         dn->base.type = AST_DECLARE; dn->base.location = loc;
