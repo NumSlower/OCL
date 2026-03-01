@@ -241,7 +241,14 @@ int vm_execute(VM *vm) {
         case OP_STORE_VAR: {
             CallFrame *f = current_frame(vm);
             if (f) {
-                Value v = value_own_copy(vm_pop(vm));
+                /* Stack values are already owned; value_own_copy only needed to
+                   convert string borrows to owned copies — it must NOT be called
+                   for arrays because value_array() already retained and a second
+                   retain here would leave the refcount one too high. */
+                Value raw = vm_pop(vm);
+                Value v = (raw.type == VALUE_STRING && !raw.owned)
+                          ? value_string_copy(raw.data.string_val)
+                          : raw;
                 ensure_local(vm, f, ins.operand1);
                 value_free(f->locals[ins.operand1]);
                 f->locals[ins.operand1] = v;
@@ -258,7 +265,10 @@ int vm_execute(VM *vm) {
             }
             break;
         case OP_STORE_GLOBAL: {
-            Value v = value_own_copy(vm_pop(vm));
+            Value raw = vm_pop(vm);
+            Value v = (raw.type == VALUE_STRING && !raw.owned)
+                      ? value_string_copy(raw.data.string_val)
+                      : raw;
             ensure_global(vm, ins.operand1);
             value_free(vm->globals[ins.operand1]);
             vm->globals[ins.operand1] = v;
@@ -415,7 +425,10 @@ int vm_execute(VM *vm) {
                 if (ret_raw.type==VALUE_INT) vm->exit_code=(int)ret_raw.data.int_val;
                 value_free(ret_raw); vm->halted=true; break;
             }
-            Value ret_owned=value_own_copy(ret_raw);
+            /* Take ownership without extra retain (same logic as STORE_VAR) */
+            Value ret_owned = (ret_raw.type == VALUE_STRING && !ret_raw.owned)
+                              ? value_string_copy(ret_raw.data.string_val)
+                              : ret_raw;
             CallFrame *frame=&vm->frames[--vm->frame_top];
             uint32_t ret_ip=frame->return_ip;
             for(size_t i=0;i<frame->local_count;i++) value_free(frame->locals[i]);
@@ -516,8 +529,8 @@ int vm_execute(VM *vm) {
             for (uint32_t i = count; i > 0; i--) tmp[i-1] = vm_pop(vm);
             for (uint32_t i = 0; i < count; i++) { ocl_array_push(arr, tmp[i]); value_free(tmp[i]); }
             ocl_free(tmp);
+            /* value_array() retains arr; no extra release needed here */
             vm_push(vm, value_array(arr));
-            ocl_array_release(arr); /* release our local ref; vm_push retained it */
             break;
         }
 

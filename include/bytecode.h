@@ -11,7 +11,11 @@ typedef enum {
     OP_CALL, OP_RETURN, OP_HALT,
     OP_CALL_BUILTIN,
     OP_TO_INT, OP_TO_FLOAT, OP_TO_STRING, OP_CONCAT,
-    OP_ARRAY_NEW, OP_ARRAY_GET, OP_ARRAY_SET, OP_ARRAY_LEN,
+    OP_ARRAY_NEW,   /* operand1 = element_count (popped from stack) */
+    OP_ARRAY_GET,   /* stack: [array, index] -> value                */
+    OP_ARRAY_SET,   /* stack: [array, index, value]                  */
+    OP_ARRAY_LEN,   /* stack: [array] -> int                         */
+    OP_ARRAY_PUSH,  /* stack: [array, value] -> array (in-place)     */
 } Opcode;
 typedef struct { Opcode opcode; uint32_t operand1; uint32_t operand2; SourceLocation location; } Instruction;
 typedef struct { char *name; uint32_t start_ip; int param_count; int local_count; } FuncEntry;

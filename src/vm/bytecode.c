@@ -31,9 +31,9 @@ void bytecode_emit(Bytecode *bc, Opcode op, uint32_t op1, uint32_t op2, SourceLo
     ins->opcode = op; ins->operand1 = op1; ins->operand2 = op2; ins->location = loc;
 }
 
-void bytecode_patch(Bytecode *bc, uint32_t index, uint32_t new_operand1) {
+void bytecode_patch(Bytecode *bc, uint32_t index, uint32_t new_op1) {
     if (!bc || index >= (uint32_t)bc->instruction_count) return;
-    bc->instructions[index].operand1 = new_operand1;
+    bc->instructions[index].operand1 = new_op1;
 }
 
 uint32_t bytecode_add_constant(Bytecode *bc, Value v) {
@@ -76,6 +76,6 @@ int bytecode_find_function(Bytecode *bc, const char *name) {
 void bytecode_dump(Bytecode *bc) {
     if (!bc) return;
     printf("=== Bytecode Disassembly ===\n");
-    printf("Instructions: %zu\nConstants: %zu\nFunctions: %zu\n\n",
+    printf("Instructions: %zu  Constants: %zu  Functions: %zu\n\n",
            bc->instruction_count, bc->constant_count, bc->function_count);
 }

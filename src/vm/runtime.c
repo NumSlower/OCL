@@ -14,17 +14,10 @@ CallFrame *runtime_frame_alloc(int total_locals) {
     return f;
 }
 
-void runtime_frame_free(CallFrame *f) {
-    if (!f) return;
-    ocl_free(f->locals);
-    ocl_free(f);
-}
+void runtime_frame_free(CallFrame *f) { if (!f) return; ocl_free(f->locals); ocl_free(f); }
 
 void runtime_ensure_local(CallFrame *f, uint32_t idx) {
-    if (idx < (uint32_t)f->local_capacity) {
-        if (idx >= (uint32_t)f->local_count) f->local_count = idx + 1;
-        return;
-    }
+    if (idx < (uint32_t)f->local_capacity) { if (idx>=(uint32_t)f->local_count) f->local_count=idx+1; return; }
     uint32_t new_cap = idx + 16;
     f->locals = ocl_realloc(f->locals, new_cap * sizeof(Value));
     for (uint32_t i = (uint32_t)f->local_capacity; i < new_cap; i++) f->locals[i] = value_null();
@@ -52,6 +45,5 @@ void runtime_error(VM *vm, const char *fmt, ...) {
 
 void runtime_stack_trace(VM *vm) {
     if (!vm) return;
-    fprintf(stderr, "--- Stack trace ---\n");
-    fprintf(stderr, "  [top] ip=%u\n", vm->pc);
+    fprintf(stderr, "--- Stack trace ---\n  [top] ip=%u\n", vm->pc);
 }

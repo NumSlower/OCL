@@ -38,6 +38,13 @@ struct VM; typedef struct VM VM;
 #define BUILTIN_IS_FLOAT    54
 #define BUILTIN_IS_STRING   55
 #define BUILTIN_IS_BOOL     56
+/* Array builtins */
+#define BUILTIN_ARRAY_NEW   60
+#define BUILTIN_ARRAY_PUSH  61
+#define BUILTIN_ARRAY_POP   62
+#define BUILTIN_ARRAY_GET   63
+#define BUILTIN_ARRAY_SET   64
+#define BUILTIN_ARRAY_LEN   65
 typedef struct { int id; const char *name; void (*fn)(VM *vm, int argc); } StdlibEntry;
 void  stdlib_init(void);
 void  stdlib_cleanup(void);
