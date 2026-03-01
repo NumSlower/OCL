@@ -48,6 +48,15 @@ The resulting binary is `./ocl`.
 # Run with execution timing
 ./ocl --time path/to/program.ocl
 
+# Print all lexer tokens and exit
+./ocl --dump-tokens path/to/program.ocl
+
+# Print bytecode disassembly and exit
+./ocl --dump-bytecode path/to/program.ocl
+
+# Skip the type checker
+./ocl --no-typecheck path/to/program.ocl
+
 # Build and run via make
 make run FILE=path/to/program.ocl
 
@@ -62,6 +71,10 @@ Tests live in `test/*.ocl`. Each test may have a paired `test/*.expected` file c
 ---
 
 ## Language Reference
+
+See [LANGUAGE_REFERENCE.md](LANGUAGE_REFERENCE.md) for the full language reference, including syntax, operators, control flow, functions, arrays, built-ins, and known edge cases.
+
+A quick summary follows below.
 
 ### Variables
 
@@ -80,7 +93,7 @@ Type name;          /# declaration without initialiser #/
 
 **Types:** `Int` / `int`, `Float` / `float`, `String` / `string`, `Bool` / `bool`, `Char` / `char`
 
-Optional bit-width suffix is supported for integers: `int32`, `int64` (default is 64-bit).
+Optional bit-width suffix is accepted for integers: `int32`, `int64` (all integers are 64-bit at runtime).
 
 ```ocl
 Let x:Int = 42;
@@ -123,8 +136,7 @@ func void doSomething(name:string) {
 
 - Return type is written **before** the function name.
 - If no return type is specified, the function is `void`.
-- A function with a declared return type must end with a `return` statement.
-- `main()` is the entry point. If it exists, it is called automatically.
+- `main()` is the entry point. If it exists, it is called automatically after global initialisers.
 
 ### Control Flow
 
@@ -161,6 +173,16 @@ while (true) {
 }
 ```
 
+### Arrays
+
+```ocl
+Let nums = [1, 2, 3];
+Let first = nums[0];
+nums[0] = 99;
+arrayPush(nums, 4);
+Let len = arrayLen(nums);
+```
+
 ### Operators
 
 | Category     | Operators                              |
@@ -169,8 +191,10 @@ while (true) {
 | Comparison   | `==`, `!=`, `<`, `<=`, `>`, `>=`       |
 | Logical      | `&&`, `\|\|`, `!`                      |
 | Assignment   | `=`                                    |
-| Increment    | `++`, `--` (prefix and postfix; desugar to `x = x + 1`) |
+| Increment    | `++`, `--` (prefix and postfix; desugar to `x = x ± 1`) |
 | String concat| `+` (when both operands are strings)   |
+
+> **Note:** `&&` and `||` are **not short-circuit** — both operands are always evaluated.
 
 ### Print / Printf
 
@@ -191,9 +215,10 @@ printf("Pi is approximately %f\n": 3.14159);
 
 ```ocl
 Import <CoreSX.sxh>
+Import <mylib.ocl>
 ```
 
-Import statements are parsed and recognised but not currently resolved at runtime (the standard header `CoreSX.sxh` declares `printf` which is already built in).
+The parser searches for the file relative to the importing file's directory, then under `ocl_headers/` and `stdlib_headers/`. If found, the file is inlined at parse time. If not found, a parse error is raised.
 
 ---
 
@@ -262,6 +287,9 @@ Built-in functions are resolved at compile time by name and dispatched via `OP_C
 ### String
 `strLen`, `substr`, `toUpperCase`, `toLowerCase`, `strContains`, `strIndexOf`, `strReplace`, `strTrim`, `strSplit`
 
+### Array
+`arrayNew`, `arrayPush`, `arrayPop`, `arrayGet`, `arraySet`, `arrayLen`
+
 ### Type Conversions
 `toInt`, `toFloat`, `toString`, `toBool`, `typeOf`
 
@@ -275,15 +303,17 @@ Built-in functions are resolved at compile time by name and dispatched via `OP_C
 - ✅ **Lexer** — full tokenisation including block comments (`/# … #/`), string/char literals with escape sequences, integer and float literals, all operators, and all keywords
 - ✅ **Parser** — recursive-descent parser producing a complete AST for:
   - `Let` and C-style variable declarations
+  - `declare` keyword (forward-declares a variable to the type checker)
   - Function declarations with typed parameters and return types
-  - `if` / `else if` / `else`
+  - `if` / `else if` / `else` (flat chain, no synthetic wrapper nodes)
   - `while` loops
-  - `for` loops (C-style init/condition/increment)
+  - `for` loops (C-style init/condition/increment; both `Let` and C-style init)
   - `return`, `break`, `continue` statements
   - Full expression hierarchy (assignment, logical, comparison, arithmetic, unary, call, index)
   - Prefix and postfix `++` / `--` (desugared to `x = x ± 1`)
-  - Array index access (`a[i]`)
-  - `Import` statements
+  - Array literal syntax (`[1, 2, 3]`)
+  - Chained array index access (`a[i][j]`)
+  - `Import` statements with file resolution and inline merging
 - ✅ **Type Checker** — two-pass scoped symbol table; detects undefined variables/functions, argument count mismatches, duplicate declarations
 - ✅ **Code Generator** — full AST-to-bytecode emission including:
   - Global and local variable slots
@@ -291,6 +321,9 @@ Built-in functions are resolved at compile time by name and dispatched via `OP_C
   - Backpatched jump instructions for branches and loops
   - Built-in function resolution by name
   - `break` and `continue` via a loop-context stack with full backpatching
+  - Array literals emitting `OP_ARRAY_NEW` with element count
+  - Array index reads/writes emitting `OP_ARRAY_GET` / `OP_ARRAY_SET`
+  - `declare` nodes emitting a null-initialised variable slot
 - ✅ **VM** — stack-based bytecode interpreter with:
   - Full arithmetic (`+`, `-`, `*`, `/`, `%`) for int and float, including string concatenation via `+`
   - All comparison and logical operators
@@ -299,11 +332,15 @@ Built-in functions are resolved at compile time by name and dispatched via `OP_C
   - Global variable load/store
   - Type coercions (`OP_TO_INT`, `OP_TO_FLOAT`, `OP_TO_STRING`)
   - `print` and `printf` with format specifiers (`%s`, `%d`, `%f`, `%b`, `%%`)
-  - Division-by-zero detection
+  - Full array opcodes: `OP_ARRAY_NEW`, `OP_ARRAY_GET`, `OP_ARRAY_SET`, `OP_ARRAY_LEN`
+  - Division-by-zero and modulo-by-zero detection
   - Stack overflow / underflow detection
   - `OP_HALT` with exit code propagation
 - ✅ **`break` / `continue`** — fully implemented end-to-end: parsed, represented in the AST, and emitted by the code generator using a per-loop `LoopContext` stack. `break` jumps to the first instruction after the loop; `continue` jumps to the backwards-jump / increment point for `while` / `for` loops respectively. Both are backpatched once the loop body has been fully emitted.
-- ✅ **Standard Library** — all 34 built-in functions listed above
+- ✅ **Arrays** — array literals, index access (`a[i]`), chained index access, and all four array opcodes are fully implemented in the VM. The `arrayNew`, `arrayPush`, `arrayPop`, `arrayGet`, `arraySet`, and `arrayLen` built-ins are also implemented.
+- ✅ **Import resolution** — `Import <file>` searches for the named file relative to the importing file's directory, then under `ocl_headers/` and `stdlib_headers/`. Found files are lexed and merged into the AST at parse time.
+- ✅ **`declare` keyword** — parsed and code-generated; creates a null-initialised variable slot and registers the name/type with the type checker.
+- ✅ **Standard Library** — all 40 built-in functions listed above
 - ✅ **Error reporting** — `ErrorCollector` accumulates lexer, parser, type, and runtime errors with source location (`file:line:col`)
 - ✅ **`--time` flag** — reports execution time in µs / ms / s
 - ✅ **`make test`** — automated `.ocl` / `.expected` test runner
@@ -312,17 +349,18 @@ Built-in functions are resolved at compile time by name and dispatched via `OP_C
 
 ## What's Not Yet Implemented / Known Limitations
 
-- ❌ **Arrays** — `OP_ARRAY_NEW`, `OP_ARRAY_GET`, `OP_ARRAY_SET`, `OP_ARRAY_LEN` are defined in the opcode table and array literals/index access exist in the AST, but the VM prints a "not yet implemented" error for all array opcodes.
-- ❌ **Import resolution** — `Import <file.sxh>` is parsed but the referenced file is never loaded or executed.
-- ❌ **`declare` keyword** — tokenised and parsed as `AST_DECLARE` but codegen ignores it.
-- ❌ **Else-if short-circuit / fall-through** — `else if` is supported but implemented by wrapping the inner `if` in a synthetic block; semantics are correct, just slightly heavier than necessary.
+- ❌ **`strSplit` does not return tokens** — `strSplit(s, delim)` returns the count of parts as an `Int`, not an array of strings. The individual tokens are not accessible from OCL code.
 - ❌ **Unit tests** — `test/test_lexer.c`, `test/test_parser.c`, `test/test_type_checker.c`, and `test/test_vm.c` exist with placeholder `TODO` bodies. The Makefile's `test` target runs `.ocl` integration tests only, not these C unit tests.
-- ❌ **String escape in `printf` format** — escape sequences inside format strings are processed at runtime in the VM but are already interpreted by the lexer, meaning `\n` in a `printf` format literal is a literal newline at the source level; this is intentional but can surprise users writing `printf("line1\nline2")`.
-- ❌ **Closures / first-class functions** — functions are top-level only; no lambdas, no function values.
+- ❌ **Closures / first-class functions** — functions are top-level only; no lambdas, no function values, no passing functions as arguments.
 - ❌ **Structs / custom types** — no user-defined types.
-- ❌ **Garbage collection** — string values on the VM stack are not reference-counted or GC'd. Strings produced by built-ins (`toUpperCase`, `strReplace`, etc.) and by the string `+` operator are heap-allocated and freed when the stack frame is torn down, but strings stored in the constants table are freed only when `bytecode_free()` is called. In long-running programs that generate many dynamic strings this could accumulate.
-- ⚠️ **`printf` colon syntax** — `printf("fmt": arg1, arg2)` is OCL-specific. The more standard comma syntax (`printf("fmt", arg1, arg2)`) also works because the parser treats the first comma-separated argument as the format string.
-- ⚠️ **Type checker is advisory** — the type checker reports errors and returns `false` from `type_checker_check()`, but it does not prevent code generation or execution if you bypass the error check.
+- ❌ **Compound assignment operators** — `+=`, `-=`, `*=`, `/=` are not implemented. Use `x = x + 1` etc.
+- ❌ **Garbage collection** — string values on the VM stack are not reference-counted or GC'd. Strings produced by built-ins (`toUpperCase`, `strReplace`, etc.) and by the string `+` operator are heap-allocated and freed when the stack frame is torn down, but strings stored in the constants table are freed only when `bytecode_free()` is called. Long-running programs that generate many dynamic strings may accumulate memory.
+- ⚠️ **`&&` and `||` are not short-circuit** — both operands are always fully evaluated before the operator is applied. Guarding a potentially-faulting expression with `&&` (e.g. `ptr != null && ptr.field > 0`) does not protect against the right-hand side being evaluated.
+- ⚠️ **`value_to_string` uses a static buffer** — the internal conversion function writes to a single 512-byte static buffer. Printing deeply nested arrays (arrays of arrays) can corrupt output because inner and outer calls share the same buffer.
+- ⚠️ **`printf` colon syntax** — `printf("fmt": arg1, arg2)` is OCL-specific. A comma also works: `printf("fmt", arg1, arg2)`.
+- ⚠️ **Escape sequences are lexer-resolved** — `\n` and other escapes in string literals are converted to real characters when the source is tokenised. This is intentional but means there is no way to produce a string containing a literal two-character sequence `\n` from source code.
+- ⚠️ **Type checker is advisory** — the type checker reports errors and returns `false` from `type_checker_check()`, but it does not prevent code generation or execution if you bypass the error check (or pass `--no-typecheck`).
+- ⚠️ **Call stack depth** — the VM supports a maximum call depth of 256 frames (`VM_FRAMES_MAX`). Deep recursion beyond this produces a "call stack overflow" runtime error.
 
 ---
 
@@ -331,6 +369,10 @@ Built-in functions are resolved at compile time by name and dispatched via `OP_C
 ```
 .
 ├── Makefile
+├── README.md
+├── LANGUAGE_REFERENCE.md
+├── docs/
+│   └── INSTALL.md
 ├── include/
 │   ├── ast.h
 │   ├── bytecode.h
@@ -338,13 +380,13 @@ Built-in functions are resolved at compile time by name and dispatched via `OP_C
 │   ├── common.h
 │   ├── errors.h
 │   ├── lexer.h
+│   ├── ocl_stdlib.h      # OCL stdlib declarations
 │   ├── parser.h
 │   ├── runtime.h
-│   ├── stdlib.h          # OCL stdlib (shadows system stdlib.h — handled carefully)
 │   ├── type_checker.h
 │   └── vm.h
 ├── src/
-│   ├── common.c           # Value constructors, memory helpers
+│   ├── common.c           # Value constructors, array heap object, memory helpers
 │   ├── frontend/
 │   │   ├── errors.c       # ErrorCollector implementation
 │   │   └── main.c         # Entry point, pipeline orchestration
@@ -352,21 +394,18 @@ Built-in functions are resolved at compile time by name and dispatched via `OP_C
 │   │   ├── ast.c          # AST node constructors and recursive free
 │   │   ├── codegen.c      # AST → Bytecode code generator
 │   │   ├── lexer.c        # Tokeniser
-│   │   ├── parser.c       # Recursive-descent parser
+│   │   ├── parser.c       # Recursive-descent parser + import resolution
 │   │   └── type_checker.c # Symbol table & type inference
 │   ├── stdlib/
-│   │   └── stdlib.c       # Standard library built-in functions
+│   │   └── stdlib.c       # Standard library built-in functions (40 functions)
 │   └── vm/
 │       ├── bytecode.c     # Bytecode chunk management
 │       ├── runtime.c      # Frame/global helpers, error reporting
 │       └── vm.c           # Main execution loop
-├── test/
-│   ├── test_lexer.c       # (stub)
-│   ├── test_parser.c      # (stub)
-│   ├── test_type_checker.c# (stub)
-│   └── test_vm.c          # (stub)
-└── ocl files/             # Example and test .ocl programs
-    ├── main.ocl
-    ├── test.ocl
-    └── ...
+└── test/
+    ├── test_lexer.c       # (stub — TODO)
+    ├── test_parser.c      # (stub — TODO)
+    ├── test_type_checker.c# (stub — TODO)
+    └── test_vm.c          # (stub — TODO)
+
 ```
