@@ -152,6 +152,15 @@ for (int i = 0; i < 5; i = i + 1) {
 }
 ```
 
+**Break / continue:**
+```ocl
+while (true) {
+    if (done) { break; }
+    if (skip) { continue; }
+    doWork();
+}
+```
+
 ### Operators
 
 | Category     | Operators                              |
@@ -160,6 +169,7 @@ for (int i = 0; i < 5; i = i + 1) {
 | Comparison   | `==`, `!=`, `<`, `<=`, `>`, `>=`       |
 | Logical      | `&&`, `\|\|`, `!`                      |
 | Assignment   | `=`                                    |
+| Increment    | `++`, `--` (prefix and postfix; desugar to `x = x + 1`) |
 | String concat| `+` (when both operands are strings)   |
 
 ### Print / Printf
@@ -271,6 +281,7 @@ Built-in functions are resolved at compile time by name and dispatched via `OP_C
   - `for` loops (C-style init/condition/increment)
   - `return`, `break`, `continue` statements
   - Full expression hierarchy (assignment, logical, comparison, arithmetic, unary, call, index)
+  - Prefix and postfix `++` / `--` (desugared to `x = x ± 1`)
   - Array index access (`a[i]`)
   - `Import` statements
 - ✅ **Type Checker** — two-pass scoped symbol table; detects undefined variables/functions, argument count mismatches, duplicate declarations
@@ -279,6 +290,7 @@ Built-in functions are resolved at compile time by name and dispatched via `OP_C
   - Forward-reference function calls (two-pass registration)
   - Backpatched jump instructions for branches and loops
   - Built-in function resolution by name
+  - `break` and `continue` via a loop-context stack with full backpatching
 - ✅ **VM** — stack-based bytecode interpreter with:
   - Full arithmetic (`+`, `-`, `*`, `/`, `%`) for int and float, including string concatenation via `+`
   - All comparison and logical operators
@@ -290,6 +302,7 @@ Built-in functions are resolved at compile time by name and dispatched via `OP_C
   - Division-by-zero detection
   - Stack overflow / underflow detection
   - `OP_HALT` with exit code propagation
+- ✅ **`break` / `continue`** — fully implemented end-to-end: parsed, represented in the AST, and emitted by the code generator using a per-loop `LoopContext` stack. `break` jumps to the first instruction after the loop; `continue` jumps to the backwards-jump / increment point for `while` / `for` loops respectively. Both are backpatched once the loop body has been fully emitted.
 - ✅ **Standard Library** — all 34 built-in functions listed above
 - ✅ **Error reporting** — `ErrorCollector` accumulates lexer, parser, type, and runtime errors with source location (`file:line:col`)
 - ✅ **`--time` flag** — reports execution time in µs / ms / s
@@ -299,7 +312,6 @@ Built-in functions are resolved at compile time by name and dispatched via `OP_C
 
 ## What's Not Yet Implemented / Known Limitations
 
-- ❌ **`break` / `continue`** — parsed and represented in the AST but the codegen emits nothing for them. Loops cannot be exited early.
 - ❌ **Arrays** — `OP_ARRAY_NEW`, `OP_ARRAY_GET`, `OP_ARRAY_SET`, `OP_ARRAY_LEN` are defined in the opcode table and array literals/index access exist in the AST, but the VM prints a "not yet implemented" error for all array opcodes.
 - ❌ **Import resolution** — `Import <file.sxh>` is parsed but the referenced file is never loaded or executed.
 - ❌ **`declare` keyword** — tokenised and parsed as `AST_DECLARE` but codegen ignores it.
