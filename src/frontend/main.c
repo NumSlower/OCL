@@ -72,7 +72,10 @@ int main(int argc, char *argv[]) {
         bool lex_err = false;
         for (size_t i = 0; i < token_count; i++) {
             if (tokens[i].type == TOKEN_ERROR) {
-                fprintf(stderr, "Lex error at %s:%d:%d: %s\n", tokens[i].location.filename ? tokens[i].location.filename : filename, tokens[i].location.line, tokens[i].location.column, tokens[i].lexeme ? tokens[i].lexeme : "unknown");
+                fprintf(stderr, "Lex error at %s:%d:%d: %s\n",
+                        tokens[i].location.filename ? tokens[i].location.filename : filename,
+                        tokens[i].location.line, tokens[i].location.column,
+                        tokens[i].lexeme ? tokens[i].lexeme : "unknown");
                 lex_err = true;
             }
         }
@@ -91,11 +94,24 @@ int main(int argc, char *argv[]) {
             goto cleanup_tokens;
         }
 
+        /*
+         * Type checking — when errors are found we print them and stop.
+         * Codegen and execution are ONLY reached when the program is
+         * type-error-free (or --no-typecheck was passed explicitly).
+         */
         if (!skip_typecheck && program) {
             TypeChecker *tc = type_checker_create(errors);
             type_checker_check(tc, program);
+            int tc_errors = type_checker_get_error_count(tc);
             type_checker_free(tc);
-            if (error_has_errors(errors)) { error_print_all(errors); exit_code = 1; ast_free((ASTNode *)program); goto cleanup_tokens; }
+
+            if (tc_errors > 0 || error_has_errors(errors)) {
+                fprintf(stderr, "Type errors — compilation aborted:\n");
+                error_print_all(errors);
+                exit_code = 1;
+                ast_free((ASTNode *)program);
+                goto cleanup_tokens;
+            }
         }
 
         Bytecode *bytecode = bytecode_create();
@@ -110,7 +126,12 @@ int main(int argc, char *argv[]) {
             goto cleanup_tokens;
         }
 
-        if (dump_bytecode) { bytecode_dump(bytecode); bytecode_free(bytecode); if (program) ast_free((ASTNode *)program); goto cleanup_tokens; }
+        if (dump_bytecode) {
+            bytecode_dump(bytecode);
+            bytecode_free(bytecode);
+            if (program) ast_free((ASTNode *)program);
+            goto cleanup_tokens;
+        }
 
         stdlib_init();
         VM *vm = vm_create(bytecode);

@@ -5,7 +5,7 @@
 
 CC      := cc
 TARGET  := ocl
-VERSION := beta 0.1.0
+VERSION := beta 0.6.0
 
 # ── Directories ──────────────────────────────────────────────────────────────
 SRC_DIR     := src
