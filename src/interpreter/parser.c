@@ -35,7 +35,7 @@ static Token consume(Parser *p, TokenType t, const char *msg) {
     return *c;
 }
 
-static char *dup_lexeme(const Token *t) { if (!t->lexeme) return ocl_strdup(""); return ocl_strdup(t->lexeme); }
+static char *dup_lexeme(const Token *t) { return !t->lexeme ? ocl_strdup("") : ocl_strdup(t->lexeme); }
 
 static ASTNode  *parse_statement(Parser *p);
 static ExprNode *parse_expression(Parser *p);
@@ -156,55 +156,28 @@ static ExprNode *parse_multiplication(Parser *p) {
     return e;
 }
 
-/*
- * make_inc_dec — build the desugared assignment node for ++ / --.
- *
- * Both prefix and postfix desugar to:   name = name + 1   (or - 1).
- * OCL has no concept of "expression value before vs after increment"
- * at the statement level, so this simple desugaring is correct for
- * all practical uses (loop increment, standalone statement).
- *
- * The identifier ExprNode passed in is consumed (used as both the
- * LHS target and one operand of the addition), so do not free it
- * separately — the resulting BinOpNode tree owns it.
- */
 static ExprNode *make_inc_dec(SourceLocation loc, ExprNode *var, const char *op) {
-    /* right-hand side: var + 1  or  var - 1 */
     ExprNode *one  = ast_create_literal(loc, value_int(1));
-
-    /* We need a second reference to the identifier for the RHS read.
-     * Duplicate the identifier name so each node owns its own string. */
     char *dup_name = ocl_strdup(((IdentifierNode *)var)->name);
     ExprNode *var2 = ast_create_identifier(loc, dup_name);
-
-    ExprNode *arith = ast_create_binary_op(loc, var2, op, one);   /* var + 1 */
-    return ast_create_binary_op(loc, var, "=", arith);            /* var = var + 1 */
+    ExprNode *arith = ast_create_binary_op(loc, var2, op, one);
+    return ast_create_binary_op(loc, var, "=", arith);
 }
 
 static ExprNode *parse_unary(Parser *p) {
-    /* Prefix ++i */
     if (match(p, TOKEN_PLUS_PLUS)) {
         SourceLocation loc = prev_tok(p)->location;
         Token *t = cur_tok(p);
-        if (t->type != TOKEN_IDENTIFIER) {
-            error_add(p->errors, ERROR_PARSER, loc, "Expected identifier after '++'");
-            return NULL;
-        }
+        if (t->type != TOKEN_IDENTIFIER) { error_add(p->errors, ERROR_PARSER, loc, "Expected identifier after '++'"); return NULL; }
         char *name = dup_lexeme(t); p->current++;
-        ExprNode *var = ast_create_identifier(loc, name);
-        return make_inc_dec(loc, var, "+");
+        return make_inc_dec(loc, ast_create_identifier(loc, name), "+");
     }
-    /* Prefix --i */
     if (match(p, TOKEN_MINUS_MINUS)) {
         SourceLocation loc = prev_tok(p)->location;
         Token *t = cur_tok(p);
-        if (t->type != TOKEN_IDENTIFIER) {
-            error_add(p->errors, ERROR_PARSER, loc, "Expected identifier after '--'");
-            return NULL;
-        }
+        if (t->type != TOKEN_IDENTIFIER) { error_add(p->errors, ERROR_PARSER, loc, "Expected identifier after '--'"); return NULL; }
         char *name = dup_lexeme(t); p->current++;
-        ExprNode *var = ast_create_identifier(loc, name);
-        return make_inc_dec(loc, var, "-");
+        return make_inc_dec(loc, ast_create_identifier(loc, name), "-");
     }
     if (match(p, TOKEN_BANG)) {
         SourceLocation loc = prev_tok(p)->location;
@@ -224,6 +197,8 @@ static ExprNode *parse_unary(Parser *p) {
 static ExprNode *parse_call_expr(Parser *p) {
     ExprNode *expr = parse_primary(p);
     if (!expr) return NULL;
+
+    /* Function call */
     if (expr->base.type == AST_IDENTIFIER && check(p, TOKEN_LPAREN)) {
         IdentifierNode *id = (IdentifierNode *)expr;
         SourceLocation loc = expr->base.location;
@@ -252,23 +227,19 @@ static ExprNode *parse_call_expr(Parser *p) {
         return ast_create_call(loc, fname, args, arg_cnt);
     }
 
-    /* Postfix i++ / i-- */
+    /* Postfix ++ / -- */
     if (expr->base.type == AST_IDENTIFIER) {
         SourceLocation loc = expr->base.location;
-        if (match(p, TOKEN_PLUS_PLUS))
-            return make_inc_dec(loc, expr, "+");
-        if (match(p, TOKEN_MINUS_MINUS))
-            return make_inc_dec(loc, expr, "-");
+        if (match(p, TOKEN_PLUS_PLUS))  return make_inc_dec(loc, expr, "+");
+        if (match(p, TOKEN_MINUS_MINUS)) return make_inc_dec(loc, expr, "-");
     }
 
+    /* Index access: can chain: a[i][j] */
     while (match(p, TOKEN_LBRACKET)) {
         SourceLocation loc = prev_tok(p)->location;
         ExprNode *index = parse_expression(p);
         consume(p, TOKEN_RBRACKET, "Expected ']'");
-        ExprNode *node = ocl_malloc(sizeof(ExprNode));
-        node->base.type = AST_INDEX_ACCESS; node->base.location = loc;
-        node->index_access.array = expr; node->index_access.index = index;
-        expr = node;
+        expr = ast_create_index_access(loc, expr, index);
     }
     return expr;
 }
@@ -278,10 +249,7 @@ static ExprNode *parse_primary(Parser *p) {
     if (match(p, TOKEN_TRUE))  return ast_create_literal(loc, value_bool(true));
     if (match(p, TOKEN_FALSE)) return ast_create_literal(loc, value_bool(false));
     if (check(p, TOKEN_INT))   { int64_t v = t->value.int_value; p->current++; return ast_create_literal(loc, value_int(v)); }
-    if (check(p, TOKEN_FLOAT)) { 
-        double v = t->value.float_value;
-        p->current++; return ast_create_literal(loc, value_float(v)); 
-    }
+    if (check(p, TOKEN_FLOAT)) { double v = t->value.float_value; p->current++; return ast_create_literal(loc, value_float(v)); }
     if (check(p, TOKEN_STRING)) {
         char *s = ocl_strdup(t->value.string_value ? t->value.string_value : ""); p->current++;
         return ast_create_literal(loc, value_string(s));
@@ -292,6 +260,19 @@ static ExprNode *parse_primary(Parser *p) {
     }
     if (check(p, TOKEN_IDENTIFIER)) { char *name = dup_lexeme(t); p->current++; return ast_create_identifier(loc, name); }
     if (match(p, TOKEN_LPAREN)) { ExprNode *e = parse_expression(p); consume(p, TOKEN_RPAREN, "Expected ')'"); return e; }
+
+    /* Array literal: [ expr, expr, ... ] */
+    if (match(p, TOKEN_LBRACKET)) {
+        ExprNode **elems = NULL; size_t count = 0;
+        while (!check(p, TOKEN_RBRACKET) && !at_end(p)) {
+            elems = ocl_realloc(elems, (count+1)*sizeof(ExprNode*));
+            elems[count++] = parse_expression(p);
+            if (!match(p, TOKEN_COMMA)) break;
+        }
+        consume(p, TOKEN_RBRACKET, "Expected ']' after array literal");
+        return ast_create_array_literal(loc, elems, count);
+    }
+
     error_add(p->errors, ERROR_PARSER, loc, "Unexpected token '%s' in expression", t->lexeme ? t->lexeme : "?");
     return NULL;
 }
@@ -319,8 +300,22 @@ static bool is_c_style_var_decl(Parser *p) {
     return result;
 }
 
+/* Parse the else/else-if chain after a then-block.
+   Returns: NULL (no else), AST_IF_STMT (else if ...), or AST_BLOCK (plain else). */
+static ASTNode *parse_else_chain(Parser *p) {
+    if (!match(p, TOKEN_ELSE)) return NULL;
+    if (check(p, TOKEN_IF)) {
+        /* else if — parse as a full if-statement (creates proper chain) */
+        return parse_statement(p);
+    }
+    /* plain else { ... } */
+    return (ASTNode *)parse_block(p);
+}
+
 static ASTNode *parse_statement(Parser *p) {
     Token *t = cur_tok(p); SourceLocation loc = t->location;
+
+    /* Import <name.ext> */
     if (match(p, TOKEN_IMPORT)) {
         consume(p, TOKEN_LESS, "Expected '<' after Import");
         char name_buf[256] = {0};
@@ -329,8 +324,34 @@ static ASTNode *parse_statement(Parser *p) {
         consume(p, TOKEN_GREATER, "Expected '>'"); match(p, TOKEN_SEMICOLON);
         ImportNode *n = ocl_malloc(sizeof(ImportNode));
         n->base.type = AST_IMPORT; n->base.location = loc; n->filename = ocl_strdup(name_buf);
+
+        /* ── Import resolution ─────────────────────────────────────────
+           Look for a stdlib header in the same directory as the source,
+           then in a built-in search path.  Recognised extensions:
+             .sxh  (OCL standard header)
+             .ocl  (OCL source)
+           The file is read and pre-pended to the token stream by
+           re-lexing it in-place.  For this we return a sentinel and
+           the caller (parser_parse) handles it.
+        ─────────────────────────────────────────────────────────────── */
+        n->base.type = AST_IMPORT;
         return (ASTNode *)n;
     }
+
+    /* declare name : Type  — forward-declares a variable type to the checker */
+    if (match(p, TOKEN_DECLARE)) {
+        Token name_tok = consume(p, TOKEN_IDENTIFIER, "Expected identifier after 'declare'");
+        char *name = dup_lexeme(&name_tok);
+        TypeNode *type = ast_create_type(TYPE_UNKNOWN, 0);
+        if (match(p, TOKEN_COLON)) type = parse_type(p);
+        match(p, TOKEN_SEMICOLON);
+        DeclareNode *dn = ocl_malloc(sizeof(DeclareNode));
+        dn->base.type = AST_DECLARE; dn->base.location = loc;
+        dn->name = name; dn->type = type;
+        return (ASTNode *)dn;
+    }
+
+    /* Let name : Type = expr */
     if (match(p, TOKEN_LET)) {
         Token name_tok = consume(p, TOKEN_IDENTIFIER, "Expected variable name");
         char *name = dup_lexeme(&name_tok);
@@ -340,6 +361,8 @@ static ASTNode *parse_statement(Parser *p) {
         match(p, TOKEN_SEMICOLON);
         return ast_create_var_decl(loc, name, type, init);
     }
+
+    /* C-style: Type name = expr */
     if (is_c_style_var_decl(p)) {
         TypeNode *type = parse_type(p);
         Token name_tok = consume(p, TOKEN_IDENTIFIER, "Expected variable name");
@@ -348,19 +371,18 @@ static ASTNode *parse_statement(Parser *p) {
         match(p, TOKEN_SEMICOLON);
         return ast_create_var_decl(loc, name, type, init);
     }
+
+    /* if / else-if / else  ─── now produces a flat chain, no synthetic blocks */
     if (match(p, TOKEN_IF)) {
         consume(p, TOKEN_LPAREN, "Expected '(' after if");
         ExprNode *cond = parse_expression(p);
         consume(p, TOKEN_RPAREN, "Expected ')' after if condition");
-        BlockNode *then_b = parse_block(p); BlockNode *else_b = NULL;
-        if (match(p, TOKEN_ELSE)) {
-            if (check(p, TOKEN_IF)) {
-                ASTNode *elif = parse_statement(p);
-                else_b = ast_create_block(loc); ast_add_statement(else_b, elif);
-            } else { else_b = parse_block(p); }
-        }
-        return ast_create_if_stmt(loc, cond, then_b, else_b);
+        BlockNode *then_b = parse_block(p);
+        ASTNode *else_next = parse_else_chain(p);
+        return ast_create_if_stmt(loc, cond, then_b, else_next);
     }
+
+    /* while */
     if (match(p, TOKEN_WHILE)) {
         consume(p, TOKEN_LPAREN, "Expected '('");
         ExprNode *cond = parse_expression(p);
@@ -371,6 +393,8 @@ static ASTNode *parse_statement(Parser *p) {
         lp->init = NULL; lp->condition = cond; lp->increment = NULL; lp->body = body;
         return (ASTNode *)lp;
     }
+
+    /* for */
     if (match(p, TOKEN_FOR)) {
         consume(p, TOKEN_LPAREN, "Expected '('");
         ASTNode *init = NULL;
@@ -402,6 +426,7 @@ static ASTNode *parse_statement(Parser *p) {
         lp->init = init; lp->condition = cond; lp->increment = incr; lp->body = body;
         return (ASTNode *)lp;
     }
+
     if (match(p, TOKEN_RETURN)) {
         ExprNode *val = NULL;
         if (!check(p, TOKEN_SEMICOLON) && !check(p, TOKEN_RBRACE) && !at_end(p)) val = parse_expression(p);
@@ -431,11 +456,63 @@ Parser *parser_create(Token *tokens, size_t token_count, const char *filename, E
 
 void parser_free(Parser *p) { ocl_free(p); }
 
+/* ── Import file resolution ─────────────────────────────────────────────
+   Search paths (in order):
+     1. Same directory as the source file being parsed
+     2. ./stdlib_headers/
+     3. <executable dir>/stdlib_headers/
+   File extensions tried: as-is, then .ocl, then .sxh
+──────────────────────────────────────────────────────────────────────── */
+static char *find_import_file(const char *importing_file, const char *import_name) {
+    /* Build candidate paths */
+    const char *candidates[8];
+    char paths[8][512];
+    int nc = 0;
+
+    /* 1: same directory as importer */
+    if (importing_file) {
+        const char *slash = strrchr(importing_file, '/');
+        if (!slash) slash = strrchr(importing_file, '\\');
+        size_t dir_len = slash ? (size_t)(slash - importing_file + 1) : 0;
+        if (dir_len + strlen(import_name) + 5 < 512) {
+            snprintf(paths[nc], 512, "%.*s%s", (int)dir_len, importing_file, import_name);
+            candidates[nc] = paths[nc]; nc++;
+        }
+    }
+
+    /* 2: stdlib_headers/ */
+    snprintf(paths[nc], 512, "stdlib_headers/%s", import_name);
+    candidates[nc] = paths[nc]; nc++;
+
+    /* 3: plain name */
+    snprintf(paths[nc], 512, "%s", import_name);
+    candidates[nc] = paths[nc]; nc++;
+
+    for (int i = 0; i < nc; i++) {
+        FILE *f = fopen(candidates[i], "r");
+        if (f) { fclose(f); return ocl_strdup(candidates[i]); }
+        /* try with .ocl appended */
+        char try2[520]; snprintf(try2, 520, "%s.ocl", candidates[i]);
+        f = fopen(try2, "r"); if (f) { fclose(f); return ocl_strdup(try2); }
+    }
+    return NULL;
+}
+
+static char *read_file_import(const char *path) {
+    FILE *f = fopen(path, "rb"); if (!f) return NULL;
+    fseek(f, 0, SEEK_END); long sz = ftell(f); rewind(f);
+    char *buf = ocl_malloc((size_t)sz + 1);
+    size_t rd = fread(buf, 1, (size_t)sz, f); buf[rd] = '\0';
+    fclose(f); return buf;
+}
+
 ProgramNode *parser_parse(Parser *p) {
     ProgramNode *prog = ocl_malloc(sizeof(ProgramNode));
     prog->base.type = AST_PROGRAM; prog->base.location = (SourceLocation){1,1,p->filename};
     prog->nodes = NULL; prog->node_count = 0;
+
     while (!at_end(p)) {
+        /* Function declaration */
         if (check(p, TOKEN_FUNC)) {
             p->current++;
             SourceLocation loc = prev_tok(p)->location;
@@ -463,12 +540,55 @@ ProgramNode *parser_parse(Parser *p) {
             ASTNode *fn = ast_create_func_decl(loc, fname, ret, params, param_count, body);
             prog->nodes = ocl_realloc(prog->nodes, (prog->node_count+1)*sizeof(ASTNode *));
             prog->nodes[prog->node_count++] = fn;
-        } else {
-            ASTNode *stmt = parse_statement(p);
-            if (stmt) {
-                prog->nodes = ocl_realloc(prog->nodes, (prog->node_count+1)*sizeof(ASTNode *));
-                prog->nodes[prog->node_count++] = stmt;
+            continue;
+        }
+
+        /* Import — try to resolve and inline */
+        if (check(p, TOKEN_IMPORT)) {
+            ASTNode *import_node = parse_statement(p);  /* consumes the Import statement */
+            if (!import_node) continue;
+            ImportNode *imp = (ImportNode *)import_node;
+
+            char *resolved = find_import_file(p->filename, imp->filename);
+            if (resolved) {
+                char *src = read_file_import(resolved);
+                if (src) {
+                    /* Lex the imported file and inject its tokens */
+                    Lexer *sub_lex = lexer_create(src, resolved);
+                    size_t sub_count = 0;
+                    Token *sub_tokens = lexer_tokenize_all(sub_lex, &sub_count);
+                    lexer_free(sub_lex);
+
+                    /* Build a temporary sub-parser and parse all top-level nodes */
+                    Parser *sub = parser_create(sub_tokens, sub_count, resolved, p->errors);
+                    ProgramNode *sub_prog = parser_parse(sub);
+                    parser_free(sub);
+                    tokens_free(sub_tokens, sub_count);
+                    ocl_free(src);
+
+                    /* Merge sub-program nodes into main program */
+                    if (sub_prog) {
+                        for (size_t i = 0; i < sub_prog->node_count; i++) {
+                            prog->nodes = ocl_realloc(prog->nodes, (prog->node_count+1)*sizeof(ASTNode *));
+                            prog->nodes[prog->node_count++] = sub_prog->nodes[i];
+                            sub_prog->nodes[i] = NULL; /* transferred ownership */
+                        }
+                        ocl_free(sub_prog->nodes);
+                        ocl_free(sub_prog);
+                    }
+                }
+                ocl_free(resolved);
             }
+            /* Keep the Import node itself (for the type checker / codegen to ignore) */
+            prog->nodes = ocl_realloc(prog->nodes, (prog->node_count+1)*sizeof(ASTNode *));
+            prog->nodes[prog->node_count++] = import_node;
+            continue;
+        }
+
+        ASTNode *stmt = parse_statement(p);
+        if (stmt) {
+            prog->nodes = ocl_realloc(prog->nodes, (prog->node_count+1)*sizeof(ASTNode *));
+            prog->nodes[prog->node_count++] = stmt;
         }
     }
     return prog;

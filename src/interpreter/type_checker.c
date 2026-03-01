@@ -1,4 +1,3 @@
-
 #include "type_checker.h"
 #include "ocl_stdlib.h"
 #include "common.h"
@@ -172,6 +171,17 @@ static TypeNode *check_expr(TypeChecker *tc, ExprNode *expr) {
             for (size_t i = 0; i < c->argument_count; i++) check_expr(tc, c->arguments[i]);
             return sym->type ? sym->type : builtin_type(TYPE_VOID);
         }
+        case AST_ARRAY_LITERAL: {
+            ArrayLiteralNode *al = (ArrayLiteralNode *)expr;
+            for (size_t i = 0; i < al->element_count; i++) check_expr(tc, al->elements[i]);
+            return builtin_type(TYPE_ARRAY);
+        }
+        case AST_INDEX_ACCESS: {
+            IndexAccessNode *ia = (IndexAccessNode *)expr;
+            check_expr(tc, ia->array_expr);
+            check_expr(tc, ia->index_expr);
+            return builtin_type(TYPE_UNKNOWN); /* element type not tracked yet */
+        }
         default: return builtin_type(TYPE_UNKNOWN);
     }
 }
@@ -179,7 +189,17 @@ static TypeNode *check_expr(TypeChecker *tc, ExprNode *expr) {
 static void check_node(TypeChecker *tc, ASTNode *node) {
     if (!node) return;
     switch (node->type) {
-        case AST_IMPORT: case AST_DECLARE: break;
+        case AST_IMPORT: break;   /* handled at parse time */
+
+        /* declare: register the symbol with its declared type so downstream
+           code can reference it. No initialiser — it's a forward declaration. */
+        case AST_DECLARE: {
+            DeclareNode *d = (DeclareNode *)node;
+            if (!symbol_table_has_in_current_scope(tc->symbol_table, d->name))
+                symbol_table_insert(tc->symbol_table, d->name, d->type, false, false);
+            break;
+        }
+
         case AST_VAR_DECL: {
             VarDeclNode *v = (VarDeclNode *)node;
             if (symbol_table_has_in_current_scope(tc->symbol_table, v->name))
@@ -217,10 +237,16 @@ static void check_node(TypeChecker *tc, ASTNode *node) {
             break;
         }
         case AST_IF_STMT: {
-            IfStmtNode *s = (IfStmtNode *)node;
-            check_expr(tc, s->condition);
-            if (s->then_block) check_node(tc, (ASTNode *)s->then_block);
-            if (s->else_block) check_node(tc, (ASTNode *)s->else_block);
+            /* Walk the if / else-if / else chain properly */
+            ASTNode *cur = node;
+            while (cur && cur->type == AST_IF_STMT) {
+                IfStmtNode *s = (IfStmtNode *)cur;
+                check_expr(tc, s->condition);
+                if (s->then_block) check_node(tc, (ASTNode *)s->then_block);
+                cur = s->else_next;
+            }
+            /* plain else block (AST_BLOCK) */
+            if (cur) check_node(tc, cur);
             break;
         }
         case AST_FOR_LOOP: case AST_WHILE_LOOP: {
@@ -241,6 +267,7 @@ static void check_node(TypeChecker *tc, ASTNode *node) {
 
 bool type_checker_check(TypeChecker *tc, ProgramNode *program) {
     if (!tc || !program) return false;
+    /* Pass 1: register all top-level names */
     for (size_t i = 0; i < program->node_count; i++) {
         ASTNode *n = program->nodes[i];
         if (n->type == AST_FUNC_DECL) {
@@ -254,8 +281,13 @@ bool type_checker_check(TypeChecker *tc, ProgramNode *program) {
         } else if (n->type == AST_VAR_DECL) {
             VarDeclNode *v = (VarDeclNode *)n;
             symbol_table_insert(tc->symbol_table, v->name, v->type, false, false);
+        } else if (n->type == AST_DECLARE) {
+            DeclareNode *d = (DeclareNode *)n;
+            if (!symbol_table_has_in_current_scope(tc->symbol_table, d->name))
+                symbol_table_insert(tc->symbol_table, d->name, d->type, false, false);
         }
     }
+    /* Pass 2: check everything */
     for (size_t i = 0; i < program->node_count; i++) {
         ASTNode *n = program->nodes[i];
         if (n->type == AST_VAR_DECL) { VarDeclNode *v = (VarDeclNode *)n; if (v->initializer) check_expr(tc, v->initializer); }

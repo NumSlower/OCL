@@ -29,10 +29,14 @@ void ast_add_statement(BlockNode *block, ASTNode *stmt) {
     block->statements[block->statement_count++] = stmt;
 }
 
-ASTNode *ast_create_if_stmt(SourceLocation loc, ExprNode *cond, BlockNode *then_b, BlockNode *else_b) {
+/*
+ * else_next: either another AST_IF_STMT (for else-if) or AST_BLOCK (plain else)
+ * This replaces the old "else_block" field, eliminating synthetic wrapper blocks.
+ */
+ASTNode *ast_create_if_stmt(SourceLocation loc, ExprNode *cond, BlockNode *then_block, ASTNode *else_next) {
     IfStmtNode *n = ocl_malloc(sizeof(IfStmtNode));
     n->base.type = AST_IF_STMT; n->base.location = loc;
-    n->condition = cond; n->then_block = then_b; n->else_block = else_b;
+    n->condition = cond; n->then_block = then_block; n->else_next = else_next;
     return (ASTNode *)n;
 }
 
@@ -66,6 +70,20 @@ ExprNode *ast_create_literal(SourceLocation loc, Value value) {
 ExprNode *ast_create_identifier(SourceLocation loc, char *name) {
     IdentifierNode *n = ocl_malloc(sizeof(IdentifierNode));
     n->base.type = AST_IDENTIFIER; n->base.location = loc; n->name = name;
+    return (ExprNode *)n;
+}
+
+ExprNode *ast_create_array_literal(SourceLocation loc, ExprNode **elements, size_t count) {
+    ArrayLiteralNode *n = ocl_malloc(sizeof(ArrayLiteralNode));
+    n->base.type = AST_ARRAY_LITERAL; n->base.location = loc;
+    n->elements = elements; n->element_count = count;
+    return (ExprNode *)n;
+}
+
+ExprNode *ast_create_index_access(SourceLocation loc, ExprNode *array_expr, ExprNode *index_expr) {
+    IndexAccessNode *n = ocl_malloc(sizeof(IndexAccessNode));
+    n->base.type = AST_INDEX_ACCESS; n->base.location = loc;
+    n->array_expr = array_expr; n->index_expr = index_expr;
     return (ExprNode *)n;
 }
 
@@ -108,12 +126,16 @@ void ast_free(ASTNode *node) {
         }
         case AST_IF_STMT: {
             IfStmtNode *s = (IfStmtNode *)node;
-            ast_free((ASTNode *)s->condition); ast_free((ASTNode *)s->then_block); ast_free((ASTNode *)s->else_block); break;
+            ast_free((ASTNode *)s->condition);
+            ast_free((ASTNode *)s->then_block);
+            ast_free(s->else_next);   /* may be if-stmt or block */
+            break;
         }
         case AST_FOR_LOOP:
         case AST_WHILE_LOOP: {
             LoopNode *lp = (LoopNode *)node;
-            ast_free(lp->init); ast_free((ASTNode *)lp->condition); ast_free(lp->increment); ast_free((ASTNode *)lp->body); break;
+            ast_free(lp->init); ast_free((ASTNode *)lp->condition);
+            ast_free(lp->increment); ast_free((ASTNode *)lp->body); break;
         }
         case AST_RETURN: { ReturnNode *r = (ReturnNode *)node; ast_free((ASTNode *)r->value); break; }
         case AST_BIN_OP: { BinOpNode *b = (BinOpNode *)node; ast_free((ASTNode *)b->left); ast_free((ASTNode *)b->right); break; }
@@ -127,9 +149,16 @@ void ast_free(ASTNode *node) {
         case AST_IDENTIFIER: { IdentifierNode *id = (IdentifierNode *)node; ocl_free(id->name); break; }
         case AST_LITERAL: { LiteralNode *lit = (LiteralNode *)node; value_free(lit->value); break; }
         case AST_IMPORT: { ImportNode *imp = (ImportNode *)node; ocl_free(imp->filename); break; }
+        case AST_DECLARE: { DeclareNode *d = (DeclareNode *)node; ocl_free(d->name); ocl_free(d->type); break; }
+        case AST_ARRAY_LITERAL: {
+            ArrayLiteralNode *al = (ArrayLiteralNode *)node;
+            for (size_t i = 0; i < al->element_count; i++) ast_free((ASTNode *)al->elements[i]);
+            ocl_free(al->elements); break;
+        }
         case AST_INDEX_ACCESS: {
-            ExprNode *e = (ExprNode *)node;
-            ast_free((ASTNode *)e->index_access.array); ast_free((ASTNode *)e->index_access.index); break;
+            IndexAccessNode *ia = (IndexAccessNode *)node;
+            ast_free((ASTNode *)ia->array_expr);
+            ast_free((ASTNode *)ia->index_expr); break;
         }
         default: break;
     }
