@@ -10,12 +10,11 @@ typedef enum {
     OP_JUMP, OP_JUMP_IF_FALSE, OP_JUMP_IF_TRUE,
     OP_CALL, OP_RETURN, OP_HALT,
     OP_CALL_BUILTIN,
-    OP_TO_INT, OP_TO_FLOAT, OP_TO_STRING, OP_CONCAT,
-    OP_ARRAY_NEW,   /* operand1 = element_count (popped from stack) */
-    OP_ARRAY_GET,   /* stack: [array, index] -> value                */
-    OP_ARRAY_SET,   /* stack: [array, index, value]                  */
-    OP_ARRAY_LEN,   /* stack: [array] -> int                         */
-    OP_ARRAY_PUSH,  /* stack: [array, value] -> array (in-place)     */
+    OP_TO_INT, OP_TO_FLOAT, OP_TO_STRING,
+    OP_ARRAY_NEW,   /* operand1 = element_count */
+    OP_ARRAY_GET,   /* stack: [array, index] -> value */
+    OP_ARRAY_SET,   /* stack: [value, array, index] */
+    OP_ARRAY_LEN,   /* stack: [array] -> int */
 } Opcode;
 typedef struct { Opcode opcode; uint32_t operand1; uint32_t operand2; SourceLocation location; } Instruction;
 typedef struct { char *name; uint32_t start_ip; int param_count; int local_count; } FuncEntry;

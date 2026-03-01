@@ -3,7 +3,7 @@
 #include "ast.h"
 #include "bytecode.h"
 #include "errors.h"
-typedef struct { char *name; int slot; int scope_level; bool is_global; } VarSlot;
+typedef struct { char *name; int slot; int scope_level; } VarSlot;
 typedef struct { char *name; int id; } BuiltinDesc;
 #define CODEGEN_MAX_FRAMES 256
 #define CODEGEN_MAX_BREAKS 256

@@ -17,7 +17,7 @@ static int lookup_builtin(CodeGenerator *g, const char *name) {
 
 static int lookup_local(CodeGenerator *g, const char *name) {
     for (int i = (int)g->var_count - 1; i >= 0; i--)
-        if (!g->vars[i].is_global && !strcmp(g->vars[i].name, name)) return g->vars[i].slot;
+        if (!strcmp(g->vars[i].name, name)) return g->vars[i].slot;
     return -1;
 }
 
@@ -36,7 +36,6 @@ static int add_local(CodeGenerator *g, const char *name) {
     g->vars[g->var_count].name = ocl_strdup(name);
     g->vars[g->var_count].slot = slot;
     g->vars[g->var_count].scope_level = g->scope_level;
-    g->vars[g->var_count].is_global = false;
     g->var_count++;
     return slot;
 }
@@ -50,7 +49,6 @@ static int add_global(CodeGenerator *g, const char *name) {
     g->globals[g->global_count].name = ocl_strdup(name);
     g->globals[g->global_count].slot = slot;
     g->globals[g->global_count].scope_level = 0;
-    g->globals[g->global_count].is_global = true;
     g->global_count++;
     return slot;
 }
@@ -145,49 +143,11 @@ static void emit_expr(CodeGenerator *g, ExprNode *expr) {
                         else if (g->errors) error_add(g->errors, ERROR_PARSER, b->base.location, "Cannot assign to undefined '%s'", id->name);
                     }
                 } else if (b->left && b->left->base.type == AST_INDEX_ACCESS) {
-                    /* arr[idx] = value  — value is already on stack */
                     IndexAccessNode *ia = (IndexAccessNode *)b->left;
-                    /* We need: array, index, value on stack in that order.
-                       Value is already pushed; push array and index. */
-                    /* Rearrange: pop value, push array, index, value back */
-                    /* Simplest approach: emit array, index, then value (re-emit) */
-                    /* But we already emitted value (b->right). Use a different strategy:
-                       emit array, index, then the rhs. We need to re-emit rhs. */
-                    /* Actually we already pushed rhs. We need to restructure.
-                       Let's pop it back by re-ordering emission: */
-                    /* This is tricky because we've already emitted the rhs.
-                       In OCL's stack machine: OP_ARRAY_SET expects [array, index, value].
-                       We emit: array → index → value → OP_ARRAY_SET. */
-                    /* We can't undo the emit, so we re-design: emit rhs last. */
-                    /* The rhs was already pushed above — let's just emit array+index
-                       before the call, so the stack ends up: rhs, array, index.
-                       That won't work either.  Solution: emit in the right order. */
-                    /* We'll rely on OP_ARRAY_SET consuming (array, index, value) from top. */
                     emit_expr(g, ia->array_expr);
                     emit_expr(g, ia->index_expr);
-                    /* value is already under array+index on stack — OP_ARRAY_SET
-                       needs value at top.  Our current stack: value, array, index.
-                       We need to restructure.  Easiest fix: don't pre-emit rhs.
-                       Since we're inside the '=' case and already emitted rhs,
-                       we'll emit a special swap sequence. Instead, restructure above: */
-                    /* NOTE: We already pushed rhs (value) first.  Stack is:
-                         [value, array, index]  (index at top)
-                       OP_ARRAY_SET pops index, array, value from top, so
-                       we'd need [array, index, value] with value on top.
-                       This is wrong order.  Fix: emit array+index BEFORE rhs.
-                       But rhs was already emitted.  This is a design conflict.
-                       
-                       Proper fix: move rhs emission to AFTER array+index.
-                       We can do this by checking for index-assign in the outer
-                       dispatch and emitting in the right order. See below.
-                    */
-                    /* For now we've emitted rhs, array, index.
-                       OP_ARRAY_SET must accept [rhs, array, index] with index on top.
-                       Let's define OP_ARRAY_SET to pop: index, array, value.
-                       Stack at this point: <bottom> rhs array index <top>
-                       Pop index → got index
-                       Pop array → got array
-                       Pop rhs   → got rhs   ✓ correct!  */
+                    /* Stack: <bottom> rhs array index <top>
+                       OP_ARRAY_SET pops: index, array, rhs — correct order */
                     bytecode_emit(bc, OP_ARRAY_SET, 0, 0, b->base.location);
                 } else if (g->errors) {
                     error_add(g->errors, ERROR_PARSER, b->base.location, "Invalid assignment target");
@@ -225,16 +185,12 @@ static void emit_expr(CodeGenerator *g, ExprNode *expr) {
             }
             break;
         }
-
-        /* Array literal: push each element then OP_ARRAY_NEW(count) */
         case AST_ARRAY_LITERAL: {
             ArrayLiteralNode *al = (ArrayLiteralNode *)expr;
             for (size_t i = 0; i < al->element_count; i++) emit_expr(g, al->elements[i]);
             bytecode_emit(bc, OP_ARRAY_NEW, (uint32_t)al->element_count, 0, al->base.location);
             break;
         }
-
-        /* Index access: arr[idx] */
         case AST_INDEX_ACCESS: {
             IndexAccessNode *ia = (IndexAccessNode *)expr;
             emit_expr(g, ia->array_expr);
@@ -242,7 +198,6 @@ static void emit_expr(CodeGenerator *g, ExprNode *expr) {
             bytecode_emit(bc, OP_ARRAY_GET, 0, 0, ia->base.location);
             break;
         }
-
         default:
             emit_node(g, (ASTNode *)expr);
             break;
@@ -267,7 +222,7 @@ static void emit_node(CodeGenerator *g, ASTNode *node) {
         case AST_BIN_OP: {
             BinOpNode *_b = (BinOpNode *)node;
             if (!strcmp(_b->operator, "="))
-                emit_expr(g, (ExprNode *)node);   /* assignment — no pop, value stays */
+                emit_expr(g, (ExprNode *)node);
             else {
                 emit_expr(g, (ExprNode *)node);
                 bytecode_emit(bc, OP_POP, 0, 0, node->location);
@@ -279,9 +234,8 @@ static void emit_node(CodeGenerator *g, ASTNode *node) {
             bytecode_emit(bc, OP_POP, 0, 0, node->location);
             break;
         }
-        case AST_IMPORT: break;   /* already resolved at parse time */
+        case AST_IMPORT: break;
 
-        /* declare: allocate a slot but don't initialise (null) */
         case AST_DECLARE: {
             DeclareNode *d = (DeclareNode *)node;
             if (g->in_global_scope) {
@@ -339,7 +293,6 @@ static void emit_node(CodeGenerator *g, ASTNode *node) {
                 g->vars[g->var_count].name = ocl_strdup(f->params[i]->name);
                 g->vars[g->var_count].slot = (int)i;
                 g->vars[g->var_count].scope_level = g->scope_level;
-                g->vars[g->var_count].is_global = false;
                 g->var_count++;
             }
             if (f->body)
@@ -371,63 +324,33 @@ static void emit_node(CodeGenerator *g, ASTNode *node) {
             break;
         }
 
-        /*
-         * If / else-if / else — flat chain traversal.
-         *
-         * For each link in the chain:
-         *   emit condition
-         *   JUMP_IF_FALSE → next_link (or exit)
-         *   emit then_block
-         *   JUMP → exit
-         *   [next_link]:
-         *   ...
-         * [exit]:
-         *
-         * All "jump to exit" instructions are collected and backpatched once
-         * we know the exit ip.
-         */
         case AST_IF_STMT: {
-            /* collect exit-jump patch indices */
             uint32_t exit_jumps[256]; int exit_jump_count = 0;
-
             ASTNode *cur = node;
             while (cur && cur->type == AST_IF_STMT) {
                 IfStmtNode *s = (IfStmtNode *)cur;
-
-                /* Emit condition and conditional jump to next branch */
                 emit_expr(g, s->condition);
                 uint32_t jf_idx = (uint32_t)bc->instruction_count;
                 bytecode_emit(bc, OP_JUMP_IF_FALSE, 0, 0, s->base.location);
-
-                /* Emit then block */
                 enter_scope(g);
                 if (s->then_block)
                     for (size_t i = 0; i < s->then_block->statement_count; i++)
                         emit_node(g, s->then_block->statements[i]);
                 exit_scope(g);
-
-                /* Jump to exit after then-block (unless this is the last link) */
                 if (s->else_next || exit_jump_count < 256) {
                     uint32_t je_idx = (uint32_t)bc->instruction_count;
                     bytecode_emit(bc, OP_JUMP, 0, 0, s->base.location);
                     if (exit_jump_count < 256) exit_jumps[exit_jump_count++] = je_idx;
                 }
-
-                /* Patch the condition-false jump to the next instruction (next branch) */
                 bytecode_patch(bc, jf_idx, (uint32_t)bc->instruction_count);
-
                 cur = s->else_next;
             }
-
-            /* Plain else block (cur is AST_BLOCK or NULL) */
             if (cur && cur->type == AST_BLOCK) {
                 enter_scope(g);
                 BlockNode *eb = (BlockNode *)cur;
                 for (size_t i = 0; i < eb->statement_count; i++) emit_node(g, eb->statements[i]);
                 exit_scope(g);
             }
-
-            /* Patch all exit jumps to current ip */
             uint32_t exit_ip = (uint32_t)bc->instruction_count;
             for (int i = 0; i < exit_jump_count; i++)
                 bytecode_patch(bc, exit_jumps[i], exit_ip);
@@ -559,7 +482,6 @@ bool codegen_generate(CodeGenerator *g, ProgramNode *program, Bytecode *output) 
     g->var_count = 0; g->global_count = 0; g->local_stack[0] = 0; g->local_stack_top = 1;
     g->loop_depth = 0;
 
-    /* Pre-register global variables */
     for (size_t i = 0; i < program->node_count; i++) {
         ASTNode *n = program->nodes[i];
         if (n->type == AST_VAR_DECL) {
@@ -570,7 +492,6 @@ bool codegen_generate(CodeGenerator *g, ProgramNode *program, Bytecode *output) 
             if (lookup_global(g, d->name) < 0) add_global(g, d->name);
         }
     }
-    /* Pre-register functions */
     for (size_t i = 0; i < program->node_count; i++) {
         ASTNode *n = program->nodes[i];
         if (n->type == AST_FUNC_DECL) {
@@ -578,7 +499,6 @@ bool codegen_generate(CodeGenerator *g, ProgramNode *program, Bytecode *output) 
             bytecode_add_function(output, f->name, 0xFFFFFFFF, (int)f->param_count);
         }
     }
-    /* Emit functions first, then global statements */
     for (size_t i = 0; i < program->node_count; i++)
         if (program->nodes[i]->type == AST_FUNC_DECL) emit_node(g, program->nodes[i]);
     for (size_t i = 0; i < program->node_count; i++)

@@ -241,10 +241,6 @@ int vm_execute(VM *vm) {
         case OP_STORE_VAR: {
             CallFrame *f = current_frame(vm);
             if (f) {
-                /* Stack values are already owned; value_own_copy only needed to
-                   convert string borrows to owned copies — it must NOT be called
-                   for arrays because value_array() already retained and a second
-                   retain here would leave the refcount one too high. */
                 Value raw = vm_pop(vm);
                 Value v = (raw.type == VALUE_STRING && !raw.owned)
                           ? value_string_copy(raw.data.string_val)
@@ -425,7 +421,6 @@ int vm_execute(VM *vm) {
                 if (ret_raw.type==VALUE_INT) vm->exit_code=(int)ret_raw.data.int_val;
                 value_free(ret_raw); vm->halted=true; break;
             }
-            /* Take ownership without extra retain (same logic as STORE_VAR) */
             Value ret_owned = (ret_raw.type == VALUE_STRING && !ret_raw.owned)
                               ? value_string_copy(ret_raw.data.string_val)
                               : ret_raw;
@@ -487,49 +482,14 @@ int vm_execute(VM *vm) {
         case OP_TO_STRING: {
             Value a=vm_pop(vm); char *s=ocl_strdup(value_to_string(a)); value_free(a); vm_push(vm,value_string(s)); break;
         }
-        case OP_CONCAT: {
-            Value b=vm_pop(vm); Value a=vm_pop(vm);
-            const char *as=value_to_string(a), *bs=value_to_string(b);
-            size_t len=strlen(as)+strlen(bs); char *s=ocl_malloc(len+1); strcpy(s,as); strcat(s,bs);
-            value_free(a); value_free(b); vm_push(vm,value_string(s)); break;
-        }
-
-        /* ── Array opcodes ────────────────────────────────────────────────
-         *
-         *  OP_ARRAY_NEW  operand1=element_count
-         *    Stack before: [elem0, elem1, ..., elemN-1]  (elem0 at bottom)
-         *    Stack after:  [array_value]
-         *
-         *  OP_ARRAY_GET
-         *    Stack before: [array, index]
-         *    Stack after:  [element]
-         *
-         *  OP_ARRAY_SET
-         *    Stack before: [value, array, index]   (index at top)
-         *    Stack after:  (nothing — in-place mutation, no value left on stack)
-         *    The array object is mutated in-place so all aliases see the update.
-         *
-         *  OP_ARRAY_LEN
-         *    Stack before: [array]
-         *    Stack after:  [int_length]
-         *
-         *  OP_ARRAY_PUSH
-         *    Stack before: [array, value]
-         *    Stack after:  (array mutated in-place, no result)
-         * ─────────────────────────────────────────────────────────────── */
 
         case OP_ARRAY_NEW: {
             uint32_t count = ins.operand1;
             OclArray *arr = ocl_array_new(count > 0 ? count : 8);
-            /* Elements were pushed in order; pop them in reverse, store in order */
-            /* Stack: [e0, e1, ..., eN-1]  with eN-1 on top */
-            /* We need to fill arr->elements[0..N-1] in order */
-            /* Pop in reverse order into a temp, then store forwards */
             Value *tmp = ocl_malloc(count * sizeof(Value));
             for (uint32_t i = count; i > 0; i--) tmp[i-1] = vm_pop(vm);
             for (uint32_t i = 0; i < count; i++) { ocl_array_push(arr, tmp[i]); value_free(tmp[i]); }
             ocl_free(tmp);
-            /* value_array() retains arr; no extra release needed here */
             vm_push(vm, value_array(arr));
             break;
         }
@@ -577,7 +537,6 @@ int vm_execute(VM *vm) {
             }
             ocl_array_set(arr_v.data.array_val, (size_t)idx, val);
             value_free(idx_v); value_free(arr_v); value_free(val);
-            /* No result pushed — assignment is a statement */
             break;
         }
 
@@ -590,18 +549,6 @@ int vm_execute(VM *vm) {
             int64_t len = (int64_t)arr_v.data.array_val->length;
             value_free(arr_v);
             vm_push(vm, value_int(len));
-            break;
-        }
-
-        case OP_ARRAY_PUSH: {
-            Value val   = vm_pop(vm);
-            Value arr_v = vm_pop(vm);
-            if (arr_v.type != VALUE_ARRAY || !arr_v.data.array_val) {
-                vm_runtime_error(vm, LOC, "OP_ARRAY_PUSH: not an Array (got %s)", value_type_name(arr_v.type));
-                value_free(val); value_free(arr_v); break;
-            }
-            ocl_array_push(arr_v.data.array_val, val);
-            value_free(val); value_free(arr_v);
             break;
         }
 

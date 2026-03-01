@@ -156,7 +156,6 @@ Token lexer_next_token(Lexer *l) {
             return make_token(l, TOKEN_PLUS, "+");
         case '-':
             if (cur(l) == '-') { advance(l); return make_token(l, TOKEN_MINUS_MINUS, "--"); }
-            if (cur(l) == '>') { advance(l); return make_token(l, TOKEN_ARROW,       "->"); }
             return make_token(l, TOKEN_MINUS, "-");
         case '*': return make_token(l, TOKEN_STAR,      "*");
         case '/': return make_token(l, TOKEN_SLASH,     "/");

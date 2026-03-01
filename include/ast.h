@@ -21,7 +21,7 @@ typedef struct DeclareNode DeclareNode;
 typedef enum {
     AST_PROGRAM, AST_VAR_DECL, AST_FUNC_DECL, AST_BLOCK,
     AST_IF_STMT, AST_FOR_LOOP, AST_WHILE_LOOP,
-    AST_RETURN, AST_BREAK, AST_CONTINUE, AST_EXPR_STMT,
+    AST_RETURN, AST_BREAK, AST_CONTINUE,
     AST_BIN_OP, AST_UNARY_OP, AST_CALL, AST_LITERAL,
     AST_IDENTIFIER, AST_IMPORT, AST_DECLARE,
     AST_ARRAY_LITERAL, AST_INDEX_ACCESS,
@@ -41,17 +41,12 @@ struct VarDeclNode { ASTNode base; char *name; TypeNode *type; ExprNode *initial
 struct ParamNode { char *name; TypeNode *type; SourceLocation location; };
 struct FuncDeclNode { ASTNode base; char *name; TypeNode *return_type; ParamNode **params; size_t param_count; BlockNode *body; };
 struct BlockNode { ASTNode base; ASTNode **statements; size_t statement_count; };
-
-/* IfStmtNode now carries a chain of else-if conditions rather than just a
-   single else block.  else_cond == NULL means a plain else branch.        */
 struct IfStmtNode {
     ASTNode    base;
     ExprNode  *condition;
     BlockNode *then_block;
-    /* else-if / else chain: if else_next != NULL it is another IfStmtNode */
-    ASTNode   *else_next;   /* either another AST_IF_STMT or AST_BLOCK */
+    ASTNode   *else_next;
 };
-
 struct LoopNode { ASTNode base; bool is_for; ASTNode *init; ExprNode *condition; ASTNode *increment; BlockNode *body; };
 struct ReturnNode { ASTNode base; ExprNode *value; };
 struct BinOpNode { ASTNode base; ExprNode *left; ExprNode *right; const char *operator; };
@@ -60,24 +55,17 @@ struct CallNode { ASTNode base; char *function_name; ExprNode **arguments; size_
 struct LiteralNode { ASTNode base; ValueType value_type; Value value; };
 struct IdentifierNode { ASTNode base; char *name; };
 struct ImportNode { ASTNode base; char *filename; };
-
-/* declare keyword: optional type annotation, no initialiser required */
 struct DeclareNode { ASTNode base; char *name; TypeNode *type; };
-
-/* Array literal: [e1, e2, ...] */
 typedef struct {
     ASTNode   base;
     ExprNode **elements;
     size_t     element_count;
 } ArrayLiteralNode;
-
-/* Index access: expr[index] */
 typedef struct {
     ASTNode   base;
     ExprNode *array_expr;
     ExprNode *index_expr;
 } IndexAccessNode;
-
 union ExprNode {
     ASTNode        base;
     BinOpNode      bin_op;
