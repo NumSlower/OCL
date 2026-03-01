@@ -468,36 +468,38 @@ void parser_free(Parser *p) { ocl_free(p); }
    File extensions tried: as-is, then .ocl, then .sxh
 ──────────────────────────────────────────────────────────────────────── */
 static char *find_import_file(const char *importing_file, const char *import_name) {
-    /* Build candidate paths */
-    const char *candidates[8];
-    char paths[8][512];
-    int nc = 0;
+    char bases[4][512];
+    int nb = 0;
 
-    /* 1: same directory as importer */
+    /* 1: same directory as the importing file */
     if (importing_file) {
         const char *slash = strrchr(importing_file, '/');
         if (!slash) slash = strrchr(importing_file, '\\');
         size_t dir_len = slash ? (size_t)(slash - importing_file + 1) : 0;
         if (dir_len + strlen(import_name) + 5 < 512) {
-            snprintf(paths[nc], 512, "%.*s%s", (int)dir_len, importing_file, import_name);
-            candidates[nc] = paths[nc]; nc++;
+            snprintf(bases[nb++], 512, "%.*s%s", (int)dir_len, importing_file, import_name);
         }
     }
 
-    /* 2: stdlib_headers/ */
-    snprintf(paths[nc], 512, "stdlib_headers/%s", import_name);
-    candidates[nc] = paths[nc]; nc++;
+    /* 2: ./ocl_headers/<name> */
+    snprintf(bases[nb++], 512, "ocl_headers/%s", import_name);
 
-    /* 3: plain name */
-    snprintf(paths[nc], 512, "%s", import_name);
-    candidates[nc] = paths[nc]; nc++;
+    /* 3: ./stdlib_headers/<name> */
+    snprintf(bases[nb++], 512, "stdlib_headers/%s", import_name);
 
-    for (int i = 0; i < nc; i++) {
-        FILE *f = fopen(candidates[i], "r");
-        if (f) { fclose(f); return ocl_strdup(candidates[i]); }
-        /* try with .ocl appended */
-        char try2[520]; snprintf(try2, 520, "%s.ocl", candidates[i]);
-        f = fopen(try2, "r"); if (f) { fclose(f); return ocl_strdup(try2); }
+    /* 4: plain name (relative to cwd) */
+    snprintf(bases[nb++], 512, "%s", import_name);
+
+    static const char *exts[] = { "", ".ocl", ".sxh" };
+    static const int   next   = sizeof(exts) / sizeof(exts[0]);
+
+    for (int i = 0; i < nb; i++) {
+        for (int e = 0; e < next; e++) {
+            char candidate[520];
+            snprintf(candidate, sizeof(candidate), "%s%s", bases[i], exts[e]);
+            FILE *f = fopen(candidate, "r");
+            if (f) { fclose(f); return ocl_strdup(candidate); }
+        }
     }
     return NULL;
 }
