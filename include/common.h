@@ -86,6 +86,13 @@ Value value_own_copy(Value v);
 bool   value_is_truthy(Value v);
 void   value_free(Value v);
 const char *value_type_name(ValueType t);
+
+/*
+ * value_to_string — returns a HEAP-ALLOCATED string.
+ * The caller is responsible for calling ocl_free() on the result.
+ * This replaces the old static-buffer version which was not re-entrant
+ * and corrupted output for nested array printing.
+ */
 char  *value_to_string(Value v);
 
 /* ── Memory helpers ───────────────────────────────────────────────── */
