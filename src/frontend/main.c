@@ -58,6 +58,7 @@ int main(int argc, char *argv[]) {
     int exit_code = 0;
     ErrorCollector *errors = error_collector_create();
 
+    /* ── Stage 1: Lex ─────────────────────────────────────────────── */
     Lexer *lexer = lexer_create(source, filename);
     size_t token_count = 0;
     Token *tokens = lexer_tokenize_all(lexer, &token_count);
@@ -79,32 +80,33 @@ int main(int argc, char *argv[]) {
                 lex_err = true;
             }
         }
+        /* Hard stop: lex errors prevent all further stages */
         if (lex_err) { exit_code = 1; goto cleanup_tokens; }
     }
 
+    /* ── Stage 2: Parse ───────────────────────────────────────────── */
     {
         Parser *parser = parser_create(tokens, token_count, filename, errors);
         ProgramNode *program = parser_parse(parser);
         parser_free(parser);
 
+        /* Hard stop: parse errors prevent all further stages */
         if (error_has_errors(errors)) {
-            fprintf(stderr, "Parse errors:\n"); error_print_all(errors);
+            fprintf(stderr, "Parse errors — compilation aborted:\n");
+            error_print_all(errors);
             exit_code = 1;
             if (program) ast_free((ASTNode *)program);
             goto cleanup_tokens;
         }
 
-        /*
-         * Type checking — when errors are found we print them and stop.
-         * Codegen and execution are ONLY reached when the program is
-         * type-error-free (or --no-typecheck was passed explicitly).
-         */
+        /* ── Stage 3: Type-check ──────────────────────────────────── */
         if (!skip_typecheck && program) {
             TypeChecker *tc = type_checker_create(errors);
             type_checker_check(tc, program);
             int tc_errors = type_checker_get_error_count(tc);
             type_checker_free(tc);
 
+            /* Hard stop: type errors prevent codegen and execution */
             if (tc_errors > 0 || error_has_errors(errors)) {
                 fprintf(stderr, "Type errors — compilation aborted:\n");
                 error_print_all(errors);
@@ -114,14 +116,18 @@ int main(int argc, char *argv[]) {
             }
         }
 
+        /* ── Stage 4: Code generation ─────────────────────────────── */
         Bytecode *bytecode = bytecode_create();
         CodeGenerator *gen = codegen_create(errors);
         bool ok = codegen_generate(gen, program, bytecode);
         codegen_free(gen);
 
+        /* Hard stop: codegen errors prevent execution */
         if (!ok || error_has_errors(errors)) {
-            fprintf(stderr, "Codegen errors:\n"); error_print_all(errors);
-            exit_code = 1; bytecode_free(bytecode);
+            fprintf(stderr, "Code generation errors — execution aborted:\n");
+            error_print_all(errors);
+            exit_code = 1;
+            bytecode_free(bytecode);
             if (program) ast_free((ASTNode *)program);
             goto cleanup_tokens;
         }
@@ -133,6 +139,7 @@ int main(int argc, char *argv[]) {
             goto cleanup_tokens;
         }
 
+        /* ── Stage 5: Execute ─────────────────────────────────────── */
         stdlib_init();
         VM *vm = vm_create(bytecode);
         struct timespec t0, t1;

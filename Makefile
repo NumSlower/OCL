@@ -31,6 +31,7 @@ CFLAGS_COMMON := \
     -Wextra \
     -Wpedantic \
     -Wno-unused-parameter \
+	-D_POSIX_C_SOURCE=200809L \
     -I$(INC_DIR)
 
 CFLAGS_DEBUG   := $(CFLAGS_COMMON) -g3 -O0 -DDEBUG -fsanitize=address,undefined
