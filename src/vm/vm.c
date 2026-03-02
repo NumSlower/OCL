@@ -279,6 +279,23 @@ int vm_execute(VM *vm) {
                 size_t len = strlen(as) + strlen(bs);
                 char *s = ocl_malloc(len + 1); strcpy(s, as); strcat(s, bs);
                 value_free(a); value_free(b); vm_push(vm, value_string(s));
+            } else if (a.type == VALUE_STRING && b.type == VALUE_CHAR) {
+                /* string + char — append the character */
+                const char *as = a.data.string_val ? a.data.string_val : "";
+                size_t len = strlen(as);
+                char *s = ocl_malloc(len + 2);
+                memcpy(s, as, len);
+                s[len]   = b.data.char_val;
+                s[len+1] = '\0';
+                value_free(a); value_free(b); vm_push(vm, value_string(s));
+            } else if (a.type == VALUE_CHAR && b.type == VALUE_STRING) {
+                /* char + string — prepend the character */
+                const char *bs = b.data.string_val ? b.data.string_val : "";
+                size_t len = strlen(bs);
+                char *s = ocl_malloc(len + 2);
+                s[0] = a.data.char_val;
+                memcpy(s + 1, bs, len + 1);
+                value_free(a); value_free(b); vm_push(vm, value_string(s));
             } else if (a.type == VALUE_INT && b.type == VALUE_INT) {
                 int64_t r = a.data.int_val + b.data.int_val; value_free(a); value_free(b); vm_push(vm, value_int(r));
             } else if ((a.type==VALUE_INT||a.type==VALUE_FLOAT)&&(b.type==VALUE_INT||b.type==VALUE_FLOAT)) {
@@ -411,7 +428,18 @@ int vm_execute(VM *vm) {
             frame->locals=ocl_malloc((size_t)local_cap*sizeof(Value));
             frame->local_count=(size_t)local_cap; frame->local_capacity=(size_t)local_cap;
             for(int i=0;i<local_cap;i++) frame->locals[i]=value_null();
-            for(int i=(int)argc-1;i>=0;i--) if(vm->stack_top>0) frame->locals[i]=value_own_copy(vm_pop(vm));
+            for(int i=(int)argc-1;i>=0;i--) {
+                if(vm->stack_top>0) {
+                    Value popped = vm_pop(vm);
+                    /* Mirror STORE_VAR: only copy unowned strings; arrays are already
+                       retained by LOAD_VAR/LOAD_GLOBAL, so store them directly to
+                       avoid a double-retain that would leak on frame teardown. */
+                    if (popped.type == VALUE_STRING && !popped.owned)
+                        frame->locals[i] = value_string_copy(popped.data.string_val);
+                    else
+                        frame->locals[i] = popped;
+                }
+            }
             vm->pc=fe->start_ip; continue;
         }
 
@@ -463,6 +491,7 @@ int vm_execute(VM *vm) {
                 case VALUE_INT:    r=a.data.int_val; break;
                 case VALUE_FLOAT:  r=(int64_t)a.data.float_val; break;
                 case VALUE_BOOL:   r=a.data.bool_val?1:0; break;
+                case VALUE_CHAR:   r=(int64_t)(unsigned char)a.data.char_val; break;
                 case VALUE_STRING: r=a.data.string_val?(int64_t)strtoll(a.data.string_val,NULL,10):0; break;
                 default:           r=0; break;
             }
@@ -474,6 +503,7 @@ int vm_execute(VM *vm) {
                 case VALUE_FLOAT:  r=a.data.float_val; break;
                 case VALUE_INT:    r=(double)a.data.int_val; break;
                 case VALUE_BOOL:   r=a.data.bool_val?1.0:0.0; break;
+                case VALUE_CHAR:   r=(double)(unsigned char)a.data.char_val; break;
                 case VALUE_STRING: r=a.data.string_val?strtod(a.data.string_val,NULL):0.0; break;
                 default:           r=0.0; break;
             }
@@ -497,8 +527,28 @@ int vm_execute(VM *vm) {
         case OP_ARRAY_GET: {
             Value idx_v = vm_pop(vm);
             Value arr_v = vm_pop(vm);
+
+            /* ── String character indexing: s[i] → Char ── */
+            if (arr_v.type == VALUE_STRING) {
+                if (idx_v.type != VALUE_INT) {
+                    vm_runtime_error(vm, LOC, "OP_ARRAY_GET: string index must be Int (got %s)", value_type_name(idx_v.type));
+                    value_free(idx_v); value_free(arr_v); vm_push(vm, value_null()); break;
+                }
+                const char *s = arr_v.data.string_val ? arr_v.data.string_val : "";
+                int64_t idx = idx_v.data.int_val;
+                size_t slen = strlen(s);
+                if (idx < 0 || (size_t)idx >= slen) {
+                    vm_runtime_error(vm, LOC, "OP_ARRAY_GET: string index %lld out of bounds [0, %zu)", (long long)idx, slen);
+                    value_free(idx_v); value_free(arr_v); vm_push(vm, value_null()); break;
+                }
+                char ch = s[idx];
+                value_free(idx_v); value_free(arr_v);
+                vm_push(vm, value_char(ch));
+                break;
+            }
+
             if (arr_v.type != VALUE_ARRAY || !arr_v.data.array_val) {
-                vm_runtime_error(vm, LOC, "OP_ARRAY_GET: value is not an Array (got %s)", value_type_name(arr_v.type));
+                vm_runtime_error(vm, LOC, "OP_ARRAY_GET: value is not an Array or String (got %s)", value_type_name(arr_v.type));
                 value_free(idx_v); value_free(arr_v); vm_push(vm, value_null()); break;
             }
             if (idx_v.type != VALUE_INT) {
@@ -542,6 +592,13 @@ int vm_execute(VM *vm) {
 
         case OP_ARRAY_LEN: {
             Value arr_v = vm_pop(vm);
+            if (arr_v.type == VALUE_STRING) {
+                /* Allow strLen-style use of arrayLen on strings */
+                int64_t len = (int64_t)(arr_v.data.string_val ? strlen(arr_v.data.string_val) : 0);
+                value_free(arr_v);
+                vm_push(vm, value_int(len));
+                break;
+            }
             if (arr_v.type != VALUE_ARRAY || !arr_v.data.array_val) {
                 vm_runtime_error(vm, LOC, "OP_ARRAY_LEN: not an Array (got %s)", value_type_name(arr_v.type));
                 value_free(arr_v); vm_push(vm, value_int(0)); break;

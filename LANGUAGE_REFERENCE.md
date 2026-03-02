@@ -1,6 +1,6 @@
 # OCL Language Reference
 
-> **Version:** beta 0.1.0  
+> **Version:** beta 0.6.0  
 > OCL is a statically-scoped, bytecode-compiled scripting language with a C-like syntax and a set of built-in functions for common tasks. This document is the complete reference for the language as it is currently implemented.
 
 ---

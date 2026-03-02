@@ -30,6 +30,7 @@ static int64_t to_int64(Value v) {
         case VALUE_INT:    return v.data.int_val;
         case VALUE_FLOAT:  return (int64_t)v.data.float_val;
         case VALUE_BOOL:   return v.data.bool_val ? 1 : 0;
+        case VALUE_CHAR:   return (int64_t)(unsigned char)v.data.char_val;  // <-- ADD THIS
         case VALUE_STRING: return v.data.string_val ? (int64_t)strtoll(v.data.string_val, NULL, 10) : 0;
         default: return 0;
     }
