@@ -92,6 +92,33 @@ static ExprNode *parse_assignment(Parser *p) {
         ExprNode *rhs = parse_assignment(p);
         return ast_create_binary_op(loc, lhs, "=", rhs);
     }
+    /* Compound assignment: x op= y  →  x = x op y */
+    static const struct { TokenType tok; const char *op; } compound[] = {
+        { TOKEN_PLUS_EQUAL,    "+" },
+        { TOKEN_MINUS_EQUAL,   "-" },
+        { TOKEN_STAR_EQUAL,    "*" },
+        { TOKEN_SLASH_EQUAL,   "/" },
+        { TOKEN_PERCENT_EQUAL, "%" },
+        { (TokenType)0, NULL }
+    };
+    for (int i = 0; compound[i].op; i++) {
+        if (match(p, compound[i].tok)) {
+            SourceLocation loc = prev_tok(p)->location;
+            ExprNode *rhs = parse_assignment(p);
+            /* Duplicate lhs as the left operand of the inner op */
+            ExprNode *lhs_copy = NULL;
+            if (lhs->base.type == AST_IDENTIFIER) {
+                char *dup_name = ocl_strdup(((IdentifierNode *)lhs)->name);
+                lhs_copy = ast_create_identifier(loc, dup_name);
+            } else {
+                /* For non-identifier lhs (e.g. array index), fall back to
+                   a plain assignment — compound index ops aren't supported yet */
+                lhs_copy = lhs;
+            }
+            ExprNode *arith = ast_create_binary_op(loc, lhs_copy, compound[i].op, rhs);
+            return ast_create_binary_op(loc, lhs, "=", arith);
+        }
+    }
     return lhs;
 }
 

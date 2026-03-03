@@ -152,14 +152,22 @@ Token lexer_next_token(Lexer *l) {
     advance(l);
     switch (c) {
         case '+':
-            if (cur(l) == '+') { advance(l); return make_token(l, TOKEN_PLUS_PLUS,   "++"); }
+            if (cur(l) == '+') { advance(l); return make_token(l, TOKEN_PLUS_PLUS,    "++"); }
+            if (cur(l) == '=') { advance(l); return make_token(l, TOKEN_PLUS_EQUAL,   "+="); }
             return make_token(l, TOKEN_PLUS, "+");
         case '-':
-            if (cur(l) == '-') { advance(l); return make_token(l, TOKEN_MINUS_MINUS, "--"); }
+            if (cur(l) == '-') { advance(l); return make_token(l, TOKEN_MINUS_MINUS,  "--"); }
+            if (cur(l) == '=') { advance(l); return make_token(l, TOKEN_MINUS_EQUAL,  "-="); }
             return make_token(l, TOKEN_MINUS, "-");
-        case '*': return make_token(l, TOKEN_STAR,      "*");
-        case '/': return make_token(l, TOKEN_SLASH,     "/");
-        case '%': return make_token(l, TOKEN_PERCENT,   "%");
+        case '*':
+            if (cur(l) == '=') { advance(l); return make_token(l, TOKEN_STAR_EQUAL,   "*="); }
+            return make_token(l, TOKEN_STAR,    "*");
+        case '/':
+            if (cur(l) == '=') { advance(l); return make_token(l, TOKEN_SLASH_EQUAL,  "/="); }
+            return make_token(l, TOKEN_SLASH,   "/");
+        case '%':
+            if (cur(l) == '=') { advance(l); return make_token(l, TOKEN_PERCENT_EQUAL,"%="); }
+            return make_token(l, TOKEN_PERCENT, "%");
         case ':': return make_token(l, TOKEN_COLON,     ":");
         case ';': return make_token(l, TOKEN_SEMICOLON, ";");
         case '.': return make_token(l, TOKEN_DOT,       ".");
