@@ -10,6 +10,8 @@ VM *vm_create(Bytecode *bytecode) {
     vm->bytecode  = bytecode;
     vm->stack_top = 0;
     vm->frame_top = 0;
+    vm->frame_capacity  = VM_FRAMES_INITIAL;
+    vm->frames          = ocl_malloc(vm->frame_capacity * sizeof(CallFrame));
     vm->globals   = NULL;
     vm->global_count    = 0;
     vm->global_capacity = 0;
@@ -27,6 +29,7 @@ void vm_free(VM *vm) {
             value_free(vm->frames[i].locals[j]);
         ocl_free(vm->frames[i].locals);
     }
+    ocl_free(vm->frames);   /* <-- this line was missing */
     for (size_t i = 0; i < vm->global_count; i++) value_free(vm->globals[i]);
     ocl_free(vm->globals);
     ocl_free(vm);
@@ -425,7 +428,11 @@ int vm_execute(VM *vm) {
             if (fidx==0xFFFFFFFF) { vm_runtime_error(vm,LOC,"Call to unresolved function"); for(uint32_t i=0;i<argc;i++) vm_pop_free(vm); vm_push(vm,value_null()); break; }
             if (fidx>=(uint32_t)vm->bytecode->function_count) { vm_runtime_error(vm,LOC,"Invalid function index %u",fidx); for(uint32_t i=0;i<argc;i++) vm_pop_free(vm); vm_push(vm,value_null()); break; }
             FuncEntry *fe=&vm->bytecode->functions[fidx];
-            if (vm->frame_top>=VM_FRAMES_MAX) { vm_runtime_error(vm,LOC,"Call stack overflow calling '%s'",fe->name?fe->name:"?"); for(uint32_t i=0;i<argc;i++) vm_pop_free(vm); vm_push(vm,value_null()); break; }
+            if (vm->frame_top >= vm->frame_capacity) {
+                size_t new_cap = vm->frame_capacity * VM_FRAMES_GROW;
+                vm->frames = ocl_realloc(vm->frames, new_cap * sizeof(CallFrame));
+                vm->frame_capacity = new_cap;
+            }
             if ((int)argc!=fe->param_count) {
                 vm_runtime_error(vm,LOC,"Function '%s' expects %d args, got %u",fe->name?fe->name:"?",fe->param_count,argc);
                 for(uint32_t i=0;i<argc;i++) vm_pop_free(vm);

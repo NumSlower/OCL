@@ -377,6 +377,46 @@ static void builtin_time_now(VM *vm, int argc) {
     vm_push(vm, value_int(ns));
 }
 
+static void builtin_random(VM *vm, int argc) {
+    Value *args = pop_args(vm, argc);
+
+    /* Seed once from /dev/urandom; fall back to time() if unavailable */
+    static bool seeded = false;
+    if (!seeded) {
+        unsigned int seed;
+        FILE *urandom = fopen("/dev/urandom", "rb");
+        if (urandom) { fread(&seed, sizeof(seed), 1, urandom); fclose(urandom); }
+        else           seed = (unsigned int)time(NULL);
+        srand(seed);
+        seeded = true;
+    }
+
+    /* rand() is only guaranteed 15 bits; XOR two shifted calls for 32 bits */
+    #define OCL_RAND32() (((uint32_t)rand() << 16) ^ (uint32_t)rand())
+
+    if (argc >= 2) {
+        /* random(lo, hi)  →  Int in [lo, hi] inclusive */
+        int64_t lo = to_int64(args[0]);
+        int64_t hi = to_int64(args[1]);
+        FREE_ARGS(args, argc);
+        if (hi <= lo) { vm_push(vm, value_int(lo)); return; }
+        uint64_t range = (uint64_t)(hi - lo) + 1;
+        vm_push(vm, value_int(lo + (int64_t)(OCL_RAND32() % range)));
+    } else if (argc == 1) {
+        /* random(n)        →  Int in [0, n-1] */
+        int64_t n = to_int64(args[0]);
+        FREE_ARGS(args, argc);
+        if (n <= 0) { vm_push(vm, value_int(0)); return; }
+        vm_push(vm, value_int((int64_t)(OCL_RAND32() % (uint64_t)n)));
+    } else {
+        /* random()         →  Float in [0.0, 1.0) */
+        FREE_ARGS(args, argc);
+        vm_push(vm, value_float((double)OCL_RAND32() / ((double)UINT32_MAX + 1.0)));
+    }
+
+    #undef OCL_RAND32
+}
+
 /* ── Dispatch table ───────────────────────────────────────────────── */
 
 static const StdlibEntry STDLIB_TABLE[] = {
@@ -421,6 +461,7 @@ static const StdlibEntry STDLIB_TABLE[] = {
     { BUILTIN_ARRAY_SET,   "arraySet",    builtin_array_set   },
     { BUILTIN_ARRAY_LEN,   "arrayLen",    builtin_array_len   },
     { BUILTIN_TIME_NOW,    "timeNow",     builtin_time_now },
+    { BUILTIN_RANDOM,      "random",      builtin_random   },
 };
 static const size_t STDLIB_TABLE_SIZE = sizeof(STDLIB_TABLE)/sizeof(STDLIB_TABLE[0]);
 

@@ -88,11 +88,15 @@ void   value_free(Value v);
 const char *value_type_name(ValueType t);
 
 /*
- * value_to_string — returns a HEAP-ALLOCATED string.
- * The caller is responsible for calling ocl_free() on the result.
- * This replaces the old static-buffer version which was not re-entrant
- * and corrupted output for nested array printing.
+ * value_to_string — returns a pointer into a rotating pool of
+ * OCL_VTOS_POOL_COUNT static buffers (each OCL_VTOS_BUF_SIZE bytes).
+ *
+ * Callers MUST NOT free the result.
+ * Callers needing the string beyond the next few calls should strdup() it.
+ * Up to OCL_VTOS_POOL_COUNT nested calls (e.g. arrays-of-arrays) are safe.
  */
+#define OCL_VTOS_POOL_COUNT 8
+#define OCL_VTOS_BUF_SIZE   8192
 char  *value_to_string(Value v);
 
 /* ── Memory helpers ───────────────────────────────────────────────── */
