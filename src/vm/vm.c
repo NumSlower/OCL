@@ -390,47 +390,19 @@ int vm_execute(VM *vm) {
         case OP_GREATER:       CMP_OP(a.data.int_val >  b.data.int_val, af >  bf); break;
         case OP_GREATER_EQUAL: CMP_OP(a.data.int_val >= b.data.int_val, af >= bf); break;
 
-        /* ── Short-circuit AND ──────────────────────────────────────────
-           Evaluate left side. If falsy, skip right side evaluation and
-           push false immediately. The codegen emits:
-             <left expr>
-             OP_JUMP_IF_FALSE_SC  →  patch_target   (pops left, pushes false, jumps)
-             <right expr>
-             OP_AND
-           We implement this here by repurposing OP_AND to be the
-           "both sides already evaluated, AND them" case, and adding
-           dedicated short-circuit jump opcodes. Since we cannot change
-           the opcode table easily without touching many files, we instead
-           handle OP_AND / OP_OR here as short-circuit at the *VM* level
-           by using the already-emitted OP_JUMP_IF_FALSE / OP_JUMP_IF_TRUE
-           that the codegen wraps around these operators.
-
-           Actually, the cleanest approach without touching codegen is to
-           add two new opcodes: OP_AND_SC and OP_OR_SC. However, to avoid
-           requiring changes to bytecode.h and codegen.c we implement
-           short-circuit through the existing jump mechanism:
-
-           Codegen now emits for (a && b):
-             <a>
-             OP_JUMP_IF_FALSE  →  false_label
-             <b>
-             OP_JUMP           →  end_label
-           false_label:
-             OP_PUSH_CONST false
-           end_label:
-
-           This is done in codegen.c. The OP_AND opcode is kept for
-           backward compatibility but is no longer emitted for &&.
-        ── */
-
+        /*
+         * OP_AND / OP_OR — fallback handlers for any bytecode that still
+         * uses these opcodes directly (e.g. pre-compiled caches).
+         * The code generator no longer emits these for && / || expressions;
+         * it uses OP_JUMP_IF_FALSE / OP_JUMP_IF_TRUE sequences instead so
+         * that both operators short-circuit correctly.
+         */
         case OP_AND: {
-            /* Legacy: both sides already on stack */
             Value b=vm_pop(vm); Value a=vm_pop(vm);
             bool r=value_is_truthy(a)&&value_is_truthy(b);
             value_free(a); value_free(b); vm_push(vm,value_bool(r)); break;
         }
         case OP_OR: {
-            /* Legacy: both sides already on stack */
             Value b=vm_pop(vm); Value a=vm_pop(vm);
             bool r=value_is_truthy(a)||value_is_truthy(b);
             value_free(a); value_free(b); vm_push(vm,value_bool(r)); break;
@@ -553,12 +525,19 @@ int vm_execute(VM *vm) {
 
         case OP_ARRAY_NEW: {
             uint32_t count = ins.operand1;
-            OclArray *arr = ocl_array_new(count > 0 ? count : 8);
-            Value *tmp = ocl_malloc((count > 0 ? count : 1) * sizeof(Value));
-            for (uint32_t i = count; i > 0; i--) tmp[i-1] = vm_pop(vm);
-            for (uint32_t i = 0; i < count; i++) { ocl_array_push(arr, tmp[i]); value_free(tmp[i]); }
-            ocl_free(tmp);
+            /* ocl_array_new sets refcount=1 (creator reference).
+             * value_array() calls ocl_array_retain → refcount=2.
+             * We must release the creator reference after the push
+             * so the array is solely owned by the stack value. */
+            OclArray *arr = ocl_array_new(count > 0 ? (size_t)count : 8);
+            if (count > 0) {
+                Value *tmp = ocl_malloc((size_t)count * sizeof(Value));
+                for (uint32_t i = count; i > 0; i--) tmp[i-1] = vm_pop(vm);
+                for (uint32_t i = 0; i < count; i++) { ocl_array_push(arr, tmp[i]); value_free(tmp[i]); }
+                ocl_free(tmp);
+            }
             vm_push(vm, value_array(arr));
+            ocl_array_release(arr); /* drop creator reference; stack value holds the only ref now */
             break;
         }
 

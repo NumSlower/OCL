@@ -131,6 +131,8 @@ static void emit_expr(CodeGenerator *g, ExprNode *expr) {
         }
         case AST_BIN_OP: {
             BinOpNode *b = (BinOpNode *)expr;
+
+            /* ── Assignment ──────────────────────────────────────────── */
             if (!strcmp(b->operator, "=")) {
                 emit_expr(g, b->right);
                 if (b->left && b->left->base.type == AST_IDENTIFIER) {
@@ -146,20 +148,96 @@ static void emit_expr(CodeGenerator *g, ExprNode *expr) {
                     IndexAccessNode *ia = (IndexAccessNode *)b->left;
                     emit_expr(g, ia->array_expr);
                     emit_expr(g, ia->index_expr);
-                    /* Stack: <bottom> rhs array index <top>
-                       OP_ARRAY_SET pops: index, array, rhs — correct order */
                     bytecode_emit(bc, OP_ARRAY_SET, 0, 0, b->base.location);
                 } else if (g->errors) {
                     error_add(g->errors, ERROR_PARSER, b->base.location, "Invalid assignment target");
                 }
                 break;
             }
+
+            /* ── Short-circuit &&  ───────────────────────────────────────
+             *
+             * Emits:
+             *   <left>
+             *   OP_JUMP_IF_FALSE  → sc_false   (consumes left; if falsy skip right)
+             *   <right>
+             *   OP_JUMP_IF_FALSE  → sc_false   (consumes right; if falsy go false)
+             *   OP_PUSH_CONST true
+             *   OP_JUMP           → end
+             * sc_false:
+             *   OP_PUSH_CONST false
+             * end:
+             */
+            if (!strcmp(b->operator, "&&")) {
+                emit_expr(g, b->left);
+                uint32_t jf1 = (uint32_t)bc->instruction_count;
+                bytecode_emit(bc, OP_JUMP_IF_FALSE, 0, 0, b->base.location);
+
+                emit_expr(g, b->right);
+                uint32_t jf2 = (uint32_t)bc->instruction_count;
+                bytecode_emit(bc, OP_JUMP_IF_FALSE, 0, 0, b->base.location);
+
+                uint32_t ci_true = bytecode_add_constant(bc, value_bool(true));
+                bytecode_emit(bc, OP_PUSH_CONST, ci_true, 0, b->base.location);
+                uint32_t jmp_end = (uint32_t)bc->instruction_count;
+                bytecode_emit(bc, OP_JUMP, 0, 0, b->base.location);
+
+                uint32_t sc_false = (uint32_t)bc->instruction_count;
+                bytecode_patch(bc, jf1, sc_false);
+                bytecode_patch(bc, jf2, sc_false);
+                uint32_t ci_false = bytecode_add_constant(bc, value_bool(false));
+                bytecode_emit(bc, OP_PUSH_CONST, ci_false, 0, b->base.location);
+
+                uint32_t end_ip = (uint32_t)bc->instruction_count;
+                bytecode_patch(bc, jmp_end, end_ip);
+                break;
+            }
+
+            /* ── Short-circuit ||  ───────────────────────────────────────
+             *
+             * Emits:
+             *   <left>
+             *   OP_JUMP_IF_TRUE   → sc_true    (consumes left; if truthy skip right)
+             *   <right>
+             *   OP_JUMP_IF_TRUE   → sc_true    (consumes right; if truthy go true)
+             *   OP_PUSH_CONST false
+             *   OP_JUMP           → end
+             * sc_true:
+             *   OP_PUSH_CONST true
+             * end:
+             */
+            if (!strcmp(b->operator, "||")) {
+                emit_expr(g, b->left);
+                uint32_t jt1 = (uint32_t)bc->instruction_count;
+                bytecode_emit(bc, OP_JUMP_IF_TRUE, 0, 0, b->base.location);
+
+                emit_expr(g, b->right);
+                uint32_t jt2 = (uint32_t)bc->instruction_count;
+                bytecode_emit(bc, OP_JUMP_IF_TRUE, 0, 0, b->base.location);
+
+                uint32_t ci_false = bytecode_add_constant(bc, value_bool(false));
+                bytecode_emit(bc, OP_PUSH_CONST, ci_false, 0, b->base.location);
+                uint32_t jmp_end = (uint32_t)bc->instruction_count;
+                bytecode_emit(bc, OP_JUMP, 0, 0, b->base.location);
+
+                uint32_t sc_true = (uint32_t)bc->instruction_count;
+                bytecode_patch(bc, jt1, sc_true);
+                bytecode_patch(bc, jt2, sc_true);
+                uint32_t ci_true = bytecode_add_constant(bc, value_bool(true));
+                bytecode_emit(bc, OP_PUSH_CONST, ci_true, 0, b->base.location);
+
+                uint32_t end_ip = (uint32_t)bc->instruction_count;
+                bytecode_patch(bc, jmp_end, end_ip);
+                break;
+            }
+
+            /* ── All other binary operators via opcode map ───────────── */
             emit_expr(g, b->left);
             emit_expr(g, b->right);
             static const struct { const char *op; Opcode code; } map[] = {
                 {"+",OP_ADD},{"-",OP_SUBTRACT},{"*",OP_MULTIPLY},{"/",OP_DIVIDE},{"%",OP_MODULO},
                 {"==",OP_EQUAL},{"!=",OP_NOT_EQUAL},{"<",OP_LESS},{"<=",OP_LESS_EQUAL},
-                {">",OP_GREATER},{">=",OP_GREATER_EQUAL},{"&&",OP_AND},{"||",OP_OR},{NULL,0}
+                {">",OP_GREATER},{">=",OP_GREATER_EQUAL},{NULL,0}
             };
             for (int i = 0; map[i].op; i++)
                 if (!strcmp(b->operator, map[i].op)) { bytecode_emit(bc, map[i].code, 0, 0, b->base.location); break; }
