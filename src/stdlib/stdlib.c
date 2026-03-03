@@ -30,7 +30,7 @@ static int64_t to_int64(Value v) {
         case VALUE_INT:    return v.data.int_val;
         case VALUE_FLOAT:  return (int64_t)v.data.float_val;
         case VALUE_BOOL:   return v.data.bool_val ? 1 : 0;
-        case VALUE_CHAR:   return (int64_t)(unsigned char)v.data.char_val;  // <-- ADD THIS
+        case VALUE_CHAR:   return (int64_t)(unsigned char)v.data.char_val;
         case VALUE_STRING: return v.data.string_val ? (int64_t)strtoll(v.data.string_val, NULL, 10) : 0;
         default: return 0;
     }
@@ -185,15 +185,31 @@ static void builtin_strtrim(VM *vm, int argc) {
     char *result = ocl_malloc(len + 1); memcpy(result, p, len); result[len] = '\0';
     ocl_free(s); vm_push(vm, value_string(result));
 }
+
+/*
+ * strSplit(s, delim) — returns an Int count of tokens.
+ * This matches the original API that OCL code depends on.
+ */
 static void builtin_strsplit(VM *vm, int argc) {
     Value *args = pop_args(vm, argc);
-    if (argc < 2 || args[0].type != VALUE_STRING) { FREE_ARGS(args, argc); vm_push(vm, value_int(0)); return; }
-    char *copy = ocl_strdup(args[0].data.string_val ? args[0].data.string_val : "");
-    char *delim = ocl_strdup((args[1].type==VALUE_STRING&&args[1].data.string_val)?args[1].data.string_val:" ");
+    if (argc < 2 || args[0].type != VALUE_STRING) {
+        FREE_ARGS(args, argc);
+        vm_push(vm, value_int(0));
+        return;
+    }
+    char *copy  = ocl_strdup(args[0].data.string_val ? args[0].data.string_val : "");
+    char *delim = ocl_strdup((args[1].type==VALUE_STRING && args[1].data.string_val)
+                              ? args[1].data.string_val : " ");
     FREE_ARGS(args, argc);
-    int64_t count = 0; char *tok = strtok(copy, delim);
-    while (tok) { count++; tok = strtok(NULL, delim); }
-    ocl_free(copy); ocl_free(delim); vm_push(vm, value_int(count));
+
+    int64_t count = 0;
+    char *saveptr = NULL;
+    char *tok = strtok_r(copy, delim, &saveptr);
+    while (tok) { count++; tok = strtok_r(NULL, delim, &saveptr); }
+
+    ocl_free(copy);
+    ocl_free(delim);
+    vm_push(vm, value_int(count));
 }
 
 static void builtin_to_int(VM *vm, int argc) {
@@ -207,8 +223,9 @@ static void builtin_to_float(VM *vm, int argc) {
 static void builtin_to_string(VM *vm, int argc) {
     Value *args = pop_args(vm, argc);
     if (argc < 1) { ocl_free(args); vm_push(vm, value_string(ocl_strdup(""))); return; }
-    char *s = value_to_string(args[0]); Value result = value_string(ocl_strdup(s));
-    FREE_ARGS(args, argc); vm_push(vm, result);
+    char *s = ocl_strdup(value_to_string(args[0])); /* copy from static pool */
+    FREE_ARGS(args, argc);
+    vm_push(vm, value_string(s));        /* now owns heap copy */
 }
 static void builtin_to_bool(VM *vm, int argc) {
     Value *args = pop_args(vm, argc); bool r = false;
@@ -279,7 +296,6 @@ static void builtin_is_bool(VM *vm, int argc) {
 
 /* ── Array builtins ───────────────────────────────────────────────── */
 
-/* arrayNew(size) → Array — creates an Array pre-filled with nulls */
 static void builtin_array_new(VM *vm, int argc) {
     Value *args = pop_args(vm, argc);
     int64_t sz = (argc >= 1) ? to_int64(args[0]) : 0;
@@ -288,10 +304,9 @@ static void builtin_array_new(VM *vm, int argc) {
     OclArray *arr = ocl_array_new((size_t)sz);
     for (int64_t i = 0; i < sz; i++) ocl_array_push(arr, value_null());
     vm_push(vm, value_array(arr));
-    /* value_array() retains arr — no extra release needed */
+    ocl_array_release(arr);
 }
 
-/* arrayPush(arr, value) → null — appends value to arr */
 static void builtin_array_push(VM *vm, int argc) {
     Value *args = pop_args(vm, argc);
     if (argc < 2 || args[0].type != VALUE_ARRAY) {
@@ -299,11 +314,10 @@ static void builtin_array_push(VM *vm, int argc) {
         vm_push(vm, value_null()); return;
     }
     ocl_array_push(args[0].data.array_val, args[1]);
-    FREE_ARGS(args, argc);
+    FREE_ARGS(args, argc); /* correctly releases the OP_LOAD_VAR retain */
     vm_push(vm, value_null());
 }
 
-/* arrayPop(arr) → value — removes and returns last element */
 static void builtin_array_pop(VM *vm, int argc) {
     Value *args = pop_args(vm, argc);
     if (argc < 1 || args[0].type != VALUE_ARRAY || !args[0].data.array_val || args[0].data.array_val->length == 0) {
@@ -316,11 +330,10 @@ static void builtin_array_pop(VM *vm, int argc) {
     value_free(arr->elements[last]);
     arr->elements[last] = value_null();
     arr->length--;
-    FREE_ARGS(args, argc);
+    FREE_ARGS(args, argc); /* correctly releases the OP_LOAD_VAR retain */
     vm_push(vm, v);
 }
 
-/* arrayGet(arr, idx) → value */
 static void builtin_array_get(VM *vm, int argc) {
     Value *args = pop_args(vm, argc);
     if (argc < 2 || args[0].type != VALUE_ARRAY) {
@@ -330,11 +343,10 @@ static void builtin_array_get(VM *vm, int argc) {
     int64_t idx = to_int64(args[1]);
     Value v = (idx >= 0 && args[0].data.array_val && (size_t)idx < args[0].data.array_val->length)
               ? ocl_array_get(args[0].data.array_val, (size_t)idx) : value_null();
-    FREE_ARGS(args, argc);
+    FREE_ARGS(args, argc); /* correctly releases the OP_LOAD_VAR retain */
     vm_push(vm, v);
 }
 
-/* arraySet(arr, idx, value) → null */
 static void builtin_array_set(VM *vm, int argc) {
     Value *args = pop_args(vm, argc);
     if (argc < 3 || args[0].type != VALUE_ARRAY) {
@@ -343,11 +355,10 @@ static void builtin_array_set(VM *vm, int argc) {
     }
     int64_t idx = to_int64(args[1]);
     if (idx >= 0 && args[0].data.array_val) ocl_array_set(args[0].data.array_val, (size_t)idx, args[2]);
-    FREE_ARGS(args, argc);
+    FREE_ARGS(args, argc); /* correctly releases the OP_LOAD_VAR retain */
     vm_push(vm, value_null());
 }
 
-/* arrayLen(arr) → int */
 static void builtin_array_len(VM *vm, int argc) {
     Value *args = pop_args(vm, argc);
     int64_t len = 0;
@@ -394,7 +405,6 @@ static const StdlibEntry STDLIB_TABLE[] = {
     { BUILTIN_IS_FLOAT,    "isFloat",     builtin_is_float    },
     { BUILTIN_IS_STRING,   "isString",    builtin_is_string   },
     { BUILTIN_IS_BOOL,     "isBool",      builtin_is_bool     },
-    /* Array builtins */
     { BUILTIN_ARRAY_NEW,   "arrayNew",    builtin_array_new   },
     { BUILTIN_ARRAY_PUSH,  "arrayPush",   builtin_array_push  },
     { BUILTIN_ARRAY_POP,   "arrayPop",    builtin_array_pop   },

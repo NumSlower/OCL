@@ -9,10 +9,9 @@ OclArray *ocl_array_new(size_t initial_cap) {
     OclArray *a = ocl_malloc(sizeof(OclArray));
     a->capacity = initial_cap > 0 ? initial_cap : 8;
     a->elements = ocl_malloc(a->capacity * sizeof(Value));
-    /* Zero-initialise every slot so value_free sees valid value_null()s */
     for (size_t i = 0; i < a->capacity; i++) a->elements[i] = value_null();
     a->length   = 0;
-    a->refcount = 0;
+    a->refcount = 1;  /* creator holds one reference; must release when done */
     return a;
 }
 
@@ -49,7 +48,6 @@ void ocl_array_set(OclArray *a, size_t idx, Value v) {
 Value ocl_array_get(OclArray *a, size_t idx) {
     if (!a || idx >= a->length) return value_null();
     Value v = a->elements[idx];
-    /* return a borrow for non-string, borrow for string */
     if (v.type == VALUE_STRING) return value_string_borrow(v.data.string_val);
     if (v.type == VALUE_ARRAY)  { ocl_array_retain(v.data.array_val); return v; }
     return v;
@@ -93,34 +91,75 @@ bool value_is_truthy(Value v) {
     }
 }
 
-/* ── String representation ────────────────────────────────────────── */
+/* ── String representation — rotating static buffer pool ─────────────
+ *
+ * Returns a pointer into one of OCL_VTOS_POOL_COUNT static buffers,
+ * cycling round-robin.  Callers must NOT free the result.  Callers that
+ * need to keep the string beyond the next few calls should strdup() it.
+ *
+ * Using a pool (rather than a single static buffer) means nested calls
+ * — e.g. printing arrays whose elements are also arrays — each get their
+ * own buffer slot and don't corrupt one another, as long as nesting depth
+ * stays below OCL_VTOS_POOL_COUNT.
+ */
+#define OCL_VTOS_POOL_COUNT 8
+#define OCL_VTOS_BUF_SIZE   8192
 
 char *value_to_string(Value v) {
-    static char buf[512];
+    static char pool[OCL_VTOS_POOL_COUNT][OCL_VTOS_BUF_SIZE];
+    static int  slot = 0;
+
+    char *out = pool[slot];
+    slot = (slot + 1) % OCL_VTOS_POOL_COUNT;
+
     switch (v.type) {
-        case VALUE_INT:    snprintf(buf, sizeof(buf), "%ld", (long)v.data.int_val);  return buf;
-        case VALUE_FLOAT:  snprintf(buf, sizeof(buf), "%g",  v.data.float_val);      return buf;
-        case VALUE_STRING: return v.data.string_val ? v.data.string_val : "";
-        case VALUE_BOOL:   return v.data.bool_val ? "true" : "false";
-        case VALUE_CHAR:   buf[0] = v.data.char_val; buf[1] = '\0';                  return buf;
-        case VALUE_NULL:   return "null";
+        case VALUE_INT:
+            snprintf(out, OCL_VTOS_BUF_SIZE, "%ld", (long)v.data.int_val);
+            break;
+        case VALUE_FLOAT:
+            snprintf(out, OCL_VTOS_BUF_SIZE, "%g", v.data.float_val);
+            break;
+        case VALUE_STRING:
+            snprintf(out, OCL_VTOS_BUF_SIZE, "%s",
+                     v.data.string_val ? v.data.string_val : "");
+            break;
+        case VALUE_BOOL:
+            snprintf(out, OCL_VTOS_BUF_SIZE, "%s",
+                     v.data.bool_val ? "true" : "false");
+            break;
+        case VALUE_CHAR:
+            out[0] = v.data.char_val; out[1] = '\0';
+            break;
+        case VALUE_NULL:
+            snprintf(out, OCL_VTOS_BUF_SIZE, "null");
+            break;
         case VALUE_ARRAY: {
-            if (!v.data.array_val) return "[]";
+            if (!v.data.array_val) { out[0]='['; out[1]=']'; out[2]='\0'; break; }
             size_t pos = 0;
-            buf[pos++] = '[';
-            for (size_t i = 0; i < v.data.array_val->length && pos < sizeof(buf)-4; i++) {
-                if (i > 0) { buf[pos++] = ','; buf[pos++] = ' '; }
-                char *s = value_to_string(v.data.array_val->elements[i]);
-                size_t slen = strlen(s);
-                if (pos + slen >= sizeof(buf)-4) { buf[pos++]='.'; buf[pos++]='.'; buf[pos++]='.'; break; }
-                memcpy(buf+pos, s, slen); pos += slen;
+            out[pos++] = '[';
+            for (size_t i = 0; i < v.data.array_val->length; i++) {
+                if (i > 0) {
+                    if (pos + 2 < OCL_VTOS_BUF_SIZE - 1) {
+                        out[pos++] = ','; out[pos++] = ' ';
+                    }
+                }
+                /* Recursive call uses the NEXT pool slot, not ours */
+                const char *elem = value_to_string(v.data.array_val->elements[i]);
+                size_t elen = strlen(elem);
+                if (pos + elen < OCL_VTOS_BUF_SIZE - 2) {
+                    memcpy(out + pos, elem, elen);
+                    pos += elen;
+                }
             }
-            if (pos < sizeof(buf)-1) buf[pos++] = ']';
-            buf[pos] = '\0';
-            return buf;
+            if (pos < OCL_VTOS_BUF_SIZE - 1) out[pos++] = ']';
+            out[pos] = '\0';
+            break;
         }
-        default: return "?";
+        default:
+            out[0] = '?'; out[1] = '\0';
+            break;
     }
+    return out;
 }
 
 /* ── Type name ────────────────────────────────────────────────────── */

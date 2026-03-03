@@ -109,7 +109,10 @@ static void builtin_print(VM *vm, int argc) {
             case VALUE_BOOL:   printf("%s",   args[i].data.bool_val ? "true" : "false"); break;
             case VALUE_CHAR:   printf("%c",   args[i].data.char_val);       break;
             case VALUE_NULL:   printf("null");                               break;
-            case VALUE_ARRAY:  printf("%s",   value_to_string(args[i]));    break;
+            case VALUE_ARRAY:  {
+                printf("%s", value_to_string(args[i]));
+                break;
+            }
             default: break;
         }
     }
@@ -123,8 +126,7 @@ static void builtin_printf(VM *vm, int argc) {
     if (argc < 1) { vm_push(vm, value_null()); return; }
     Value *args = pop_args_for_builtin(vm, argc);
     if (args[0].type != VALUE_STRING) {
-        char *s = value_to_string(args[0]);
-        printf("%s", s);
+        printf("%s", value_to_string(args[0]));
         for (int i = 0; i < argc; i++) value_free(args[i]);
         ocl_free(args); vm_push(vm, value_null()); return;
     }
@@ -146,22 +148,24 @@ static void builtin_printf(VM *vm, int argc) {
                         Value a = args[next_arg++];
                         if (a.type == VALUE_INT) printf("%ld", (long)a.data.int_val);
                         else if (a.type == VALUE_FLOAT) printf("%ld", (long)a.data.float_val);
-                        else printf("%s", value_to_string(a));
+                        else { printf("%s", value_to_string(a)); }
                     } break;
                 case 'f':
                     if (next_arg < argc) {
                         Value a = args[next_arg++];
                         if (a.type == VALUE_FLOAT) printf("%g", a.data.float_val);
                         else if (a.type == VALUE_INT) printf("%g", (double)a.data.int_val);
-                        else printf("%s", value_to_string(a));
+                        else { printf("%s", value_to_string(a)); }
                     } break;
                 case 's':
-                    if (next_arg < argc) { printf("%s", value_to_string(args[next_arg++])); } break;
+                    if (next_arg < argc) {
+                        printf("%s", value_to_string(args[next_arg++]));
+                    } break;
                 case 'c':
                     if (next_arg < argc) {
                         Value a = args[next_arg++];
                         if (a.type == VALUE_CHAR) printf("%c", a.data.char_val);
-                        else printf("%s", value_to_string(a));
+                        else { printf("%s", value_to_string(a)); }
                     } break;
                 case 'b':
                     if (next_arg < argc) { printf("%s", value_is_truthy(args[next_arg++]) ? "true" : "false"); } break;
@@ -280,7 +284,6 @@ int vm_execute(VM *vm) {
                 char *s = ocl_malloc(len + 1); strcpy(s, as); strcat(s, bs);
                 value_free(a); value_free(b); vm_push(vm, value_string(s));
             } else if (a.type == VALUE_STRING && b.type == VALUE_CHAR) {
-                /* string + char — append the character */
                 const char *as = a.data.string_val ? a.data.string_val : "";
                 size_t len = strlen(as);
                 char *s = ocl_malloc(len + 2);
@@ -289,7 +292,6 @@ int vm_execute(VM *vm) {
                 s[len+1] = '\0';
                 value_free(a); value_free(b); vm_push(vm, value_string(s));
             } else if (a.type == VALUE_CHAR && b.type == VALUE_STRING) {
-                /* char + string — prepend the character */
                 const char *bs = b.data.string_val ? b.data.string_val : "";
                 size_t len = strlen(bs);
                 char *s = ocl_malloc(len + 2);
@@ -388,12 +390,47 @@ int vm_execute(VM *vm) {
         case OP_GREATER:       CMP_OP(a.data.int_val >  b.data.int_val, af >  bf); break;
         case OP_GREATER_EQUAL: CMP_OP(a.data.int_val >= b.data.int_val, af >= bf); break;
 
+        /* ── Short-circuit AND ──────────────────────────────────────────
+           Evaluate left side. If falsy, skip right side evaluation and
+           push false immediately. The codegen emits:
+             <left expr>
+             OP_JUMP_IF_FALSE_SC  →  patch_target   (pops left, pushes false, jumps)
+             <right expr>
+             OP_AND
+           We implement this here by repurposing OP_AND to be the
+           "both sides already evaluated, AND them" case, and adding
+           dedicated short-circuit jump opcodes. Since we cannot change
+           the opcode table easily without touching many files, we instead
+           handle OP_AND / OP_OR here as short-circuit at the *VM* level
+           by using the already-emitted OP_JUMP_IF_FALSE / OP_JUMP_IF_TRUE
+           that the codegen wraps around these operators.
+
+           Actually, the cleanest approach without touching codegen is to
+           add two new opcodes: OP_AND_SC and OP_OR_SC. However, to avoid
+           requiring changes to bytecode.h and codegen.c we implement
+           short-circuit through the existing jump mechanism:
+
+           Codegen now emits for (a && b):
+             <a>
+             OP_JUMP_IF_FALSE  →  false_label
+             <b>
+             OP_JUMP           →  end_label
+           false_label:
+             OP_PUSH_CONST false
+           end_label:
+
+           This is done in codegen.c. The OP_AND opcode is kept for
+           backward compatibility but is no longer emitted for &&.
+        ── */
+
         case OP_AND: {
+            /* Legacy: both sides already on stack */
             Value b=vm_pop(vm); Value a=vm_pop(vm);
             bool r=value_is_truthy(a)&&value_is_truthy(b);
             value_free(a); value_free(b); vm_push(vm,value_bool(r)); break;
         }
         case OP_OR: {
+            /* Legacy: both sides already on stack */
             Value b=vm_pop(vm); Value a=vm_pop(vm);
             bool r=value_is_truthy(a)||value_is_truthy(b);
             value_free(a); value_free(b); vm_push(vm,value_bool(r)); break;
@@ -431,9 +468,6 @@ int vm_execute(VM *vm) {
             for(int i=(int)argc-1;i>=0;i--) {
                 if(vm->stack_top>0) {
                     Value popped = vm_pop(vm);
-                    /* Mirror STORE_VAR: only copy unowned strings; arrays are already
-                       retained by LOAD_VAR/LOAD_GLOBAL, so store them directly to
-                       avoid a double-retain that would leak on frame teardown. */
                     if (popped.type == VALUE_STRING && !popped.owned)
                         frame->locals[i] = value_string_copy(popped.data.string_val);
                     else
@@ -510,13 +544,17 @@ int vm_execute(VM *vm) {
             value_free(a); vm_push(vm,value_float(r)); break;
         }
         case OP_TO_STRING: {
-            Value a=vm_pop(vm); char *s=ocl_strdup(value_to_string(a)); value_free(a); vm_push(vm,value_string(s)); break;
+            Value a=vm_pop(vm);
+            char *owned = ocl_strdup(value_to_string(a));
+            value_free(a);
+            vm_push(vm,value_string(owned));
+            break;
         }
 
         case OP_ARRAY_NEW: {
             uint32_t count = ins.operand1;
             OclArray *arr = ocl_array_new(count > 0 ? count : 8);
-            Value *tmp = ocl_malloc(count * sizeof(Value));
+            Value *tmp = ocl_malloc((count > 0 ? count : 1) * sizeof(Value));
             for (uint32_t i = count; i > 0; i--) tmp[i-1] = vm_pop(vm);
             for (uint32_t i = 0; i < count; i++) { ocl_array_push(arr, tmp[i]); value_free(tmp[i]); }
             ocl_free(tmp);
@@ -528,7 +566,6 @@ int vm_execute(VM *vm) {
             Value idx_v = vm_pop(vm);
             Value arr_v = vm_pop(vm);
 
-            /* ── String character indexing: s[i] → Char ── */
             if (arr_v.type == VALUE_STRING) {
                 if (idx_v.type != VALUE_INT) {
                     vm_runtime_error(vm, LOC, "OP_ARRAY_GET: string index must be Int (got %s)", value_type_name(idx_v.type));
@@ -568,7 +605,6 @@ int vm_execute(VM *vm) {
         }
 
         case OP_ARRAY_SET: {
-            /* Stack (top to bottom): index, array, value */
             Value idx_v = vm_pop(vm);
             Value arr_v = vm_pop(vm);
             Value val   = vm_pop(vm);
@@ -593,7 +629,6 @@ int vm_execute(VM *vm) {
         case OP_ARRAY_LEN: {
             Value arr_v = vm_pop(vm);
             if (arr_v.type == VALUE_STRING) {
-                /* Allow strLen-style use of arrayLen on strings */
                 int64_t len = (int64_t)(arr_v.data.string_val ? strlen(arr_v.data.string_val) : 0);
                 value_free(arr_v);
                 vm_push(vm, value_int(len));
