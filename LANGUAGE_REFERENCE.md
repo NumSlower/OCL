@@ -182,11 +182,11 @@ Mixed `Int`/`Float` comparisons are supported.
 
 | Operator | Description   |
 |----------|---------------|
-| `&&`     | Logical AND   |
-| `\|\|`   | Logical OR    |
+| `&&`     | Logical AND (short-circuit) |
+| `\|\|`   | Logical OR (short-circuit)  |
 | `!`      | Logical NOT   |
 
-`&&` and `||` are **not short-circuit** — both operands are always evaluated before the operator is applied.
+`&&` and `||` are **short-circuit**: the right-hand side is only evaluated if the left-hand side does not determine the result. For `&&`, if the left side is falsy the right side is skipped; for `||`, if the left side is truthy the right side is skipped.
 
 ### Assignment
 
@@ -333,7 +333,7 @@ Functions are top-level only — **nested function declarations and function val
 
 ### Recursion
 
-Recursion is supported up to the call-stack limit (`VM_FRAMES_MAX = 256` frames).
+Recursion is supported up to the call-stack limit (`VM_FRAMES_MAX = 4096` frames).
 
 ```ocl
 func int factorial(n:int) {
@@ -369,6 +369,12 @@ Let first = nums[0];      /# index access, 0-based #/
 ```
 
 Index access is zero-based. Accessing an out-of-bounds index is a runtime error.
+
+Strings also support index access, returning a `Char`:
+
+```ocl
+Let ch = "hello"[1];   /# 'e' #/
+```
 
 ### Assigning Elements
 
@@ -531,23 +537,9 @@ printf("%d + %d = %d\n": a, b, a + b);
 
 ## Known Limitations and Edge Cases
 
-### `&&` and `||` Are Not Short-Circuit
-
-Both sides of a `&&` or `||` expression are always evaluated. This means:
-
-```ocl
-/# This will attempt to evaluate both sides: #/
-if (x != 0 && (10 / x) > 1) { ... }
-/# If x is 0, this WILL attempt division by zero #/
-```
-
 ### `strSplit` Does Not Return Tokens
 
 `strSplit(s, delim)` returns an `Int` (the number of parts), not an array of strings.
-
-### `value_to_string` Uses a Static Buffer
-
-The internal `value_to_string` function (used by `toString`, `print`, and `printf`) writes into a single shared static buffer of 512 bytes. Nested or concurrent calls (e.g. printing an array whose elements are also arrays) will produce corrupt output for deeply nested structures.
 
 ### No Short-Circuit Assignment (`+=`, `-=`, etc.)
 
@@ -575,4 +567,12 @@ The type checker reports errors but does not prevent code generation or executio
 
 ### Call Stack Depth
 
-The VM supports a maximum call depth of 256 frames (`VM_FRAMES_MAX`). Deep recursion beyond this will produce a "call stack overflow" runtime error.
+The VM supports a maximum call depth of 4096 frames (`VM_FRAMES_MAX`). Deep recursion beyond this will produce a "call stack overflow" runtime error.
+
+### `value_to_string` Uses a Rotating Buffer Pool
+
+The internal `value_to_string` function (used by `toString`, `print`, and `printf`) writes into a pool of 8 static buffers (8 KiB each), cycling round-robin. This means nested calls — for example, printing arrays whose elements are themselves arrays — each get a distinct slot, avoiding the corruption that a single shared buffer would cause. However, if call nesting exceeds 8 levels deep within a single expression, output may still be corrupted. For most programs this is not a concern.
+
+### Escape sequences are lexer-resolved
+
+`\n` and other escape sequences in string literals are converted to real characters when the source is tokenised. This is intentional but means there is no way to produce a string containing the literal two-character sequence `\n` from source code.

@@ -183,6 +183,12 @@ arrayPush(nums, 4);
 Let len = arrayLen(nums);
 ```
 
+Strings also support index access, returning a `Char`:
+
+```ocl
+Let ch = "hello"[0];   /# 'h' #/
+```
+
 ### Operators
 
 | Category     | Operators                              |
@@ -194,7 +200,7 @@ Let len = arrayLen(nums);
 | Increment    | `++`, `--` (prefix and postfix; desugar to `x = x ± 1`) |
 | String concat| `+` (when both operands are strings)   |
 
-> **Note:** `&&` and `||` are **not short-circuit** — both operands are always evaluated.
+`&&` and `||` are **short-circuit** — the right-hand operand is only evaluated when necessary.
 
 ### Print / Printf
 
@@ -324,6 +330,7 @@ Built-in functions are resolved at compile time by name and dispatched via `OP_C
   - Array literals emitting `OP_ARRAY_NEW` with element count
   - Array index reads/writes emitting `OP_ARRAY_GET` / `OP_ARRAY_SET`
   - `declare` nodes emitting a null-initialised variable slot
+  - Short-circuit `&&` and `||` via `OP_JUMP_IF_FALSE` / `OP_JUMP_IF_TRUE` sequences
 - ✅ **VM** — stack-based bytecode interpreter with:
   - Full arithmetic (`+`, `-`, `*`, `/`, `%`) for int and float, including string concatenation via `+`
   - All comparison and logical operators
@@ -333,9 +340,12 @@ Built-in functions are resolved at compile time by name and dispatched via `OP_C
   - Type coercions (`OP_TO_INT`, `OP_TO_FLOAT`, `OP_TO_STRING`)
   - `print` and `printf` with format specifiers (`%s`, `%d`, `%f`, `%b`, `%%`)
   - Full array opcodes: `OP_ARRAY_NEW`, `OP_ARRAY_GET`, `OP_ARRAY_SET`, `OP_ARRAY_LEN`
+  - String character indexing via `OP_ARRAY_GET` (returns `Char`)
+  - `arrayLen` on strings (returns byte length)
   - Division-by-zero and modulo-by-zero detection
   - Stack overflow / underflow detection
   - `OP_HALT` with exit code propagation
+- ✅ **Short-circuit `&&` / `||`** — both operators are now properly short-circuit. The code generator emits `OP_JUMP_IF_FALSE` / `OP_JUMP_IF_TRUE` sequences so the right-hand operand is skipped when unnecessary.
 - ✅ **`break` / `continue`** — fully implemented end-to-end: parsed, represented in the AST, and emitted by the code generator using a per-loop `LoopContext` stack. `break` jumps to the first instruction after the loop; `continue` jumps to the backwards-jump / increment point for `while` / `for` loops respectively. Both are backpatched once the loop body has been fully emitted.
 - ✅ **Arrays** — array literals, index access (`a[i]`), chained index access, and all four array opcodes are fully implemented in the VM. The `arrayNew`, `arrayPush`, `arrayPop`, `arrayGet`, `arraySet`, and `arrayLen` built-ins are also implemented.
 - ✅ **Import resolution** — `Import <file>` searches for the named file relative to the importing file's directory, then under `ocl_headers/` and `stdlib_headers/`. Found files are lexed and merged into the AST at parse time.
@@ -355,12 +365,11 @@ Built-in functions are resolved at compile time by name and dispatched via `OP_C
 - ❌ **Structs / custom types** — no user-defined types.
 - ❌ **Compound assignment operators** — `+=`, `-=`, `*=`, `/=` are not implemented. Use `x = x + 1` etc.
 - ❌ **Garbage collection** — string values on the VM stack are not reference-counted or GC'd. Strings produced by built-ins (`toUpperCase`, `strReplace`, etc.) and by the string `+` operator are heap-allocated and freed when the stack frame is torn down, but strings stored in the constants table are freed only when `bytecode_free()` is called. Long-running programs that generate many dynamic strings may accumulate memory.
-- ⚠️ **`&&` and `||` are not short-circuit** — both operands are always fully evaluated before the operator is applied. Guarding a potentially-faulting expression with `&&` (e.g. `ptr != null && ptr.field > 0`) does not protect against the right-hand side being evaluated.
-- ⚠️ **`value_to_string` uses a static buffer** — the internal conversion function writes to a single 512-byte static buffer. Printing deeply nested arrays (arrays of arrays) can corrupt output because inner and outer calls share the same buffer.
+- ⚠️ **`value_to_string` uses a rotating buffer pool** — the internal conversion function writes into a pool of 8 static buffers (8 KiB each), cycling round-robin. Nesting beyond 8 levels deep within a single expression (e.g. arrays of arrays of arrays) may corrupt output, though this is rarely a concern in practice.
 - ⚠️ **`printf` colon syntax** — `printf("fmt": arg1, arg2)` is OCL-specific. A comma also works: `printf("fmt", arg1, arg2)`.
 - ⚠️ **Escape sequences are lexer-resolved** — `\n` and other escapes in string literals are converted to real characters when the source is tokenised. This is intentional but means there is no way to produce a string containing a literal two-character sequence `\n` from source code.
 - ⚠️ **Type checker is advisory** — the type checker reports errors and returns `false` from `type_checker_check()`, but it does not prevent code generation or execution if you bypass the error check (or pass `--no-typecheck`).
-- ⚠️ **Call stack depth** — the VM supports a maximum call depth of 256 frames (`VM_FRAMES_MAX`). Deep recursion beyond this produces a "call stack overflow" runtime error.
+- ⚠️ **Call stack depth** — the VM supports a maximum call depth of 4096 frames (`VM_FRAMES_MAX`). Deep recursion beyond this produces a "call stack overflow" runtime error.
 
 ---
 
@@ -407,5 +416,4 @@ Built-in functions are resolved at compile time by name and dispatched via `OP_C
     ├── test_parser.c      # (stub — TODO)
     ├── test_type_checker.c# (stub — TODO)
     └── test_vm.c          # (stub — TODO)
-
 ```
