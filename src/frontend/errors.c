@@ -1,51 +1,111 @@
-#include "common.h"
 #include "errors.h"
 #include <stdio.h>
 #include <string.h>
 
+/* ── Lifecycle ────────────────────────────────────────────────────── */
+
 ErrorCollector *error_collector_create(void) {
-    ErrorCollector *collector = ocl_malloc(sizeof(ErrorCollector));
-    collector->errors = NULL; collector->error_count = 0; collector->capacity = 0;
-    return collector;
+    ErrorCollector *ec = ocl_malloc(sizeof(ErrorCollector));
+    *ec = (ErrorCollector){0};
+    return ec;
 }
-void error_collector_free(ErrorCollector *collector) {
-    if (!collector) return;
-    for (size_t i = 0; i < collector->error_count; i++)
-        if (collector->errors[i].message) free((void *)collector->errors[i].message);
-    ocl_free(collector->errors); ocl_free(collector);
+
+void error_collector_free(ErrorCollector *ec) {
+    if (!ec) return;
+    for (size_t i = 0; i < ec->count; i++)
+        OCL_FREE(ec->errors[i].message);
+    OCL_FREE(ec->errors);
+    ocl_free(ec);
 }
-void error_add(ErrorCollector *collector, ErrorType type, SourceLocation loc, const char *format, ...) {
-    if (!collector) return;
-    if (collector->error_count >= collector->capacity) {
-        collector->capacity = collector->capacity ? collector->capacity * 2 : 10;
-        collector->errors = ocl_realloc(collector->errors, collector->capacity * sizeof(Error));
+
+void error_collector_reset(ErrorCollector *ec) {
+    if (!ec) return;
+    for (size_t i = 0; i < ec->count; i++)
+        OCL_FREE(ec->errors[i].message);
+    ec->count = ec->error_count = ec->warning_count = 0;
+}
+
+/* ── Internal add ─────────────────────────────────────────────────── */
+
+static void add_record(ErrorCollector *ec, ErrorPhase phase,
+                        SourceLocation loc, bool is_warning,
+                        const char *fmt, va_list ap)
+{
+    if (!ec) return;
+
+    OCL_GROW_ARRAY(&ec->errors, &ec->capacity, ec->count, OclError);
+
+    char buf[1024];
+    vsnprintf(buf, sizeof(buf), fmt, ap);
+
+    OclError *err = &ec->errors[ec->count++];
+    err->phase      = phase;
+    err->message    = ocl_strdup(buf);
+    err->location   = loc;
+    err->is_warning = is_warning;
+
+    if (is_warning) ec->warning_count++;
+    else            ec->error_count++;
+}
+
+/* ── Public add helpers ───────────────────────────────────────────── */
+
+void error_add(ErrorCollector *ec, ErrorPhase phase,
+               SourceLocation loc, const char *fmt, ...) {
+    va_list ap;
+    va_start(ap, fmt);
+    add_record(ec, phase, loc, false, fmt, ap);
+    va_end(ap);
+}
+
+void error_add_warning(ErrorCollector *ec, ErrorPhase phase,
+                        SourceLocation loc, const char *fmt, ...) {
+    va_list ap;
+    va_start(ap, fmt);
+    add_record(ec, phase, loc, true, fmt, ap);
+    va_end(ap);
+}
+
+/* ── Queries ──────────────────────────────────────────────────────── */
+
+bool   error_has_errors(const ErrorCollector *ec)    { return ec && ec->error_count > 0; }
+size_t error_count(const ErrorCollector *ec)         { return ec ? ec->count : 0; }
+size_t error_warning_count(const ErrorCollector *ec) { return ec ? ec->warning_count : 0; }
+
+/* ── Output ───────────────────────────────────────────────────────── */
+
+static const char *phase_label(ErrorPhase p) {
+    switch (p) {
+        case ERROR_LEXER:        return "LEXER ERROR";
+        case ERROR_PARSER:       return "PARSE ERROR";
+        case ERROR_TYPE_CHECKER: return "TYPE ERROR";
+        case ERROR_RUNTIME:      return "RUNTIME ERROR";
+        default:                 return "ERROR";
     }
-    va_list args; va_start(args, format);
-    char buffer[1024]; vsnprintf(buffer, sizeof(buffer), format, args); va_end(args);
-    Error *err = &collector->errors[collector->error_count];
-    err->type = type;
-    err->message = (const char *)ocl_malloc(strlen(buffer) + 1);
-    strcpy((char *)err->message, buffer);
-    err->location = loc; err->is_warning = false;
-    collector->error_count++;
 }
-void error_print_all(ErrorCollector *collector) {
-    if (!collector || !collector->error_count) return;
-    for (size_t i = 0; i < collector->error_count; i++) {
-        Error *err = &collector->errors[i];
-        const char *ts;
-        switch (err->type) {
-            case ERROR_LEXER:        ts = "LEXER ERROR";   break;
-            case ERROR_PARSER:       ts = "PARSE ERROR";   break;
-            case ERROR_TYPE_CHECKER: ts = "TYPE ERROR";    break;
-            case ERROR_RUNTIME:      ts = "RUNTIME ERROR"; break;
-            default:                 ts = "ERROR";         break;
-        }
-        fprintf(stderr, "%s: %s", ts, err->message);
-        if (err->location.filename)
-            fprintf(stderr, " [%s:%d:%d]", err->location.filename, err->location.line, err->location.column);
-        fprintf(stderr, "\n");
-    }
+
+static void print_one(const OclError *err) {
+    const char *label = err->is_warning ? "WARNING" : phase_label(err->phase);
+    if (err->location.filename && err->location.line > 0)
+        fprintf(stderr, "%s [%s:%d:%d]: %s\n",
+                label,
+                err->location.filename,
+                err->location.line,
+                err->location.column,
+                err->message);
+    else
+        fprintf(stderr, "%s: %s\n", label, err->message);
 }
-int  error_get_count(ErrorCollector *c) { return c ? (int)c->error_count : 0; }
-bool error_has_errors(ErrorCollector *c) { return c && c->error_count > 0; }
+
+void error_print_all(const ErrorCollector *ec) {
+    if (!ec) return;
+    for (size_t i = 0; i < ec->count; i++)
+        print_one(&ec->errors[i]);
+}
+
+void error_print_phase(const ErrorCollector *ec, ErrorPhase phase) {
+    if (!ec) return;
+    for (size_t i = 0; i < ec->count; i++)
+        if (ec->errors[i].phase == phase)
+            print_one(&ec->errors[i]);
+}
