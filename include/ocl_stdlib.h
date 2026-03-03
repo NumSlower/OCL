@@ -45,6 +45,9 @@ struct VM; typedef struct VM VM;
 #define BUILTIN_ARRAY_GET   63
 #define BUILTIN_ARRAY_SET   64
 #define BUILTIN_ARRAY_LEN   65
+
+#define BUILTIN_TIME_NOW  66
+
 typedef struct { int id; const char *name; void (*fn)(VM *vm, int argc); } StdlibEntry;
 void  stdlib_init(void);
 void  stdlib_cleanup(void);

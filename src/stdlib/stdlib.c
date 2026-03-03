@@ -3,6 +3,7 @@
 #include <string.h>
 #include <math.h>
 #include <ctype.h>
+#include <time.h>
 #include "common.h"
 #include "ocl_stdlib.h"
 #include "vm.h"
@@ -368,6 +369,14 @@ static void builtin_array_len(VM *vm, int argc) {
     vm_push(vm, value_int(len));
 }
 
+static void builtin_time_now(VM *vm, int argc) {
+    (void)argc;
+    struct timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts);
+    int64_t ns = (int64_t)ts.tv_sec * 1000000000LL + (int64_t)ts.tv_nsec;
+    vm_push(vm, value_int(ns));
+}
+
 /* ── Dispatch table ───────────────────────────────────────────────── */
 
 static const StdlibEntry STDLIB_TABLE[] = {
@@ -411,6 +420,7 @@ static const StdlibEntry STDLIB_TABLE[] = {
     { BUILTIN_ARRAY_GET,   "arrayGet",    builtin_array_get   },
     { BUILTIN_ARRAY_SET,   "arraySet",    builtin_array_set   },
     { BUILTIN_ARRAY_LEN,   "arrayLen",    builtin_array_len   },
+    { BUILTIN_TIME_NOW,    "timeNow",     builtin_time_now },
 };
 static const size_t STDLIB_TABLE_SIZE = sizeof(STDLIB_TABLE)/sizeof(STDLIB_TABLE[0]);
 
