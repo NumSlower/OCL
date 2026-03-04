@@ -58,28 +58,40 @@ static bool is_type_name(const char *s) {
            !strcmp(s,"char")||!strcmp(s,"Char")||!strcmp(s,"void")||!strcmp(s,"Void");
 }
 
+/*
+ * parse_type — parse a type name from the token stream.
+ * bit_width suffixes (int32, int64) are consumed but ignored — all integers
+ * are 64-bit at runtime.  Array brackets ([]) are consumed but ignored since
+ * the type system does not track element types yet.
+ */
 static TypeNode *parse_type(Parser *p) {
     Token *t = cur_tok(p);
     if (t->type != TOKEN_IDENTIFIER) {
         error_add(p->errors, ERROR_PARSER, t->location, "Expected type name");
-        return ast_create_type(TYPE_UNKNOWN, 0);
+        return ast_create_type(TYPE_UNKNOWN);   /* FIX: single argument */
     }
     char *name = dup_lexeme(t); p->current++;
     BuiltinType bt = TYPE_UNKNOWN;
-    if      (!strcmp(name,"int")||!strcmp(name,"Int"))    bt = TYPE_INT;
-    else if (!strcmp(name,"float")||!strcmp(name,"Float")) bt = TYPE_FLOAT;
+    if      (!strcmp(name,"int")   ||!strcmp(name,"Int"))    bt = TYPE_INT;
+    else if (!strcmp(name,"float") ||!strcmp(name,"Float"))  bt = TYPE_FLOAT;
     else if (!strcmp(name,"string")||!strcmp(name,"String")) bt = TYPE_STRING;
-    else if (!strcmp(name,"bool")||!strcmp(name,"Bool")) bt = TYPE_BOOL;
-    else if (!strcmp(name,"char")||!strcmp(name,"Char")) bt = TYPE_CHAR;
-    else if (!strcmp(name,"void")||!strcmp(name,"Void")) bt = TYPE_VOID;
+    else if (!strcmp(name,"bool")  ||!strcmp(name,"Bool"))   bt = TYPE_BOOL;
+    else if (!strcmp(name,"char")  ||!strcmp(name,"Char"))   bt = TYPE_CHAR;
+    else if (!strcmp(name,"void")  ||!strcmp(name,"Void"))   bt = TYPE_VOID;
     ocl_free(name);
-    int bw = 0;
+
+    /* Consume optional bit-width suffix (int32 / int64) — ignored at runtime. */
     if (bt == TYPE_INT && check(p, TOKEN_INT)) {
         int64_t v = cur_tok(p)->value.int_value;
-        if (v == 32 || v == 64) { bw = (int)v; p->current++; }
+        if (v == 32 || v == 64) p->current++;
     }
-    TypeNode *tn = ast_create_type(bt, bw);
-    if (match(p, TOKEN_LBRACKET)) { tn->is_array = true; consume(p, TOKEN_RBRACKET, "Expected ']'"); }
+
+    TypeNode *tn = ast_create_type(bt);   /* FIX: single argument */
+
+    /* Consume optional [] — array type annotations are parsed but not tracked. */
+    if (match(p, TOKEN_LBRACKET)) {       /* FIX: removed tn->is_array = true */
+        consume(p, TOKEN_RBRACKET, "Expected ']'");
+    }
     return tn;
 }
 
@@ -94,17 +106,14 @@ static ExprNode *parse_assignment(Parser *p) {
         return ast_create_binary_op(loc, lhs, "=", rhs);
     }
 
-    /* Compound assignment: x op= y  →  x = x op y
+    /*
+     * Compound assignment: x op= y  →  x = x op y
      *
-     * IMPORTANT: We must deep-duplicate the LHS so that two independent
-     * AST subtrees own separate copies.  Using the same pointer for both
-     * the outer "=" node and the inner arithmetic node would cause a
-     * double-free when ast_free walks the tree.
+     * We duplicate the LHS identifier so two independent subtrees own
+     * separate copies (avoiding a double-free on ast_free).
      *
-     * Supported LHS forms:
-     *   - Simple identifier   → duplicate as a new AST_IDENTIFIER node
-     *   - Index access a[i]   → compound index-assign is NOT supported;
-     *     emit an error and return the plain LHS to allow parsing to continue.
+     * Only simple identifiers are supported on the LHS; index access
+     * (e.g. a[i] += v) emits an error.
      */
     static const struct { TokenType tok; const char *op; } compound[] = {
         { TOKEN_PLUS_EQUAL,    "+" },
@@ -121,16 +130,12 @@ static ExprNode *parse_assignment(Parser *p) {
             ExprNode *rhs = parse_assignment(p);
 
             if (lhs->base.type == AST_IDENTIFIER) {
-                /* Safe: make an independent copy of the identifier. */
                 const char *orig_name = ((IdentifierNode *)lhs)->name;
                 ExprNode   *lhs_copy  = ast_create_identifier(loc, ocl_strdup(orig_name));
                 ExprNode   *arith     = ast_create_binary_op(loc, lhs_copy, compound[i].op, rhs);
                 return ast_create_binary_op(loc, lhs, "=", arith);
             }
 
-            /* Non-identifier LHS (e.g. a[i] += v) — not supported.
-             * Free the RHS we already parsed, emit an error, and return
-             * the plain LHS so the caller gets something non-NULL. */
             error_add(p->errors, ERROR_PARSER, loc,
                       "Compound assignment '%s=' requires a simple variable on the left-hand side",
                       compound[i].op);
@@ -163,8 +168,10 @@ static ExprNode *parse_and(Parser *p) {
 static ExprNode *parse_equality(Parser *p) {
     ExprNode *e = parse_comparison(p);
     for (;;) {
-        if (match(p, TOKEN_EQUAL_EQUAL)) { SourceLocation loc = prev_tok(p)->location; e = ast_create_binary_op(loc, e, "==", parse_comparison(p)); }
-        else if (match(p, TOKEN_BANG_EQUAL)) { SourceLocation loc = prev_tok(p)->location; e = ast_create_binary_op(loc, e, "!=", parse_comparison(p)); }
+        if (match(p, TOKEN_EQUAL_EQUAL))
+            { SourceLocation loc = prev_tok(p)->location; e = ast_create_binary_op(loc, e, "==", parse_comparison(p)); }
+        else if (match(p, TOKEN_BANG_EQUAL))
+            { SourceLocation loc = prev_tok(p)->location; e = ast_create_binary_op(loc, e, "!=", parse_comparison(p)); }
         else break;
     }
     return e;
@@ -173,10 +180,14 @@ static ExprNode *parse_equality(Parser *p) {
 static ExprNode *parse_comparison(Parser *p) {
     ExprNode *e = parse_addition(p);
     for (;;) {
-        if (match(p, TOKEN_LESS)) { SourceLocation loc = prev_tok(p)->location; e = ast_create_binary_op(loc, e, "<", parse_addition(p)); }
-        else if (match(p, TOKEN_LESS_EQUAL)) { SourceLocation loc = prev_tok(p)->location; e = ast_create_binary_op(loc, e, "<=", parse_addition(p)); }
-        else if (match(p, TOKEN_GREATER)) { SourceLocation loc = prev_tok(p)->location; e = ast_create_binary_op(loc, e, ">", parse_addition(p)); }
-        else if (match(p, TOKEN_GREATER_EQUAL)) { SourceLocation loc = prev_tok(p)->location; e = ast_create_binary_op(loc, e, ">=", parse_addition(p)); }
+        if (match(p, TOKEN_LESS))
+            { SourceLocation loc = prev_tok(p)->location; e = ast_create_binary_op(loc, e, "<",  parse_addition(p)); }
+        else if (match(p, TOKEN_LESS_EQUAL))
+            { SourceLocation loc = prev_tok(p)->location; e = ast_create_binary_op(loc, e, "<=", parse_addition(p)); }
+        else if (match(p, TOKEN_GREATER))
+            { SourceLocation loc = prev_tok(p)->location; e = ast_create_binary_op(loc, e, ">",  parse_addition(p)); }
+        else if (match(p, TOKEN_GREATER_EQUAL))
+            { SourceLocation loc = prev_tok(p)->location; e = ast_create_binary_op(loc, e, ">=", parse_addition(p)); }
         else break;
     }
     return e;
@@ -185,8 +196,10 @@ static ExprNode *parse_comparison(Parser *p) {
 static ExprNode *parse_addition(Parser *p) {
     ExprNode *e = parse_multiplication(p);
     for (;;) {
-        if (match(p, TOKEN_PLUS)) { SourceLocation loc = prev_tok(p)->location; e = ast_create_binary_op(loc, e, "+", parse_multiplication(p)); }
-        else if (match(p, TOKEN_MINUS)) { SourceLocation loc = prev_tok(p)->location; e = ast_create_binary_op(loc, e, "-", parse_multiplication(p)); }
+        if (match(p, TOKEN_PLUS))
+            { SourceLocation loc = prev_tok(p)->location; e = ast_create_binary_op(loc, e, "+", parse_multiplication(p)); }
+        else if (match(p, TOKEN_MINUS))
+            { SourceLocation loc = prev_tok(p)->location; e = ast_create_binary_op(loc, e, "-", parse_multiplication(p)); }
         else break;
     }
     return e;
@@ -195,9 +208,12 @@ static ExprNode *parse_addition(Parser *p) {
 static ExprNode *parse_multiplication(Parser *p) {
     ExprNode *e = parse_unary(p);
     for (;;) {
-        if (match(p, TOKEN_STAR)) { SourceLocation loc = prev_tok(p)->location; e = ast_create_binary_op(loc, e, "*", parse_unary(p)); }
-        else if (match(p, TOKEN_SLASH)) { SourceLocation loc = prev_tok(p)->location; e = ast_create_binary_op(loc, e, "/", parse_unary(p)); }
-        else if (match(p, TOKEN_PERCENT)) { SourceLocation loc = prev_tok(p)->location; e = ast_create_binary_op(loc, e, "%", parse_unary(p)); }
+        if (match(p, TOKEN_STAR))
+            { SourceLocation loc = prev_tok(p)->location; e = ast_create_binary_op(loc, e, "*", parse_unary(p)); }
+        else if (match(p, TOKEN_SLASH))
+            { SourceLocation loc = prev_tok(p)->location; e = ast_create_binary_op(loc, e, "/", parse_unary(p)); }
+        else if (match(p, TOKEN_PERCENT))
+            { SourceLocation loc = prev_tok(p)->location; e = ast_create_binary_op(loc, e, "%", parse_unary(p)); }
         else break;
     }
     return e;
@@ -208,12 +224,9 @@ static ExprNode *parse_multiplication(Parser *p) {
  *
  * Takes OWNERSHIP of `var` (it becomes the lhs of the "=" node).
  * Creates a fresh copy of the identifier for the rhs arithmetic operand.
- *
- * PRECONDITION: `var->base.type == AST_IDENTIFIER`.  Callers must check
- * this before calling; passing any other node type is a logic error.
+ * PRECONDITION: var->base.type == AST_IDENTIFIER.
  */
 static ExprNode *make_inc_dec(SourceLocation loc, ExprNode *var, const char *op) {
-    /* var must be an identifier — callers are responsible for enforcing this. */
     const char *orig_name = ((IdentifierNode *)var)->name;
     ExprNode   *var_copy  = ast_create_identifier(loc, ocl_strdup(orig_name));
     ExprNode   *one       = ast_create_literal(loc, value_int(1));
@@ -245,13 +258,15 @@ static ExprNode *parse_unary(Parser *p) {
     if (match(p, TOKEN_BANG)) {
         SourceLocation loc = prev_tok(p)->location;
         UnaryOpNode *u = ocl_malloc(sizeof(UnaryOpNode));
-        u->base.type = AST_UNARY_OP; u->base.location = loc; u->operator = "!"; u->operand = parse_unary(p);
+        u->base.type = AST_UNARY_OP; u->base.location = loc;
+        u->operator = "!"; u->operand = parse_unary(p);
         return (ExprNode *)u;
     }
     if (match(p, TOKEN_MINUS)) {
         SourceLocation loc = prev_tok(p)->location;
         UnaryOpNode *u = ocl_malloc(sizeof(UnaryOpNode));
-        u->base.type = AST_UNARY_OP; u->base.location = loc; u->operator = "-"; u->operand = parse_unary(p);
+        u->base.type = AST_UNARY_OP; u->base.location = loc;
+        u->operator = "-"; u->operand = parse_unary(p);
         return (ExprNode *)u;
     }
     return parse_call_expr(p);
@@ -261,25 +276,26 @@ static ExprNode *parse_call_expr(Parser *p) {
     ExprNode *expr = parse_primary(p);
     if (!expr) return NULL;
 
-    /* Function call */
+    /* Function call. */
     if (expr->base.type == AST_IDENTIFIER && check(p, TOKEN_LPAREN)) {
         IdentifierNode *id = (IdentifierNode *)expr;
-        SourceLocation loc = expr->base.location;
+        SourceLocation  loc = expr->base.location;
         p->current++;
         ExprNode **args = NULL; size_t arg_cnt = 0;
-        bool is_printf = (!strcmp(id->name,"printf")||!strcmp(id->name,"print"));
+        bool is_printf = (!strcmp(id->name, "printf") || !strcmp(id->name, "print"));
         if (!check(p, TOKEN_RPAREN)) {
-            args = ocl_realloc(args, (arg_cnt+1)*sizeof(ExprNode *));
+            args = ocl_realloc(args, (arg_cnt + 1) * sizeof(ExprNode *));
             args[arg_cnt++] = parse_expression(p);
             if (is_printf && match(p, TOKEN_COLON)) {
+                /* printf("fmt": arg1, arg2, ...) colon syntax */
                 while (!check(p, TOKEN_RPAREN) && !at_end(p)) {
-                    args = ocl_realloc(args, (arg_cnt+1)*sizeof(ExprNode *));
+                    args = ocl_realloc(args, (arg_cnt + 1) * sizeof(ExprNode *));
                     args[arg_cnt++] = parse_expression(p);
                     if (!match(p, TOKEN_COMMA)) break;
                 }
             } else {
                 while (match(p, TOKEN_COMMA)) {
-                    args = ocl_realloc(args, (arg_cnt+1)*sizeof(ExprNode *));
+                    args = ocl_realloc(args, (arg_cnt + 1) * sizeof(ExprNode *));
                     args[arg_cnt++] = parse_expression(p);
                 }
             }
@@ -292,11 +308,8 @@ static ExprNode *parse_call_expr(Parser *p) {
 
     /*
      * Postfix ++ / --
-     *
-     * FIX: Only apply postfix ++/-- when `expr` is still a plain identifier.
-     * After index-access chaining (e.g. a[i]++), `expr` is an IndexAccessNode,
-     * and casting it to IdentifierNode to read `->name` is undefined behaviour.
-     * Emit an error for that unsupported form instead of crashing.
+     * Only valid when expr is still a plain identifier; applying it to an
+     * index-access node (a[i]++) would be UB, so we guard and error instead.
      */
     if (expr->base.type == AST_IDENTIFIER) {
         SourceLocation loc = expr->base.location;
@@ -304,7 +317,7 @@ static ExprNode *parse_call_expr(Parser *p) {
         if (match(p, TOKEN_MINUS_MINUS)) return make_inc_dec(loc, expr, "-");
     }
 
-    /* Index access: can chain: a[i][j] */
+    /* Index access — can chain: a[i][j] */
     while (match(p, TOKEN_LBRACKET)) {
         SourceLocation loc = prev_tok(p)->location;
         ExprNode *index = parse_expression(p);
@@ -312,18 +325,14 @@ static ExprNode *parse_call_expr(Parser *p) {
         expr = ast_create_index_access(loc, expr, index);
     }
 
-    /*
-     * Postfix ++/-- after index access (e.g. arr[i]++) is not supported.
-     * Check for it here so we can emit a clear error rather than silently
-     * producing wrong code or crashing.
-     */
+    /* Postfix ++/-- after index access is not supported. */
     if (expr->base.type == AST_INDEX_ACCESS) {
         SourceLocation loc = expr->base.location;
         if (check(p, TOKEN_PLUS_PLUS) || check(p, TOKEN_MINUS_MINUS)) {
             error_add(p->errors, ERROR_PARSER, loc,
                       "Postfix '++' / '--' on array/string subscripts is not supported; "
                       "use an explicit assignment instead (e.g. arr[i] = arr[i] + 1)");
-            p->current++; /* consume the bad token so parsing can continue */
+            p->current++;
         }
     }
 
@@ -334,24 +343,34 @@ static ExprNode *parse_primary(Parser *p) {
     Token *t = cur_tok(p); SourceLocation loc = t->location;
     if (match(p, TOKEN_TRUE))  return ast_create_literal(loc, value_bool(true));
     if (match(p, TOKEN_FALSE)) return ast_create_literal(loc, value_bool(false));
-    if (check(p, TOKEN_INT))   { int64_t v = t->value.int_value; p->current++; return ast_create_literal(loc, value_int(v)); }
-    if (check(p, TOKEN_FLOAT)) { double v = t->value.float_value; p->current++; return ast_create_literal(loc, value_float(v)); }
+    if (check(p, TOKEN_INT))   { int64_t v = t->value.int_value;   p->current++; return ast_create_literal(loc, value_int(v));   }
+    if (check(p, TOKEN_FLOAT)) { double  v = t->value.float_value; p->current++; return ast_create_literal(loc, value_float(v)); }
     if (check(p, TOKEN_STRING)) {
-        char *s = ocl_strdup(t->value.string_value ? t->value.string_value : ""); p->current++;
+        char *s = ocl_strdup(t->value.string_value ? t->value.string_value : "");
+        p->current++;
         return ast_create_literal(loc, value_string(s));
     }
     if (check(p, TOKEN_CHAR)) {
-        char c = (t->value.string_value && t->value.string_length > 0) ? t->value.string_value[0] : '\0';
-        p->current++; return ast_create_literal(loc, value_char(c));
+        char c = (t->value.string_value && t->value.string_length > 0)
+                 ? t->value.string_value[0] : '\0';
+        p->current++;
+        return ast_create_literal(loc, value_char(c));
     }
-    if (check(p, TOKEN_IDENTIFIER)) { char *name = dup_lexeme(t); p->current++; return ast_create_identifier(loc, name); }
-    if (match(p, TOKEN_LPAREN)) { ExprNode *e = parse_expression(p); consume(p, TOKEN_RPAREN, "Expected ')'"); return e; }
+    if (check(p, TOKEN_IDENTIFIER)) {
+        char *name = dup_lexeme(t); p->current++;
+        return ast_create_identifier(loc, name);
+    }
+    if (match(p, TOKEN_LPAREN)) {
+        ExprNode *e = parse_expression(p);
+        consume(p, TOKEN_RPAREN, "Expected ')'");
+        return e;
+    }
 
     /* Array literal: [ expr, expr, ... ] */
     if (match(p, TOKEN_LBRACKET)) {
         ExprNode **elems = NULL; size_t count = 0;
         while (!check(p, TOKEN_RBRACKET) && !at_end(p)) {
-            elems = ocl_realloc(elems, (count+1)*sizeof(ExprNode*));
+            elems = ocl_realloc(elems, (count + 1) * sizeof(ExprNode *));
             elems[count++] = parse_expression(p);
             if (!match(p, TOKEN_COMMA)) break;
         }
@@ -359,7 +378,8 @@ static ExprNode *parse_primary(Parser *p) {
         return ast_create_array_literal(loc, elems, count);
     }
 
-    error_add(p->errors, ERROR_PARSER, loc, "Unexpected token '%s' in expression", t->lexeme ? t->lexeme : "?");
+    error_add(p->errors, ERROR_PARSER, loc,
+              "Unexpected token '%s' in expression", t->lexeme ? t->lexeme : "?");
     return NULL;
 }
 
@@ -375,10 +395,11 @@ static BlockNode *parse_block(Parser *p) {
     return block;
 }
 
+/* Returns true if the current position looks like a C-style variable declaration. */
 static bool is_c_style_var_decl(Parser *p) {
     Token *t = cur_tok(p);
     if (t->type != TOKEN_IDENTIFIER) return false;
-    if (!is_type_name(t->lexeme)) return false;
+    if (!is_type_name(t->lexeme))    return false;
     size_t saved = p->current; p->current++;
     Token *nxt = cur_tok(p);
     bool result = (nxt->type == TOKEN_IDENTIFIER);
@@ -386,16 +407,14 @@ static bool is_c_style_var_decl(Parser *p) {
     return result;
 }
 
-/* Parse the else/else-if chain after a then-block.
-   Returns: NULL (no else), AST_IF_STMT (else if ...), or AST_BLOCK (plain else). */
+/*
+ * Parse the else / else-if chain that follows a then-block.
+ * Returns: NULL (no else), AST_IF_STMT (else if), or AST_BLOCK (plain else).
+ */
 static ASTNode *parse_else_chain(Parser *p) {
     if (!match(p, TOKEN_ELSE)) return NULL;
-    if (check(p, TOKEN_IF)) {
-        /* else if — parse as a full if-statement (creates proper chain) */
-        return parse_statement(p);
-    }
-    /* plain else { ... } */
-    return (ASTNode *)parse_block(p);
+    if (check(p, TOKEN_IF)) return parse_statement(p); /* else if → recurse */
+    return (ASTNode *)parse_block(p);                  /* plain else */
 }
 
 static ASTNode *parse_statement(Parser *p) {
@@ -406,23 +425,23 @@ static ASTNode *parse_statement(Parser *p) {
         consume(p, TOKEN_LESS, "Expected '<' after Import");
         char name_buf[256] = {0};
         if (check(p, TOKEN_IDENTIFIER)) { strcat(name_buf, cur_tok(p)->lexeme); p->current++; }
-        if (match(p, TOKEN_DOT) && check(p, TOKEN_IDENTIFIER)) { strcat(name_buf, "."); strcat(name_buf, cur_tok(p)->lexeme); p->current++; }
-        consume(p, TOKEN_GREATER, "Expected '>'"); match(p, TOKEN_SEMICOLON);
+        if (match(p, TOKEN_DOT) && check(p, TOKEN_IDENTIFIER))
+            { strcat(name_buf, "."); strcat(name_buf, cur_tok(p)->lexeme); p->current++; }
+        consume(p, TOKEN_GREATER, "Expected '>'");
+        match(p, TOKEN_SEMICOLON);
         ImportNode *n = ocl_malloc(sizeof(ImportNode));
-        n->base.type = AST_IMPORT; n->base.location = loc; n->filename = ocl_strdup(name_buf);
+        n->base.type = AST_IMPORT; n->base.location = loc;
+        n->filename = ocl_strdup(name_buf);
         return (ASTNode *)n;
     }
 
-    /* declare name : Type  — forward-declares a variable type to the checker */
+    /* declare name : Type */
     if (match(p, TOKEN_DECLARE)) {
         Token name_tok = consume(p, TOKEN_IDENTIFIER, "Expected identifier after 'declare'");
         char *name = dup_lexeme(&name_tok);
-        TypeNode *type = NULL;
-        if (match(p, TOKEN_COLON)) {
-            type = parse_type(p);
-        } else {
-            type = ast_create_type(TYPE_UNKNOWN, 0);
-        }
+        TypeNode *type = match(p, TOKEN_COLON)
+                         ? parse_type(p)
+                         : ast_create_type(TYPE_UNKNOWN);   /* FIX: single argument */
         match(p, TOKEN_SEMICOLON);
         DeclareNode *dn = ocl_malloc(sizeof(DeclareNode));
         dn->base.type = AST_DECLARE; dn->base.location = loc;
@@ -435,8 +454,8 @@ static ASTNode *parse_statement(Parser *p) {
         Token name_tok = consume(p, TOKEN_IDENTIFIER, "Expected variable name");
         char *name = dup_lexeme(&name_tok);
         consume(p, TOKEN_COLON, "Expected ':' after variable name");
-        TypeNode *type = parse_type(p); ExprNode *init = NULL;
-        if (match(p, TOKEN_EQUAL)) init = parse_expression(p);
+        TypeNode *type = parse_type(p);
+        ExprNode *init = match(p, TOKEN_EQUAL) ? parse_expression(p) : NULL;
         match(p, TOKEN_SEMICOLON);
         return ast_create_var_decl(loc, name, type, init);
     }
@@ -445,19 +464,19 @@ static ASTNode *parse_statement(Parser *p) {
     if (is_c_style_var_decl(p)) {
         TypeNode *type = parse_type(p);
         Token name_tok = consume(p, TOKEN_IDENTIFIER, "Expected variable name");
-        char *name = dup_lexeme(&name_tok); ExprNode *init = NULL;
-        if (match(p, TOKEN_EQUAL)) init = parse_expression(p);
+        char *name = dup_lexeme(&name_tok);
+        ExprNode *init = match(p, TOKEN_EQUAL) ? parse_expression(p) : NULL;
         match(p, TOKEN_SEMICOLON);
         return ast_create_var_decl(loc, name, type, init);
     }
 
-    /* if / else-if / else  ─── flat chain, no synthetic blocks */
+    /* if / else-if / else */
     if (match(p, TOKEN_IF)) {
         consume(p, TOKEN_LPAREN, "Expected '(' after if");
         ExprNode *cond = parse_expression(p);
         consume(p, TOKEN_RPAREN, "Expected ')' after if condition");
-        BlockNode *then_b = parse_block(p);
-        ASTNode *else_next = parse_else_chain(p);
+        BlockNode *then_b    = parse_block(p);
+        ASTNode   *else_next = parse_else_chain(p);
         return ast_create_if_stmt(loc, cond, then_b, else_next);
     }
 
@@ -468,8 +487,9 @@ static ASTNode *parse_statement(Parser *p) {
         consume(p, TOKEN_RPAREN, "Expected ')'");
         BlockNode *body = parse_block(p);
         LoopNode *lp = ocl_malloc(sizeof(LoopNode));
-        lp->base.type = AST_WHILE_LOOP; lp->base.location = loc; lp->is_for = false;
-        lp->init = NULL; lp->condition = cond; lp->increment = NULL; lp->body = body;
+        lp->base.type = AST_WHILE_LOOP; lp->base.location = loc;
+        lp->is_for = false; lp->init = NULL;
+        lp->condition = cond; lp->increment = NULL; lp->body = body;
         return (ASTNode *)lp;
     }
 
@@ -479,54 +499,60 @@ static ASTNode *parse_statement(Parser *p) {
         ASTNode *init = NULL;
         if (match(p, TOKEN_LET)) {
             Token n_tok = consume(p, TOKEN_IDENTIFIER, "Expected variable name");
-            char *vname = dup_lexeme(&n_tok); consume(p, TOKEN_COLON, "Expected ':'");
-            TypeNode *vtype = parse_type(p); ExprNode *vinit = NULL;
-            if (match(p, TOKEN_EQUAL)) vinit = parse_expression(p);
+            char *vname = dup_lexeme(&n_tok);
+            consume(p, TOKEN_COLON, "Expected ':'");
+            TypeNode *vtype = parse_type(p);
+            ExprNode *vinit = match(p, TOKEN_EQUAL) ? parse_expression(p) : NULL;
             init = ast_create_var_decl(loc, vname, vtype, vinit);
         } else if (is_c_style_var_decl(p)) {
             TypeNode *vtype = parse_type(p);
             Token n_tok = consume(p, TOKEN_IDENTIFIER, "Expected variable name");
-            char *vname = dup_lexeme(&n_tok); ExprNode *vinit = NULL;
-            if (match(p, TOKEN_EQUAL)) vinit = parse_expression(p);
+            char *vname = dup_lexeme(&n_tok);
+            ExprNode *vinit = match(p, TOKEN_EQUAL) ? parse_expression(p) : NULL;
             init = ast_create_var_decl(loc, vname, vtype, vinit);
         } else if (!check(p, TOKEN_SEMICOLON)) {
             init = (ASTNode *)parse_expression(p);
         }
         match(p, TOKEN_SEMICOLON);
-        ExprNode *cond = NULL;
-        if (!check(p, TOKEN_SEMICOLON)) cond = parse_expression(p);
+        ExprNode *cond = check(p, TOKEN_SEMICOLON) ? NULL : parse_expression(p);
         match(p, TOKEN_SEMICOLON);
-        ASTNode *incr = NULL;
-        if (!check(p, TOKEN_RPAREN)) incr = (ASTNode *)parse_expression(p);
+        ASTNode  *incr = check(p, TOKEN_RPAREN)    ? NULL : (ASTNode *)parse_expression(p);
         consume(p, TOKEN_RPAREN, "Expected ')'");
         BlockNode *body = parse_block(p);
         LoopNode *lp = ocl_malloc(sizeof(LoopNode));
-        lp->base.type = AST_FOR_LOOP; lp->base.location = loc; lp->is_for = true;
-        lp->init = init; lp->condition = cond; lp->increment = incr; lp->body = body;
+        lp->base.type = AST_FOR_LOOP; lp->base.location = loc;
+        lp->is_for = true; lp->init = init;
+        lp->condition = cond; lp->increment = incr; lp->body = body;
         return (ASTNode *)lp;
     }
 
     if (match(p, TOKEN_RETURN)) {
-        ExprNode *val = NULL;
-        if (!check(p, TOKEN_SEMICOLON) && !check(p, TOKEN_RBRACE) && !at_end(p)) val = parse_expression(p);
+        ExprNode *val = (!check(p, TOKEN_SEMICOLON) && !check(p, TOKEN_RBRACE) && !at_end(p))
+                        ? parse_expression(p) : NULL;
         match(p, TOKEN_SEMICOLON);
         return ast_create_return(loc, val);
     }
     if (match(p, TOKEN_BREAK)) {
         match(p, TOKEN_SEMICOLON);
-        ASTNode *n = ocl_malloc(sizeof(ASTNode)); n->type = AST_BREAK; n->location = loc; return n;
+        ASTNode *n = ocl_malloc(sizeof(ASTNode));
+        n->type = AST_BREAK; n->location = loc;
+        return n;
     }
     if (match(p, TOKEN_CONTINUE)) {
         match(p, TOKEN_SEMICOLON);
-        ASTNode *n = ocl_malloc(sizeof(ASTNode)); n->type = AST_CONTINUE; n->location = loc; return n;
+        ASTNode *n = ocl_malloc(sizeof(ASTNode));
+        n->type = AST_CONTINUE; n->location = loc;
+        return n;
     }
+
     ExprNode *expr = parse_expression(p);
     if (!expr) { p->current++; return NULL; }
     match(p, TOKEN_SEMICOLON);
     return (ASTNode *)expr;
 }
 
-Parser *parser_create(Token *tokens, size_t token_count, const char *filename, ErrorCollector *errors) {
+Parser *parser_create(Token *tokens, size_t token_count,
+                       const char *filename, ErrorCollector *errors) {
     Parser *p = ocl_malloc(sizeof(Parser));
     p->tokens = tokens; p->token_count = token_count; p->current = 0;
     p->filename = filename; p->errors = errors;
@@ -535,36 +561,28 @@ Parser *parser_create(Token *tokens, size_t token_count, const char *filename, E
 
 void parser_free(Parser *p) { ocl_free(p); }
 
-/* ── Import file resolution ─────────────────────────────────────────────
-   Search paths (in order):
-     1. Same directory as the source file being parsed
+/* ── Import file resolution ─────────────────────────────────────────
+   Search order:
+     1. Same directory as the importing file
      2. ./ocl_headers/
      3. ./stdlib_headers/
      4. Current working directory
-   File extensions tried: as-is, then .ocl, then .sxh
-──────────────────────────────────────────────────────────────────────── */
+   Extensions tried in order: as-is, .ocl, .sxh
+─────────────────────────────────────────────────────────────────── */
 static char *find_import_file(const char *importing_file, const char *import_name) {
     char bases[4][512];
-    int nb = 0;
+    int  nb = 0;
 
-    /* 1: same directory as the importing file */
     if (importing_file) {
         const char *slash = strrchr(importing_file, '/');
         if (!slash) slash = strrchr(importing_file, '\\');
         size_t dir_len = slash ? (size_t)(slash - importing_file + 1) : 0;
-        if (dir_len + strlen(import_name) + 5 < 512) {
+        if (dir_len + strlen(import_name) + 5 < 512)
             snprintf(bases[nb++], 512, "%.*s%s", (int)dir_len, importing_file, import_name);
-        }
     }
-
-    /* 2: ./ocl_headers/<name> */
-    snprintf(bases[nb++], 512, "ocl_headers/%s", import_name);
-
-    /* 3: ./stdlib_headers/<name> */
+    snprintf(bases[nb++], 512, "ocl_headers/%s",    import_name);
     snprintf(bases[nb++], 512, "stdlib_headers/%s", import_name);
-
-    /* 4: plain name (relative to cwd) */
-    snprintf(bases[nb++], 512, "%s", import_name);
+    snprintf(bases[nb++], 512, "%s",                import_name);
 
     static const char *exts[] = { "", ".ocl", ".sxh" };
     static const int   next   = sizeof(exts) / sizeof(exts[0]);
@@ -583,29 +601,38 @@ static char *find_import_file(const char *importing_file, const char *import_nam
 static char *read_file_import(const char *path) {
     FILE *f = fopen(path, "rb"); if (!f) return NULL;
     fseek(f, 0, SEEK_END); long sz = ftell(f); rewind(f);
-    char *buf = ocl_malloc((size_t)sz + 1);
-    size_t rd = fread(buf, 1, (size_t)sz, f); buf[rd] = '\0';
-    fclose(f); return buf;
+    char  *buf = ocl_malloc((size_t)sz + 1);
+    size_t rd  = fread(buf, 1, (size_t)sz, f);
+    buf[rd] = '\0';
+    fclose(f);
+    return buf;
 }
 
 ProgramNode *parser_parse(Parser *p) {
     ProgramNode *prog = ocl_malloc(sizeof(ProgramNode));
-    prog->base.type = AST_PROGRAM; prog->base.location = (SourceLocation){1,1,p->filename};
-    prog->nodes = NULL; prog->node_count = 0;
+    prog->base.type     = AST_PROGRAM;
+    prog->base.location = (SourceLocation){1, 1, p->filename};
+    prog->nodes     = NULL;
+    prog->node_count = 0;
 
     while (!at_end(p)) {
+
         /* Function declaration */
         if (check(p, TOKEN_FUNC)) {
             p->current++;
             SourceLocation loc = prev_tok(p)->location;
-            TypeNode *ret = ast_create_type(TYPE_VOID, 0);
+
+            /* Optional return type before the function name. */
+            TypeNode *ret = ast_create_type(TYPE_VOID);   /* FIX: single argument */
             if (check(p, TOKEN_IDENTIFIER)) {
                 char *maybe_type = cur_tok(p)->lexeme;
                 if (is_type_name(maybe_type)) { ocl_free(ret); ret = parse_type(p); }
             }
+
             Token name_tok = consume(p, TOKEN_IDENTIFIER, "Expected function name");
             char *fname = dup_lexeme(&name_tok);
             consume(p, TOKEN_LPAREN, "Expected '(' after function name");
+
             ParamNode **params = NULL; size_t param_count = 0;
             if (!check(p, TOKEN_RPAREN)) {
                 do {
@@ -613,21 +640,21 @@ ProgramNode *parser_parse(Parser *p) {
                     char *pname = dup_lexeme(&pname_tok);
                     consume(p, TOKEN_COLON, "Expected ':' after parameter name");
                     TypeNode *ptype = parse_type(p);
-                    params = ocl_realloc(params, (param_count+1)*sizeof(ParamNode *));
+                    params = ocl_realloc(params, (param_count + 1) * sizeof(ParamNode *));
                     params[param_count++] = ast_create_param(pname, ptype, pname_tok.location);
                 } while (match(p, TOKEN_COMMA));
             }
             consume(p, TOKEN_RPAREN, "Expected ')'");
             BlockNode *body = parse_block(p);
             ASTNode *fn = ast_create_func_decl(loc, fname, ret, params, param_count, body);
-            prog->nodes = ocl_realloc(prog->nodes, (prog->node_count+1)*sizeof(ASTNode *));
+            prog->nodes = ocl_realloc(prog->nodes, (prog->node_count + 1) * sizeof(ASTNode *));
             prog->nodes[prog->node_count++] = fn;
             continue;
         }
 
-        /* Import — try to resolve and inline */
+        /* Import — resolve and inline the file */
         if (check(p, TOKEN_IMPORT)) {
-            ASTNode *import_node = parse_statement(p);  /* consumes the Import statement */
+            ASTNode *import_node = parse_statement(p);
             if (!import_node) continue;
             ImportNode *imp = (ImportNode *)import_node;
 
@@ -635,23 +662,22 @@ ProgramNode *parser_parse(Parser *p) {
             if (resolved) {
                 char *src = read_file_import(resolved);
                 if (src) {
-                    /* Lex the imported file and inject its tokens */
-                    Lexer *sub_lex = lexer_create(src, resolved);
-                    size_t sub_count = 0;
-                    Token *sub_tokens = lexer_tokenize_all(sub_lex, &sub_count);
+                    Lexer       *sub_lex    = lexer_create(src, resolved);
+                    size_t       sub_count  = 0;
+                    Token       *sub_tokens = lexer_tokenize_all(sub_lex, &sub_count);
                     lexer_free(sub_lex);
 
-                    /* Build a temporary sub-parser and parse all top-level nodes */
-                    Parser *sub = parser_create(sub_tokens, sub_count, resolved, p->errors);
+                    Parser      *sub      = parser_create(sub_tokens, sub_count, resolved, p->errors);
                     ProgramNode *sub_prog = parser_parse(sub);
                     parser_free(sub);
                     tokens_free(sub_tokens, sub_count);
                     ocl_free(src);
 
-                    /* Merge sub-program nodes into main program */
+                    /* Merge sub-program nodes into the main program. */
                     if (sub_prog) {
                         for (size_t i = 0; i < sub_prog->node_count; i++) {
-                            prog->nodes = ocl_realloc(prog->nodes, (prog->node_count+1)*sizeof(ASTNode *));
+                            prog->nodes = ocl_realloc(prog->nodes,
+                                                      (prog->node_count + 1) * sizeof(ASTNode *));
                             prog->nodes[prog->node_count++] = sub_prog->nodes[i];
                             sub_prog->nodes[i] = NULL; /* ownership transferred */
                         }
@@ -665,15 +691,14 @@ ProgramNode *parser_parse(Parser *p) {
                           "Import not found: '%s'", imp->filename);
             }
 
-            /* Keep the Import node itself (for the type checker / codegen to ignore) */
-            prog->nodes = ocl_realloc(prog->nodes, (prog->node_count+1)*sizeof(ASTNode *));
+            prog->nodes = ocl_realloc(prog->nodes, (prog->node_count + 1) * sizeof(ASTNode *));
             prog->nodes[prog->node_count++] = import_node;
             continue;
         }
 
         ASTNode *stmt = parse_statement(p);
         if (stmt) {
-            prog->nodes = ocl_realloc(prog->nodes, (prog->node_count+1)*sizeof(ASTNode *));
+            prog->nodes = ocl_realloc(prog->nodes, (prog->node_count + 1) * sizeof(ASTNode *));
             prog->nodes[prog->node_count++] = stmt;
         }
     }

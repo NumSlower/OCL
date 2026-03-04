@@ -43,16 +43,19 @@ static void _insert(SymbolTable *t, Symbol *sym) {
     t->symbols[t->symbol_count++] = sym;
 }
 
-void symbol_table_insert(SymbolTable *t, const char *name, TypeNode *type, bool is_function, bool is_parameter) {
+void symbol_table_insert(SymbolTable *t, const char *name, TypeNode *type,
+                         bool is_function, bool is_parameter) {
     if (!t) return;
     Symbol *s = ocl_malloc(sizeof(Symbol));
-    s->name = ocl_strdup(name); s->type = type; s->is_function = is_function;
-    s->is_parameter = is_parameter; s->scope_level = t->current_scope_level;
+    s->name = ocl_strdup(name); s->type = type;
+    s->is_function = is_function; s->is_parameter = is_parameter;
+    s->scope_level = t->current_scope_level;
     s->param_types = NULL; s->param_count = 0;
     _insert(t, s);
 }
 
-void symbol_table_insert_func(SymbolTable *t, const char *name, TypeNode *ret_type, TypeNode **param_types, size_t param_count) {
+void symbol_table_insert_func(SymbolTable *t, const char *name, TypeNode *ret_type,
+                               TypeNode **param_types, size_t param_count) {
     if (!t) return;
     Symbol *s = ocl_malloc(sizeof(Symbol));
     s->name = ocl_strdup(name); s->type = ret_type; s->is_function = true;
@@ -71,14 +74,18 @@ Symbol *symbol_table_lookup(SymbolTable *t, const char *name) {
 bool symbol_table_has_in_current_scope(SymbolTable *t, const char *name) {
     if (!t) return false;
     for (size_t i = 0; i < t->symbol_count; i++)
-        if (t->symbols[i]->scope_level == t->current_scope_level && !strcmp(t->symbols[i]->name, name)) return true;
+        if (t->symbols[i]->scope_level == t->current_scope_level &&
+            !strcmp(t->symbols[i]->name, name))
+            return true;
     return false;
 }
 
 TypeChecker *type_checker_create(ErrorCollector *errors) {
     TypeChecker *tc = ocl_malloc(sizeof(TypeChecker));
     tc->symbol_table = symbol_table_create();
-    tc->current_function_return_type = NULL; tc->errors = errors; tc->error_count = 0;
+    tc->current_function_return_type = NULL;
+    tc->errors = errors;
+    tc->error_count = 0;
     return tc;
 }
 
@@ -91,13 +98,18 @@ void type_checker_free(TypeChecker *tc) {
 static void check_node(TypeChecker *tc, ASTNode *node);
 static TypeNode *check_expr(TypeChecker *tc, ExprNode *expr);
 
+/*
+ * builtin_type — return a pointer to a static TypeNode for each built-in type.
+ * These are never freed; they live for the duration of the program.
+ */
 static TypeNode *builtin_type(BuiltinType bt) {
     static TypeNode types[TYPE_UNKNOWN + 1];
-    static bool initialised = false;
+    static bool     initialised = false;
     if (!initialised) {
         for (int i = 0; i <= (int)TYPE_UNKNOWN; i++) {
-            types[i].type = (BuiltinType)i; types[i].bit_width = 0;
-            types[i].element_type = NULL; types[i].is_array = false;
+            /* FIX: initialise only the fields that still exist on TypeNode */
+            types[i].type         = (BuiltinType)i;
+            types[i].element_type = NULL;
         }
         initialised = true;
     }
@@ -136,7 +148,10 @@ static TypeNode *check_expr(TypeChecker *tc, ExprNode *expr) {
         case AST_IDENTIFIER: {
             IdentifierNode *id = (IdentifierNode *)expr;
             Symbol *sym = symbol_table_lookup(tc->symbol_table, id->name);
-            if (!sym) { tc_error(tc, id->base.location, "Undefined variable '%s'", id->name); return builtin_type(TYPE_UNKNOWN); }
+            if (!sym) {
+                tc_error(tc, id->base.location, "Undefined variable '%s'", id->name);
+                return builtin_type(TYPE_UNKNOWN);
+            }
             return sym->type ? sym->type : builtin_type(TYPE_UNKNOWN);
         }
         case AST_BIN_OP: {
@@ -145,12 +160,14 @@ static TypeNode *check_expr(TypeChecker *tc, ExprNode *expr) {
             TypeNode *rt = check_expr(tc, b->right);
             if (!strcmp(b->operator, "=")) return rt;
             if (!strcmp(b->operator,"==")||!strcmp(b->operator,"!=")||
-                !strcmp(b->operator,"<")||!strcmp(b->operator,"<=")||
-                !strcmp(b->operator,">")||!strcmp(b->operator,">=")||
+                !strcmp(b->operator,"<") ||!strcmp(b->operator,"<=")||
+                !strcmp(b->operator,">") ||!strcmp(b->operator,">=")||
                 !strcmp(b->operator,"&&")||!strcmp(b->operator,"||"))
                 return builtin_type(TYPE_BOOL);
-            if (lt->type == TYPE_FLOAT || rt->type == TYPE_FLOAT) return builtin_type(TYPE_FLOAT);
-            if (lt->type == TYPE_STRING && !strcmp(b->operator, "+")) return builtin_type(TYPE_STRING);
+            if (lt->type == TYPE_FLOAT || rt->type == TYPE_FLOAT)
+                return builtin_type(TYPE_FLOAT);
+            if (lt->type == TYPE_STRING && !strcmp(b->operator, "+"))
+                return builtin_type(TYPE_STRING);
             return lt;
         }
         case AST_UNARY_OP: {
@@ -161,35 +178,45 @@ static TypeNode *check_expr(TypeChecker *tc, ExprNode *expr) {
         case AST_CALL: {
             CallNode *c = (CallNode *)expr;
             if (is_builtin_function(c->function_name)) {
-                for (size_t i = 0; i < c->argument_count; i++) check_expr(tc, c->arguments[i]);
+                for (size_t i = 0; i < c->argument_count; i++)
+                    check_expr(tc, c->arguments[i]);
                 return builtin_type(TYPE_UNKNOWN);
             }
             Symbol *sym = symbol_table_lookup(tc->symbol_table, c->function_name);
-            if (!sym) { tc_error(tc, c->base.location, "Undefined function '%s'", c->function_name); return builtin_type(TYPE_UNKNOWN); }
+            if (!sym) {
+                tc_error(tc, c->base.location, "Undefined function '%s'", c->function_name);
+                return builtin_type(TYPE_UNKNOWN);
+            }
             if (sym->is_function && sym->param_count != c->argument_count)
-                tc_error(tc, c->base.location, "Function '%s' expects %zu arguments, got %zu", c->function_name, sym->param_count, c->argument_count);
-            for (size_t i = 0; i < c->argument_count; i++) check_expr(tc, c->arguments[i]);
+                tc_error(tc, c->base.location,
+                         "Function '%s' expects %zu arguments, got %zu",
+                         c->function_name, sym->param_count, c->argument_count);
+            for (size_t i = 0; i < c->argument_count; i++)
+                check_expr(tc, c->arguments[i]);
             return sym->type ? sym->type : builtin_type(TYPE_VOID);
         }
         case AST_ARRAY_LITERAL: {
             ArrayLiteralNode *al = (ArrayLiteralNode *)expr;
-            for (size_t i = 0; i < al->element_count; i++) check_expr(tc, al->elements[i]);
+            for (size_t i = 0; i < al->element_count; i++)
+                check_expr(tc, al->elements[i]);
             return builtin_type(TYPE_ARRAY);
         }
         case AST_INDEX_ACCESS: {
             IndexAccessNode *ia = (IndexAccessNode *)expr;
             check_expr(tc, ia->array_expr);
             check_expr(tc, ia->index_expr);
-            return builtin_type(TYPE_UNKNOWN); /* element type not tracked yet */
+            return builtin_type(TYPE_UNKNOWN); /* element type not tracked */
         }
-        default: return builtin_type(TYPE_UNKNOWN);
+        default:
+            return builtin_type(TYPE_UNKNOWN);
     }
 }
 
 static void check_node(TypeChecker *tc, ASTNode *node) {
     if (!node) return;
     switch (node->type) {
-        case AST_IMPORT: break;   /* handled at parse time */
+        case AST_IMPORT:
+            break; /* resolved at parse time */
 
         case AST_DECLARE: {
             DeclareNode *d = (DeclareNode *)node;
@@ -201,32 +228,29 @@ static void check_node(TypeChecker *tc, ASTNode *node) {
         case AST_VAR_DECL: {
             VarDeclNode *v = (VarDeclNode *)node;
             if (symbol_table_has_in_current_scope(tc->symbol_table, v->name))
-                tc_error(tc, v->base.location, "Variable '%s' already declared in this scope", v->name);
-            TypeNode *init_type = NULL;
-            if (v->initializer) init_type = check_expr(tc, v->initializer);
+                tc_error(tc, v->base.location,
+                         "Variable '%s' already declared in this scope", v->name);
+            TypeNode *init_type = v->initializer ? check_expr(tc, v->initializer) : NULL;
             TypeNode *decl_type = v->type;
-            if (decl_type && decl_type->type == TYPE_UNKNOWN && init_type) decl_type->type = init_type->type;
+            if (decl_type && decl_type->type == TYPE_UNKNOWN && init_type)
+                decl_type->type = init_type->type;
             symbol_table_insert(tc->symbol_table, v->name, decl_type, false, false);
             break;
         }
 
         case AST_FUNC_DECL: {
             /*
-             * FIX: In pass-1 of type_checker_check(), all top-level function
-             * signatures are already registered in the symbol table.  Calling
-             * symbol_table_insert_func here (pass-2) would add a second,
-             * duplicate entry for the same name, wasting memory and potentially
-             * shadowing the first entry in lookups.
-             *
-             * We therefore only open a new scope, register the parameters, and
-             * recurse into the body — we do NOT re-register the function itself.
+             * The function signature was already registered in pass-1 of
+             * type_checker_check().  Here we only open a scope, register
+             * parameters, and recurse into the body.
              */
             FuncDeclNode *f = (FuncDeclNode *)node;
             symbol_table_enter_scope(tc->symbol_table);
             TypeNode *saved_ret = tc->current_function_return_type;
             tc->current_function_return_type = f->return_type;
             for (size_t i = 0; i < f->param_count; i++)
-                symbol_table_insert(tc->symbol_table, f->params[i]->name, f->params[i]->type, false, true);
+                symbol_table_insert(tc->symbol_table, f->params[i]->name,
+                                    f->params[i]->type, false, true);
             if (f->body)
                 for (size_t i = 0; i < f->body->statement_count; i++)
                     check_node(tc, f->body->statements[i]);
@@ -238,13 +262,14 @@ static void check_node(TypeChecker *tc, ASTNode *node) {
         case AST_BLOCK: {
             BlockNode *b = (BlockNode *)node;
             symbol_table_enter_scope(tc->symbol_table);
-            for (size_t i = 0; i < b->statement_count; i++) check_node(tc, b->statements[i]);
+            for (size_t i = 0; i < b->statement_count; i++)
+                check_node(tc, b->statements[i]);
             symbol_table_exit_scope(tc->symbol_table);
             break;
         }
 
         case AST_IF_STMT: {
-            /* Walk the if / else-if / else chain */
+            /* Walk the flat if / else-if / else chain. */
             ASTNode *cur = node;
             while (cur && cur->type == AST_IF_STMT) {
                 IfStmtNode *s = (IfStmtNode *)cur;
@@ -256,10 +281,11 @@ static void check_node(TypeChecker *tc, ASTNode *node) {
             break;
         }
 
-        case AST_FOR_LOOP: case AST_WHILE_LOOP: {
+        case AST_FOR_LOOP:
+        case AST_WHILE_LOOP: {
             LoopNode *lp = (LoopNode *)node;
             symbol_table_enter_scope(tc->symbol_table);
-            if (lp->init) check_node(tc, lp->init);
+            if (lp->init)      check_node(tc, lp->init);
             if (lp->condition) check_expr(tc, lp->condition);
             if (lp->increment) check_node(tc, lp->increment);
             if (lp->body)
@@ -269,9 +295,19 @@ static void check_node(TypeChecker *tc, ASTNode *node) {
             break;
         }
 
-        case AST_RETURN: { ReturnNode *r = (ReturnNode *)node; check_expr(tc, r->value); break; }
-        case AST_BREAK: case AST_CONTINUE: break;
-        default: check_expr(tc, (ExprNode *)node); break;
+        case AST_RETURN: {
+            ReturnNode *r = (ReturnNode *)node;
+            check_expr(tc, r->value);
+            break;
+        }
+
+        case AST_BREAK:
+        case AST_CONTINUE:
+            break;
+
+        default:
+            check_expr(tc, (ExprNode *)node);
+            break;
     }
 }
 
@@ -279,24 +315,23 @@ bool type_checker_check(TypeChecker *tc, ProgramNode *program) {
     if (!tc || !program) return false;
 
     /*
-     * Pass 1: Register all top-level names so that forward references inside
-     * function bodies work correctly.
-     *
-     * For functions we allocate a fresh param_types array here; it becomes
-     * owned by the Symbol and is freed by symbol_table_free().
+     * Pass 1 — register all top-level names so that forward references inside
+     * function bodies resolve correctly.
      */
     for (size_t i = 0; i < program->node_count; i++) {
         ASTNode *n = program->nodes[i];
         if (n->type == AST_FUNC_DECL) {
             FuncDeclNode *f = (FuncDeclNode *)n;
-            /* Skip if already registered (e.g. from an Import). */
-            if (symbol_table_has_in_current_scope(tc->symbol_table, f->name)) continue;
+            if (symbol_table_has_in_current_scope(tc->symbol_table, f->name))
+                continue;
             TypeNode **ptypes = NULL;
             if (f->param_count > 0) {
                 ptypes = ocl_malloc(f->param_count * sizeof(TypeNode *));
-                for (size_t j = 0; j < f->param_count; j++) ptypes[j] = f->params[j]->type;
+                for (size_t j = 0; j < f->param_count; j++)
+                    ptypes[j] = f->params[j]->type;
             }
-            symbol_table_insert_func(tc->symbol_table, f->name, f->return_type, ptypes, f->param_count);
+            symbol_table_insert_func(tc->symbol_table, f->name,
+                                     f->return_type, ptypes, f->param_count);
         } else if (n->type == AST_VAR_DECL) {
             VarDeclNode *v = (VarDeclNode *)n;
             if (!symbol_table_has_in_current_scope(tc->symbol_table, v->name))
@@ -309,12 +344,8 @@ bool type_checker_check(TypeChecker *tc, ProgramNode *program) {
     }
 
     /*
-     * Pass 2: Full type-check.
-     *
-     * For VAR_DECL at the top level we only check the initialiser expression
-     * (the symbol is already in the table from pass-1).  All other nodes are
-     * handled by check_node(), which for AST_FUNC_DECL now only processes the
-     * body — it does NOT re-register the function signature.
+     * Pass 2 — full type-check.
+     * Top-level VAR_DECL only checks the initialiser (symbol already registered).
      */
     for (size_t i = 0; i < program->node_count; i++) {
         ASTNode *n = program->nodes[i];

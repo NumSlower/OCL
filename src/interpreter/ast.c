@@ -9,10 +9,12 @@ ASTNode *ast_create_var_decl(SourceLocation loc, char *name, TypeNode *type, Exp
     return (ASTNode *)n;
 }
 
-ASTNode *ast_create_func_decl(SourceLocation loc, char *name, TypeNode *ret, ParamNode **params, size_t n, BlockNode *body) {
+ASTNode *ast_create_func_decl(SourceLocation loc, char *name, TypeNode *ret,
+                               ParamNode **params, size_t n, BlockNode *body) {
     FuncDeclNode *fd = ocl_malloc(sizeof(FuncDeclNode));
     fd->base.type = AST_FUNC_DECL; fd->base.location = loc;
-    fd->name = name; fd->return_type = ret; fd->params = params; fd->param_count = n; fd->body = body;
+    fd->name = name; fd->return_type = ret;
+    fd->params = params; fd->param_count = n; fd->body = body;
     return (ASTNode *)fd;
 }
 
@@ -25,15 +27,17 @@ BlockNode *ast_create_block(SourceLocation loc) {
 
 void ast_add_statement(BlockNode *block, ASTNode *stmt) {
     if (!block || !stmt) return;
-    block->statements = ocl_realloc(block->statements, (block->statement_count + 1) * sizeof(ASTNode *));
+    block->statements = ocl_realloc(block->statements,
+                                    (block->statement_count + 1) * sizeof(ASTNode *));
     block->statements[block->statement_count++] = stmt;
 }
 
 /*
- * else_next: either another AST_IF_STMT (for else-if) or AST_BLOCK (plain else)
- * This replaces the old "else_block" field, eliminating synthetic wrapper blocks.
+ * else_next: either another AST_IF_STMT (for else-if) or AST_BLOCK (plain else).
+ * This flat chain avoids synthetic wrapper blocks.
  */
-ASTNode *ast_create_if_stmt(SourceLocation loc, ExprNode *cond, BlockNode *then_block, ASTNode *else_next) {
+ASTNode *ast_create_if_stmt(SourceLocation loc, ExprNode *cond,
+                             BlockNode *then_block, ASTNode *else_next) {
     IfStmtNode *n = ocl_malloc(sizeof(IfStmtNode));
     n->base.type = AST_IF_STMT; n->base.location = loc;
     n->condition = cond; n->then_block = then_block; n->else_next = else_next;
@@ -46,14 +50,16 @@ ASTNode *ast_create_return(SourceLocation loc, ExprNode *value) {
     return (ASTNode *)n;
 }
 
-ExprNode *ast_create_binary_op(SourceLocation loc, ExprNode *left, const char *op, ExprNode *right) {
+ExprNode *ast_create_binary_op(SourceLocation loc, ExprNode *left,
+                                const char *op, ExprNode *right) {
     BinOpNode *n = ocl_malloc(sizeof(BinOpNode));
     n->base.type = AST_BIN_OP; n->base.location = loc;
     n->left = left; n->right = right; n->operator = op;
     return (ExprNode *)n;
 }
 
-ExprNode *ast_create_call(SourceLocation loc, char *name, ExprNode **args, size_t arg_count) {
+ExprNode *ast_create_call(SourceLocation loc, char *name,
+                           ExprNode **args, size_t arg_count) {
     CallNode *n = ocl_malloc(sizeof(CallNode));
     n->base.type = AST_CALL; n->base.location = loc;
     n->function_name = name; n->arguments = args; n->argument_count = arg_count;
@@ -73,23 +79,27 @@ ExprNode *ast_create_identifier(SourceLocation loc, char *name) {
     return (ExprNode *)n;
 }
 
-ExprNode *ast_create_array_literal(SourceLocation loc, ExprNode **elements, size_t count) {
+ExprNode *ast_create_array_literal(SourceLocation loc,
+                                    ExprNode **elements, size_t count) {
     ArrayLiteralNode *n = ocl_malloc(sizeof(ArrayLiteralNode));
     n->base.type = AST_ARRAY_LITERAL; n->base.location = loc;
     n->elements = elements; n->element_count = count;
     return (ExprNode *)n;
 }
 
-ExprNode *ast_create_index_access(SourceLocation loc, ExprNode *array_expr, ExprNode *index_expr) {
+ExprNode *ast_create_index_access(SourceLocation loc,
+                                   ExprNode *array_expr, ExprNode *index_expr) {
     IndexAccessNode *n = ocl_malloc(sizeof(IndexAccessNode));
     n->base.type = AST_INDEX_ACCESS; n->base.location = loc;
     n->array_expr = array_expr; n->index_expr = index_expr;
     return (ExprNode *)n;
 }
 
-TypeNode *ast_create_type(BuiltinType type, int bit_width) {
+/* Single-argument: bit_width and is_array were removed as unused. */
+TypeNode *ast_create_type(BuiltinType type) {
     TypeNode *t = ocl_malloc(sizeof(TypeNode));
-    t->type = type; t->bit_width = bit_width; t->element_type = NULL; t->is_array = false;
+    t->type = type;
+    t->element_type = NULL;
     return t;
 }
 
@@ -109,50 +119,82 @@ void ast_free(ASTNode *node) {
         }
         case AST_VAR_DECL: {
             VarDeclNode *v = (VarDeclNode *)node;
-            ocl_free(v->name); ocl_free(v->type); ast_free((ASTNode *)v->initializer); break;
+            ocl_free(v->name); ocl_free(v->type);
+            ast_free((ASTNode *)v->initializer); break;
         }
         case AST_FUNC_DECL: {
             FuncDeclNode *f = (FuncDeclNode *)node;
             ocl_free(f->name); ocl_free(f->return_type);
             for (size_t i = 0; i < f->param_count; i++) {
-                if (f->params[i]) { ocl_free(f->params[i]->name); ocl_free(f->params[i]->type); ocl_free(f->params[i]); }
+                if (f->params[i]) {
+                    ocl_free(f->params[i]->name);
+                    ocl_free(f->params[i]->type);
+                    ocl_free(f->params[i]);
+                }
             }
             ocl_free(f->params); ast_free((ASTNode *)f->body); break;
         }
         case AST_BLOCK: {
             BlockNode *b = (BlockNode *)node;
-            for (size_t i = 0; i < b->statement_count; i++) ast_free(b->statements[i]);
+            for (size_t i = 0; i < b->statement_count; i++)
+                ast_free(b->statements[i]);
             ocl_free(b->statements); break;
         }
         case AST_IF_STMT: {
             IfStmtNode *s = (IfStmtNode *)node;
             ast_free((ASTNode *)s->condition);
             ast_free((ASTNode *)s->then_block);
-            ast_free(s->else_next);   /* may be if-stmt or block */
+            ast_free(s->else_next); /* may be if-stmt or block */
             break;
         }
         case AST_FOR_LOOP:
         case AST_WHILE_LOOP: {
             LoopNode *lp = (LoopNode *)node;
-            ast_free(lp->init); ast_free((ASTNode *)lp->condition);
-            ast_free(lp->increment); ast_free((ASTNode *)lp->body); break;
+            ast_free(lp->init);
+            ast_free((ASTNode *)lp->condition);
+            ast_free(lp->increment);
+            ast_free((ASTNode *)lp->body); break;
         }
-        case AST_RETURN: { ReturnNode *r = (ReturnNode *)node; ast_free((ASTNode *)r->value); break; }
-        case AST_BIN_OP: { BinOpNode *b = (BinOpNode *)node; ast_free((ASTNode *)b->left); ast_free((ASTNode *)b->right); break; }
-        case AST_UNARY_OP: { UnaryOpNode *u = (UnaryOpNode *)node; ast_free((ASTNode *)u->operand); break; }
+        case AST_RETURN: {
+            ReturnNode *r = (ReturnNode *)node;
+            ast_free((ASTNode *)r->value); break;
+        }
+        case AST_BIN_OP: {
+            BinOpNode *b = (BinOpNode *)node;
+            ast_free((ASTNode *)b->left);
+            ast_free((ASTNode *)b->right); break;
+        }
+        case AST_UNARY_OP: {
+            UnaryOpNode *u = (UnaryOpNode *)node;
+            ast_free((ASTNode *)u->operand); break;
+        }
         case AST_CALL: {
             CallNode *c = (CallNode *)node;
             ocl_free(c->function_name);
-            for (size_t i = 0; i < c->argument_count; i++) ast_free((ASTNode *)c->arguments[i]);
+            for (size_t i = 0; i < c->argument_count; i++)
+                ast_free((ASTNode *)c->arguments[i]);
             ocl_free(c->arguments); break;
         }
-        case AST_IDENTIFIER: { IdentifierNode *id = (IdentifierNode *)node; ocl_free(id->name); break; }
-        case AST_LITERAL: { LiteralNode *lit = (LiteralNode *)node; value_free(lit->value); break; }
-        case AST_IMPORT: { ImportNode *imp = (ImportNode *)node; ocl_free(imp->filename); break; }
-        case AST_DECLARE: { DeclareNode *d = (DeclareNode *)node; ocl_free(d->name); ocl_free(d->type); break; }
+        case AST_IDENTIFIER: {
+            IdentifierNode *id = (IdentifierNode *)node;
+            ocl_free(id->name); break;
+        }
+        case AST_LITERAL: {
+            LiteralNode *lit = (LiteralNode *)node;
+            value_free(lit->value); break;
+        }
+        case AST_IMPORT: {
+            ImportNode *imp = (ImportNode *)node;
+            ocl_free(imp->filename); break;
+        }
+        case AST_DECLARE: {
+            DeclareNode *d = (DeclareNode *)node;
+            ocl_free(d->name); ocl_free(d->type); break;
+        }
         case AST_ARRAY_LITERAL: {
             ArrayLiteralNode *al = (ArrayLiteralNode *)node;
-            for (size_t i = 0; i < al->element_count; i++) ast_free((ASTNode *)al->elements[i]);
+            for (size_t i = 0; i < al->element_count; i++)
+                ast_free((ASTNode *)al->elements[i]);
             ocl_free(al->elements); break;
         }
         case AST_INDEX_ACCESS: {
