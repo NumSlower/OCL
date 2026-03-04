@@ -32,7 +32,19 @@ Run `make` in the root of the project:
 make
 ```
 
-This will compile the interpreter and produce the `ocl` executable.
+This compiles the interpreter with debug symbols and AddressSanitizer/UBSan enabled and produces the `ocl` executable.
+
+For a production build without sanitizers:
+
+```bash
+make release
+```
+
+For a Valgrind-friendly build (no sanitizers, no optimisation):
+
+```bash
+make valgrind
+```
 
 ## Running OCL
 
@@ -42,10 +54,27 @@ Once built, you can run a `.ocl` source file with:
 ./ocl yourfile.ocl
 ```
 
+Additional flags:
+
+| Flag               | Effect                                          |
+|--------------------|-------------------------------------------------|
+| `--time`           | Report execution time after the program exits   |
+| `--dump-tokens`    | Print the lexer token stream and exit           |
+| `--dump-bytecode`  | Print the bytecode disassembly and exit         |
+| `--no-typecheck`   | Skip the type checker pass                      |
+
 ## Running Tests
 
 ```bash
 make test
+```
+
+Tests live in `test/*.ocl`. Each test may have a paired `test/*.expected` file; the test runner diffs actual stdout against it and reports pass/fail counts.
+
+## Building and Running a Specific File
+
+```bash
+make run FILE=path/to/file.ocl
 ```
 
 ## Cleaning Up
@@ -61,5 +90,7 @@ make clean
 **`make` not found:** Install it via your package manager. On Ubuntu/Debian: `sudo apt install build-essential`. On macOS: `xcode-select --install`.
 
 **Compiler errors:** Make sure your compiler supports C11 (`gcc --version` or `clang --version`). GCC 5+ and Clang 3.3+ both support C11.
+
+**AddressSanitizer unavailable:** On some platforms the combined `-fsanitize=address,undefined` flag may not be accepted. The Makefile already splits these into separate flags on macOS. If you encounter linker errors on another platform, use `make release` or `make valgrind` instead.
 
 If you're still stuck, check the [Issues page](https://github.com/NumSlower/OCL/issues) or open a new issue with the full error output.

@@ -1,6 +1,6 @@
 # OCL Language Reference
 
-> **Version:** beta 0.6.0  
+> **Version:** beta 0.6.0
 > OCL is a statically-scoped, bytecode-compiled scripting language with a C-like syntax and a set of built-in functions for common tasks. This document is the complete reference for the language as it is currently implemented.
 
 ---
@@ -29,10 +29,10 @@ OCL source files use the `.ocl` extension. The interpreter is invoked as:
 
 ```bash
 ./ocl path/to/program.ocl
-./ocl --time path/to/program.ocl      # show execution time
-./ocl --dump-tokens path/to/file.ocl  # print lexer tokens and exit
-./ocl --dump-bytecode path/to/file.ocl # print bytecode disassembly and exit
-./ocl --no-typecheck path/to/file.ocl  # skip the type checker
+./ocl --time path/to/program.ocl        # show execution time
+./ocl --dump-tokens path/to/file.ocl    # print lexer tokens and exit
+./ocl --dump-bytecode path/to/file.ocl  # print bytecode disassembly and exit
+./ocl --no-typecheck path/to/file.ocl   # skip the type checker
 ```
 
 If a top-level `main()` function is defined, it is called automatically after all global variable initialisers have run. If no `main()` exists, top-level statements execute directly in the order they appear.
@@ -56,16 +56,16 @@ OCL supports **block comments only**. There is no single-line `//` comment synta
 
 ## Types
 
-| OCL Type       | Aliases          | Description                          |
-|----------------|------------------|--------------------------------------|
-| `Int`          | `int`, `int32`, `int64` | 64-bit signed integer           |
-| `Float`        | `float`          | 64-bit IEEE 754 double               |
-| `String`       | `string`         | UTF-8 string (heap-allocated)        |
-| `Bool`         | `bool`           | `true` or `false`                    |
-| `Char`         | `char`           | Single character (`'A'`)             |
-| `void` / `Void`| —                | Return type for functions that return nothing |
+| OCL Type        | Aliases                   | Description                                             |
+|-----------------|---------------------------|---------------------------------------------------------|
+| `Int`           | `int`, `int32`, `int64`   | 64-bit signed integer                                   |
+| `Float`         | `float`                   | 64-bit IEEE 754 double                                  |
+| `String`        | `string`                  | UTF-8 string (heap-allocated)                           |
+| `Bool`          | `bool`                    | `true` or `false`                                       |
+| `Char`          | `char`                    | Single character (`'A'`)                                |
+| `void` / `Void` | —                         | Return type for functions that return nothing           |
 
-> **Note:** `int32` and `int64` are accepted as type names by the parser and are stored as aliases for `Int`. All integers are 64-bit at runtime regardless of the suffix.
+> **Note:** `int32` and `int64` are accepted as type names by the parser and are stored as aliases for `Int`. All integers are 64-bit at runtime regardless of the suffix. The bit-width token is consumed and silently ignored.
 
 ---
 
@@ -77,14 +77,14 @@ OCL supports two declaration syntaxes.
 
 ```ocl
 Let name:Type = expression;
-Let name:Type;    /# initialised to null if no initialiser #/
+Let name:Type;    /# slot initialised to null if no initialiser #/
 ```
 
 ### C-style
 
 ```ocl
 Type name = expression;
-Type name;        /# initialised to null if no initialiser #/
+Type name;        /# slot initialised to null if no initialiser #/
 ```
 
 ### Examples
@@ -105,11 +105,11 @@ float ratio;
 - Variables are lexically scoped. A variable declared inside a `{...}` block is not visible outside it.
 - At the top level of a file, variables are **global**.
 - Inside a function or block, variables are **local** to that scope.
-- Re-declaring a variable in the same scope is a type-checker error.
+- Re-declaring a variable in the same scope is a type-checker error (the type checker is advisory; see [Known Limitations](#known-limitations-and-edge-cases)).
 
 ### `declare` Keyword
 
-The `declare` keyword forward-declares a variable name and type to the type checker without emitting an initialiser. It initialises the slot to `null` at runtime.
+The `declare` keyword forward-declares a variable name and type to the type checker without emitting a user-supplied initialiser. It initialises the slot to `null` at runtime.
 
 ```ocl
 declare counter:Int;
@@ -117,32 +117,44 @@ declare counter:Int;
 
 This is useful for referencing a name before its full `Let` declaration is in scope.
 
+### Compound Assignment
+
+`+=`, `-=`, `*=`, `/=`, and `%=` are supported. They are desugared by the parser into explicit `x = x op y` form and only work with a simple identifier on the left-hand side (not an index expression such as `arr[i] += 1`).
+
+```ocl
+x += 1;     /# desugars to: x = x + 1 #/
+x -= 5;
+x *= 2;
+x /= 3;
+x %= 4;
+```
+
 ---
 
 ## Literals
 
-| Literal           | Type     | Example                |
-|-------------------|----------|------------------------|
-| Integer           | `Int`    | `42`, `0`, `-7`        |
-| Float             | `Float`  | `3.14`, `0.5`          |
-| String            | `String` | `"hello\nworld"`       |
-| Character         | `Char`   | `'A'`, `'\n'`          |
-| Boolean           | `Bool`   | `true`, `false`        |
-| Array literal     | `Array`  | `[1, 2, 3]`            |
+| Literal       | Type     | Example           |
+|---------------|----------|-------------------|
+| Integer       | `Int`    | `42`, `0`, `-7`   |
+| Float         | `Float`  | `3.14`, `0.5`     |
+| String        | `String` | `"hello\nworld"`  |
+| Character     | `Char`   | `'A'`, `'\n'`     |
+| Boolean       | `Bool`   | `true`, `false`   |
+| Array literal | `Array`  | `[1, 2, 3]`       |
 
 ### String Escape Sequences
 
 Escape sequences are processed at **lex time** (when the source is tokenised):
 
-| Sequence | Character |
-|----------|-----------|
-| `\n`     | Newline   |
-| `\t`     | Tab       |
+| Sequence | Character       |
+|----------|-----------------|
+| `\n`     | Newline         |
+| `\t`     | Tab             |
 | `\r`     | Carriage return |
-| `\\`     | Backslash |
-| `\"`     | Double quote |
-| `\'`     | Single quote |
-| `\0`     | Null byte |
+| `\\`     | Backslash       |
+| `\"`     | Double quote    |
+| `\'`     | Single quote    |
+| `\0`     | Null byte       |
 
 > **Important:** Because escape sequences are resolved by the lexer, a string literal `"line1\nline2"` already contains a real newline by the time it reaches the VM. There is no second layer of escape processing for string values stored in variables.
 
@@ -152,54 +164,56 @@ Escape sequences are processed at **lex time** (when the source is tokenised):
 
 ### Arithmetic
 
-| Operator | Description            | Types            |
-|----------|------------------------|------------------|
-| `+`      | Addition or string concatenation | `Int`, `Float`, `String` |
-| `-`      | Subtraction            | `Int`, `Float`   |
-| `*`      | Multiplication         | `Int`, `Float`   |
-| `/`      | Division (integer or float) | `Int`, `Float` |
-| `%`      | Modulo                 | `Int` only       |
+| Operator | Description                         | Types                     |
+|----------|-------------------------------------|---------------------------|
+| `+`      | Addition or string concatenation    | `Int`, `Float`, `String`  |
+| `-`      | Subtraction                         | `Int`, `Float`            |
+| `*`      | Multiplication                      | `Int`, `Float`            |
+| `/`      | Division (integer or float)         | `Int`, `Float`            |
+| `%`      | Modulo                              | `Int` only                |
 
-- Integer division truncates toward zero.
-- Using `%` on `Float` operands is a runtime error.
-- Division by zero (integer or float) is a runtime error.
+Additional `+` coercions supported by the VM:
+- `String + Char` → `String`
+- `Char + String` → `String`
+
+Integer division truncates toward zero. Using `%` on `Float` operands is a runtime error. Division by zero (integer or float) is a runtime error.
 
 ### Comparison
 
-| Operator | Description       |
-|----------|-------------------|
-| `==`     | Equal             |
-| `!=`     | Not equal         |
-| `<`      | Less than         |
-| `<=`     | Less than or equal |
-| `>`      | Greater than      |
-| `>=`     | Greater than or equal |
+| Operator | Description          |
+|----------|----------------------|
+| `==`     | Equal                |
+| `!=`     | Not equal            |
+| `<`      | Less than            |
+| `<=`     | Less than or equal   |
+| `>`      | Greater than         |
+| `>=`     | Greater than or equal|
 
-String equality (`==`, `!=`) compares content, not identity.  
-Mixed `Int`/`Float` comparisons are supported.
+String equality (`==`, `!=`) compares content, not identity. Mixed `Int`/`Float` comparisons are supported.
 
 ### Logical
 
-| Operator | Description   |
-|----------|---------------|
-| `&&`     | Logical AND (short-circuit) |
-| `\|\|`   | Logical OR (short-circuit)  |
-| `!`      | Logical NOT   |
+| Operator | Description                          |
+|----------|--------------------------------------|
+| `&&`     | Logical AND (short-circuit)          |
+| `\|\|`   | Logical OR (short-circuit)           |
+| `!`      | Logical NOT                          |
 
-`&&` and `||` are **short-circuit**: the right-hand side is only evaluated if the left-hand side does not determine the result. For `&&`, if the left side is falsy the right side is skipped; for `||`, if the left side is truthy the right side is skipped.
+`&&` and `||` are **short-circuit**: the right-hand side is only evaluated if the left-hand side does not determine the result.
 
 ### Assignment
 
 ```ocl
 x = expression;        /# simple assignment #/
 arr[i] = expression;   /# array element assignment #/
+x += expression;       /# compound assignment (desugared to x = x + expression) #/
 ```
 
-Assignment is an expression (it evaluates to the value assigned) but in practice it is used as a statement.
+Simple assignment is an expression (it evaluates to the value assigned) but is typically used as a statement. Compound assignment operators (`+=`, `-=`, `*=`, `/=`, `%=`) are also supported for simple identifier targets.
 
 ### Increment and Decrement
 
-`++` and `--` are available in both prefix and postfix positions. They desugar to `x = x + 1` / `x = x - 1` and do **not** return the old value — they behave like prefix operators regardless of position.
+`++` and `--` are available in both prefix and postfix positions. They desugar to `x = x + 1` / `x = x - 1` and do **not** return the old value — they behave like prefix operators regardless of position. Only simple identifiers are supported as operands; `arr[i]++` is a parse error.
 
 ```ocl
 i++;     /# equivalent to: i = i + 1 #/
@@ -210,16 +224,16 @@ i--;
 
 ### Operator Precedence (high to low)
 
-| Level | Operators                  |
-|-------|----------------------------|
-| 1 (highest) | Unary: `-`, `!`, prefix `++`/`--` |
-| 2     | `*`, `/`, `%`              |
-| 3     | `+`, `-`                   |
-| 4     | `<`, `<=`, `>`, `>=`       |
-| 5     | `==`, `!=`                 |
-| 6     | `&&`                       |
-| 7     | `\|\|`                     |
-| 8 (lowest) | `=` (assignment)      |
+| Level        | Operators                                   |
+|--------------|---------------------------------------------|
+| 1 (highest)  | Unary: `-`, `!`, prefix `++`/`--`           |
+| 2            | `*`, `/`, `%`                               |
+| 3            | `+`, `-`                                    |
+| 4            | `<`, `<=`, `>`, `>=`                        |
+| 5            | `==`, `!=`                                  |
+| 6            | `&&`                                        |
+| 7            | `\|\|`                                      |
+| 8 (lowest)   | `=`, `+=`, `-=`, `*=`, `/=`, `%=`           |
 
 ---
 
@@ -271,7 +285,7 @@ for (;;) {
 
 ### Break and Continue
 
-`break` exits the innermost enclosing loop. `continue` skips to the next iteration.
+`break` exits the innermost enclosing loop. `continue` skips to the next iteration (including the increment expression in a `for` loop).
 
 ```ocl
 while (true) {
@@ -295,7 +309,7 @@ Both are compile-time errors if used outside a loop.
 ### Declaration
 
 ```ocl
-/# Void function (no return value) #/
+/# Void function (no return type = void) #/
 func greet() {
     print("Hello!");
 }
@@ -327,7 +341,7 @@ Let result:Int = add(3, 4);
 
 ### Scope and Visibility
 
-All function declarations are hoisted to the top of the program during code generation. A function can therefore call another function declared later in the same file.
+All function declarations are hoisted to the top of the program during code generation (two-pass registration). A function can therefore call another function declared later in the same file.
 
 Functions are top-level only — **nested function declarations and function values are not supported**.
 
@@ -352,7 +366,7 @@ Arrays are reference-counted heap objects. An array can hold values of any type 
 
 **Array literal syntax:**
 ```ocl
-Let nums:Int = [1, 2, 3, 4, 5];
+Let nums = [1, 2, 3, 4, 5];
 Let mixed = [1, "hello", true];
 Let empty = [];
 ```
@@ -384,14 +398,14 @@ nums[0] = 99;
 
 ### Built-in Array Functions
 
-| Function              | Signature                        | Description                                 |
-|-----------------------|----------------------------------|---------------------------------------------|
-| `arrayNew(size)`      | `(Int) → Array`                  | Create array of `size` nulls                |
-| `arrayPush(arr, val)` | `(Array, Any) → null`            | Append `val` to end of `arr`                |
-| `arrayPop(arr)`       | `(Array) → Any`                  | Remove and return last element              |
-| `arrayGet(arr, idx)`  | `(Array, Int) → Any`             | Get element at index (returns null if OOB)  |
-| `arraySet(arr, idx, val)` | `(Array, Int, Any) → null`  | Set element at index                        |
-| `arrayLen(arr)`       | `(Array) → Int`                  | Number of elements                          |
+| Function                   | Signature                      | Description                                           |
+|----------------------------|--------------------------------|-------------------------------------------------------|
+| `arrayNew(size)`           | `(Int) → Array`                | Create array of `size` nulls                          |
+| `arrayPush(arr, val)`      | `(Array, Any) → null`          | Append `val` to end of `arr`                          |
+| `arrayPop(arr)`            | `(Array) → Any`                | Remove and return last element                        |
+| `arrayGet(arr, idx)`       | `(Array, Int) → Any`           | Get element at index (returns null if OOB)            |
+| `arraySet(arr, idx, val)`  | `(Array, Int, Any) → null`     | Set element at index                                  |
+| `arrayLen(arr)`            | `(Array) → Int`                | Number of elements                                    |
 
 ### Chained Index Access
 
@@ -430,71 +444,80 @@ All built-in functions are resolved at compile time by name. They do not need to
 
 ### I/O
 
-| Function        | Signature                         | Description                              |
-|-----------------|-----------------------------------|------------------------------------------|
-| `print(val)`    | `(Any) → null`                    | Print a value followed by a newline      |
-| `printf(fmt: ...)` | `(String, ...) → null`         | Formatted print (see [Printf](#print-and-printf)) |
-| `input(prompt?)` | `(String?) → String`            | Print optional prompt, read a line from stdin |
-| `readLine()`    | `() → String`                     | Read a line from stdin with no prompt    |
+| Function           | Signature              | Description                                          |
+|--------------------|------------------------|------------------------------------------------------|
+| `print(val)`       | `(Any...) → null`      | Print each argument separated by a space, then newline |
+| `printf(fmt: ...)` | `(String, ...) → null` | Formatted print (see [Printf](#print-and-printf))    |
+| `input(prompt?)`   | `(String?) → String`   | Print optional prompt, read a line from stdin        |
+| `readLine()`       | `() → String`          | Read a line from stdin with no prompt                |
 
 ### Math
 
-| Function     | Signature              | Description                           |
-|--------------|------------------------|---------------------------------------|
-| `abs(x)`     | `(Int\|Float) → same`  | Absolute value                        |
-| `sqrt(x)`    | `(Any) → Float`        | Square root (returns 0.0 for negatives) |
-| `pow(x, y)`  | `(Any, Any) → Float`   | x raised to the power y               |
-| `sin(x)`     | `(Any) → Float`        | Sine (radians)                        |
-| `cos(x)`     | `(Any) → Float`        | Cosine (radians)                      |
-| `tan(x)`     | `(Any) → Float`        | Tangent (radians)                     |
-| `floor(x)`   | `(Any) → Float`        | Round down                            |
-| `ceil(x)`    | `(Any) → Float`        | Round up                              |
-| `round(x)`   | `(Any) → Float`        | Round to nearest integer              |
-| `max(a, b)`  | `(Int\|Float, Int\|Float) → same` | Larger of two values    |
-| `min(a, b)`  | `(Int\|Float, Int\|Float) → same` | Smaller of two values   |
+| Function     | Signature                          | Description                              |
+|--------------|------------------------------------|------------------------------------------|
+| `abs(x)`     | `(Int\|Float) → same`              | Absolute value                           |
+| `sqrt(x)`    | `(Any) → Float`                    | Square root (returns 0.0 for negatives)  |
+| `pow(x, y)`  | `(Any, Any) → Float`               | x raised to the power y                  |
+| `sin(x)`     | `(Any) → Float`                    | Sine (radians)                           |
+| `cos(x)`     | `(Any) → Float`                    | Cosine (radians)                         |
+| `tan(x)`     | `(Any) → Float`                    | Tangent (radians)                        |
+| `floor(x)`   | `(Any) → Float`                    | Round down                               |
+| `ceil(x)`    | `(Any) → Float`                    | Round up                                 |
+| `round(x)`   | `(Any) → Float`                    | Round to nearest integer                 |
+| `max(a, b)`  | `(Int\|Float, Int\|Float) → same`  | Larger of two values                     |
+| `min(a, b)`  | `(Int\|Float, Int\|Float) → same`  | Smaller of two values                    |
 
 ### String
 
-| Function                       | Signature                          | Description                                      |
-|--------------------------------|------------------------------------|--------------------------------------------------|
-| `strLen(s)`                    | `(String) → Int`                   | Length in bytes                                  |
-| `substr(s, start, length?)`    | `(String, Int, Int?) → String`     | Substring from `start` for `length` chars        |
-| `toUpperCase(s)`               | `(String) → String`                | Convert to upper case                            |
-| `toLowerCase(s)`               | `(String) → String`                | Convert to lower case                            |
-| `strContains(s, needle)`       | `(String, String) → Bool`          | Whether `s` contains `needle`                   |
-| `strIndexOf(s, needle)`        | `(String, String) → Int`           | First index of `needle` in `s`, or `-1`          |
-| `strReplace(s, old, new)`      | `(String, String, String) → String`| Replace all occurrences of `old` with `new`      |
-| `strTrim(s)`                   | `(String) → String`                | Strip leading and trailing whitespace            |
-| `strSplit(s, delim)`           | `(String, String) → Int`           | **Returns the count of tokens**, not an array    |
+| Function                       | Signature                           | Description                                       |
+|--------------------------------|-------------------------------------|---------------------------------------------------|
+| `strLen(s)`                    | `(String) → Int`                    | Length in bytes                                   |
+| `substr(s, start, length?)`    | `(String, Int, Int?) → String`      | Substring from `start` for `length` chars         |
+| `toUpperCase(s)`               | `(String) → String`                 | Convert to upper case                             |
+| `toLowerCase(s)`               | `(String) → String`                 | Convert to lower case                             |
+| `strContains(s, needle)`       | `(String, String) → Bool`           | Whether `s` contains `needle`                    |
+| `strIndexOf(s, needle)`        | `(String, String) → Int`            | First index of `needle` in `s`, or `-1`           |
+| `strReplace(s, old, new)`      | `(String, String, String) → String` | Replace all occurrences of `old` with `new`       |
+| `strTrim(s)`                   | `(String) → String`                 | Strip leading and trailing whitespace             |
+| `strSplit(s, delim)`           | `(String, String) → Int`            | **Returns the count of tokens**, not an array     |
 
 > **`strSplit` limitation:** The current implementation splits the string and returns the number of parts as an `Int`. The individual tokens are not accessible. Use manual string operations or `strIndexOf` as a workaround.
 
 ### Type Conversion
 
-| Function         | Signature          | Description                                    |
-|------------------|--------------------|------------------------------------------------|
-| `toInt(x)`       | `(Any) → Int`      | Convert to integer (strings parsed as base-10) |
-| `toFloat(x)`     | `(Any) → Float`    | Convert to float                               |
-| `toString(x)`    | `(Any) → String`   | Convert to string representation               |
-| `toBool(x)`      | `(Any) → Bool`     | Convert to boolean (0/empty/"" → false)        |
-| `typeOf(x)`      | `(Any) → String`   | Returns `"Int"`, `"Float"`, `"String"`, `"Bool"`, `"Char"`, `"Array"`, or `"null"` |
+| Function       | Signature          | Description                                       |
+|----------------|--------------------|---------------------------------------------------|
+| `toInt(x)`     | `(Any) → Int`      | Convert to integer (strings parsed as base-10)    |
+| `toFloat(x)`   | `(Any) → Float`    | Convert to float                                  |
+| `toString(x)`  | `(Any) → String`   | Convert to string representation                  |
+| `toBool(x)`    | `(Any) → Bool`     | Convert to boolean (0/empty/"" → false)           |
+| `typeOf(x)`    | `(Any) → String`   | Returns `"Int"`, `"Float"`, `"String"`, `"Bool"`, `"Char"`, `"Array"`, or `"Null"` |
 
 ### Inspection
 
-| Function        | Signature        | Description                   |
-|-----------------|------------------|-------------------------------|
-| `isNull(x)`     | `(Any) → Bool`   | True if `x` is `null`         |
-| `isInt(x)`      | `(Any) → Bool`   | True if `x` is `Int`          |
-| `isFloat(x)`    | `(Any) → Bool`   | True if `x` is `Float`        |
-| `isString(x)`   | `(Any) → Bool`   | True if `x` is `String`       |
-| `isBool(x)`     | `(Any) → Bool`   | True if `x` is `Bool`         |
+| Function       | Signature        | Description                   |
+|----------------|------------------|-------------------------------|
+| `isNull(x)`    | `(Any) → Bool`   | True if `x` is `null`         |
+| `isInt(x)`     | `(Any) → Bool`   | True if `x` is `Int`          |
+| `isFloat(x)`   | `(Any) → Bool`   | True if `x` is `Float`        |
+| `isString(x)`  | `(Any) → Bool`   | True if `x` is `String`       |
+| `isBool(x)`    | `(Any) → Bool`   | True if `x` is `Bool`         |
 
 ### Utilities
 
-| Function           | Signature              | Description                                               |
-|--------------------|------------------------|-----------------------------------------------------------|
-| `exit(code?)`      | `(Int?) → null`        | Halt execution with the given exit code (default 0)       |
-| `assert(cond, msg?)` | `(Any, String?) → null` | Halt with exit code 1 if `cond` is falsy; print `msg` if provided |
+| Function              | Signature               | Description                                               |
+|-----------------------|-------------------------|-----------------------------------------------------------|
+| `exit(code?)`         | `(Int?) → null`         | Halt execution with the given exit code (default 0)       |
+| `assert(cond, msg?)`  | `(Any, String?) → null` | Halt with exit code 1 if `cond` is falsy; print `msg` if provided |
+
+### Time and Random
+
+| Function            | Signature                    | Description                                                             |
+|---------------------|------------------------------|-------------------------------------------------------------------------|
+| `timeNow()`         | `() → Int`                   | Current wall-clock time in nanoseconds (from `CLOCK_REALTIME`)          |
+| `random()`          | `() → Float`                 | Random float in `[0.0, 1.0)`                                            |
+| `random(n)`         | `(Int) → Int`                | Random integer in `[0, n)`                                              |
+| `random(lo, hi)`    | `(Int, Int) → Int`           | Random integer in `[lo, hi]` (inclusive)                                |
 
 ---
 
@@ -522,14 +545,14 @@ printf("%d + %d = %d\n": a, b, a + b);
 
 **Format specifiers:**
 
-| Specifier  | Description                        |
-|------------|------------------------------------|
-| `%d`, `%i` | Integer                            |
-| `%f`       | Float (or integer promoted to float) |
-| `%s`       | String (or any value via `toString`) |
-| `%c`       | Character                          |
-| `%b`       | Boolean (`true` or `false`)        |
-| `%%`       | Literal `%`                        |
+| Specifier    | Description                           |
+|--------------|---------------------------------------|
+| `%d`, `%i`   | Integer                               |
+| `%f`         | Float (or integer promoted to float)  |
+| `%s`         | String (or any value via `toString`)  |
+| `%c`         | Character                             |
+| `%b`         | Boolean (`true` or `false`)           |
+| `%%`         | Literal `%`                           |
 
 > **Escape sequences in `printf` format strings:** Because the lexer processes escape sequences when tokenising string literals, a `\n` in a `printf` format string is already a real newline character by the time it reaches the VM. The VM's runtime escape processing in `printf` is therefore only relevant for strings that arrive as values from variables — not from literals. This means `printf("line1\nline2\n")` works exactly as expected.
 
@@ -539,14 +562,22 @@ printf("%d + %d = %d\n": a, b, a + b);
 
 ### `strSplit` Does Not Return Tokens
 
-`strSplit(s, delim)` returns an `Int` (the number of parts), not an array of strings.
+`strSplit(s, delim)` returns an `Int` (the number of parts), not an array of strings. The individual tokens are not accessible from OCL code.
 
-### No Short-Circuit Assignment (`+=`, `-=`, etc.)
+### Compound Assignment on Index Expressions Not Supported
 
-Compound assignment operators are not implemented. Use explicit form:
+`+=` and the other compound assignment operators are desugared by the parser and only work when the left-hand side is a plain identifier. Using them on an index expression (e.g. `arr[i] += 1`) produces a parse error. Use an explicit assignment instead:
 
 ```ocl
-x = x + 1;   /# not: x += 1 #/
+arr[i] = arr[i] + 1;
+```
+
+### Postfix `++`/`--` on Index Expressions Not Supported
+
+`arr[i]++` is a parse error. Use an explicit assignment:
+
+```ocl
+arr[i] = arr[i] + 1;
 ```
 
 ### No First-Class Functions or Closures
@@ -573,6 +604,10 @@ The VM supports a maximum call depth of 4096 frames (`VM_FRAMES_MAX`). Deep recu
 
 The internal `value_to_string` function (used by `toString`, `print`, and `printf`) writes into a pool of 8 static buffers (8 KiB each), cycling round-robin. This means nested calls — for example, printing arrays whose elements are themselves arrays — each get a distinct slot, avoiding the corruption that a single shared buffer would cause. However, if call nesting exceeds 8 levels deep within a single expression, output may still be corrupted. For most programs this is not a concern.
 
-### Escape sequences are lexer-resolved
+### Escape Sequences Are Lexer-Resolved
 
 `\n` and other escape sequences in string literals are converted to real characters when the source is tokenised. This is intentional but means there is no way to produce a string containing the literal two-character sequence `\n` from source code.
+
+### Value Stack Depth
+
+The VM value stack supports a maximum depth of 4096 entries (`VM_STACK_MAX`). Exceeding this produces a stack-overflow runtime error and halts the program.
