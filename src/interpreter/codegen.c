@@ -67,6 +67,23 @@ static void exit_scope(CodeGenerator *g) {
     g->scope_level--;
 }
 
+/*
+ * purge_scope_at_level — free all var-name strings whose scope_level equals
+ * `level` without decrementing g->scope_level.  Used by the function emitter
+ * to clean up any locals registered during body emission even when we need
+ * to restore the caller's scope bookkeeping manually.
+ */
+static void purge_vars_at_or_above_scope(CodeGenerator *g, int min_level) {
+    size_t write = 0;
+    for (size_t i = 0; i < g->var_count; i++) {
+        if (g->vars[i].scope_level < min_level)
+            g->vars[write++] = g->vars[i];
+        else
+            ocl_free(g->vars[i].name);
+    }
+    g->var_count = write;
+}
+
 /* ── loop context ─────────────────────────────────────────────────── */
 
 static void loop_push(CodeGenerator *g) {
@@ -155,17 +172,16 @@ static void emit_expr(CodeGenerator *g, ExprNode *expr) {
                 break;
             }
 
-            /* ── Short-circuit &&  ───────────────────────────────────────
+            /* ── Short-circuit && ──────────────────────────────────────
              *
-             * Emits:
              *   <left>
-             *   OP_JUMP_IF_FALSE  → sc_false   (consumes left; if falsy skip right)
+             *   JUMP_IF_FALSE → sc_false
              *   <right>
-             *   OP_JUMP_IF_FALSE  → sc_false   (consumes right; if falsy go false)
-             *   OP_PUSH_CONST true
-             *   OP_JUMP           → end
+             *   JUMP_IF_FALSE → sc_false
+             *   PUSH true
+             *   JUMP → end
              * sc_false:
-             *   OP_PUSH_CONST false
+             *   PUSH false
              * end:
              */
             if (!strcmp(b->operator, "&&")) {
@@ -188,22 +204,20 @@ static void emit_expr(CodeGenerator *g, ExprNode *expr) {
                 uint32_t ci_false = bytecode_add_constant(bc, value_bool(false));
                 bytecode_emit(bc, OP_PUSH_CONST, ci_false, 0, b->base.location);
 
-                uint32_t end_ip = (uint32_t)bc->instruction_count;
-                bytecode_patch(bc, jmp_end, end_ip);
+                bytecode_patch(bc, jmp_end, (uint32_t)bc->instruction_count);
                 break;
             }
 
-            /* ── Short-circuit ||  ───────────────────────────────────────
+            /* ── Short-circuit || ──────────────────────────────────────
              *
-             * Emits:
              *   <left>
-             *   OP_JUMP_IF_TRUE   → sc_true    (consumes left; if truthy skip right)
+             *   JUMP_IF_TRUE → sc_true
              *   <right>
-             *   OP_JUMP_IF_TRUE   → sc_true    (consumes right; if truthy go true)
-             *   OP_PUSH_CONST false
-             *   OP_JUMP           → end
+             *   JUMP_IF_TRUE → sc_true
+             *   PUSH false
+             *   JUMP → end
              * sc_true:
-             *   OP_PUSH_CONST true
+             *   PUSH true
              * end:
              */
             if (!strcmp(b->operator, "||")) {
@@ -226,8 +240,7 @@ static void emit_expr(CodeGenerator *g, ExprNode *expr) {
                 uint32_t ci_true = bytecode_add_constant(bc, value_bool(true));
                 bytecode_emit(bc, OP_PUSH_CONST, ci_true, 0, b->base.location);
 
-                uint32_t end_ip = (uint32_t)bc->instruction_count;
-                bytecode_patch(bc, jmp_end, end_ip);
+                bytecode_patch(bc, jmp_end, (uint32_t)bc->instruction_count);
                 break;
             }
 
@@ -354,42 +367,68 @@ static void emit_node(CodeGenerator *g, ASTNode *node) {
         case AST_FUNC_DECL: {
             FuncDeclNode *f = (FuncDeclNode *)node;
             uint32_t fidx = bytecode_add_function(bc, f->name, 0, (int)f->param_count);
+
+            /* Jump over the function body at the call site. */
             uint32_t jump_over = (uint32_t)bc->instruction_count;
             bytecode_emit(bc, OP_JUMP, 0, 0, f->base.location);
             uint32_t start_ip = (uint32_t)bc->instruction_count;
             bc->functions[fidx].start_ip = start_ip;
-            bool saved_global = g->in_global_scope;
-            int saved_scope = g->scope_level;
+
+            /* Save caller's code-generation state. */
+            bool saved_global  = g->in_global_scope;
+            int  saved_scope   = g->scope_level;
+            int  saved_var_count = (int)g->var_count;  /* bookmark for cleanup */
+
             g->in_global_scope = false;
             g->local_stack[g->local_stack_top++] = (int)f->param_count;
             g->scope_level++;
+
+            /* Register parameters as local slots 0..param_count-1. */
             for (size_t i = 0; i < f->param_count; i++) {
                 if (g->var_count >= g->var_cap) {
                     g->var_cap = g->var_cap ? g->var_cap * 2 : 32;
                     g->vars = ocl_realloc(g->vars, g->var_cap * sizeof(VarSlot));
                 }
-                g->vars[g->var_count].name = ocl_strdup(f->params[i]->name);
-                g->vars[g->var_count].slot = (int)i;
+                g->vars[g->var_count].name        = ocl_strdup(f->params[i]->name);
+                g->vars[g->var_count].slot        = (int)i;
                 g->vars[g->var_count].scope_level = g->scope_level;
                 g->var_count++;
             }
+
+            /* Emit the function body. */
             if (f->body)
-                for (size_t i = 0; i < f->body->statement_count; i++) emit_node(g, f->body->statements[i]);
-            if (bc->instruction_count == 0 || bc->instructions[bc->instruction_count-1].opcode != OP_RETURN) {
+                for (size_t i = 0; i < f->body->statement_count; i++)
+                    emit_node(g, f->body->statements[i]);
+
+            /* Implicit return null if the body doesn't end with OP_RETURN. */
+            if (bc->instruction_count == 0 ||
+                bc->instructions[bc->instruction_count - 1].opcode != OP_RETURN) {
                 uint32_t ci = bytecode_add_constant(bc, value_null());
                 bytecode_emit(bc, OP_PUSH_CONST, ci, 0, f->base.location);
                 bytecode_emit(bc, OP_RETURN, 0, 0, f->base.location);
             }
-            bc->functions[fidx].local_count = g->local_stack[g->local_stack_top-1];
+
+            bc->functions[fidx].local_count = g->local_stack[g->local_stack_top - 1];
+
+            /*
+             * FIX: Restore caller's scope state correctly.
+             *
+             * purge_vars_at_or_above_scope() frees the heap-allocated name
+             * strings for every var registered at scope_level >= saved_scope+1
+             * (i.e. everything inside this function), including any variables
+             * added deep inside nested blocks that exit_scope() may not have
+             * cleaned up if emission was aborted early.
+             *
+             * We do this BEFORE restoring g->scope_level so that the purge
+             * threshold is correct.
+             */
+            purge_vars_at_or_above_scope(g, saved_scope + 1);
+            (void)saved_var_count; /* informational only */
+
             g->local_stack_top--;
-            size_t write = 0;
-            for (size_t i = 0; i < g->var_count; i++) {
-                if (g->vars[i].scope_level <= saved_scope) g->vars[write++] = g->vars[i];
-                else ocl_free(g->vars[i].name);
-            }
-            g->var_count = write;
-            g->scope_level = saved_scope;
+            g->scope_level    = saved_scope;
             g->in_global_scope = saved_global;
+
             bytecode_patch(bc, jump_over, (uint32_t)bc->instruction_count);
             break;
         }
@@ -547,9 +586,13 @@ CodeGenerator *codegen_create(ErrorCollector *errors) {
 
 void codegen_free(CodeGenerator *g) {
     if (!g) return;
+    /* Free any var-name strings still alive (e.g. after a failed generation). */
     for (size_t i = 0; i < g->var_count; i++) ocl_free(g->vars[i].name);
     for (size_t i = 0; i < g->global_count; i++) ocl_free(g->globals[i].name);
     ocl_free(g->vars); ocl_free(g->globals);
+    /* Note: builtin names at indices [0] and [1] are string literals (not heap).
+     * Entries [2..] borrow pointers from the stdlib table — also not heap-owned.
+     * Therefore we only free the array itself, not the individual name pointers. */
     if (g->builtins) ocl_free(g->builtins);
     ocl_free(g);
 }
@@ -560,6 +603,7 @@ bool codegen_generate(CodeGenerator *g, ProgramNode *program, Bytecode *output) 
     g->var_count = 0; g->global_count = 0; g->local_stack[0] = 0; g->local_stack_top = 1;
     g->loop_depth = 0;
 
+    /* Pre-register all top-level global variable names. */
     for (size_t i = 0; i < program->node_count; i++) {
         ASTNode *n = program->nodes[i];
         if (n->type == AST_VAR_DECL) {
@@ -570,6 +614,8 @@ bool codegen_generate(CodeGenerator *g, ProgramNode *program, Bytecode *output) 
             if (lookup_global(g, d->name) < 0) add_global(g, d->name);
         }
     }
+
+    /* Pre-register all function signatures for forward calls. */
     for (size_t i = 0; i < program->node_count; i++) {
         ASTNode *n = program->nodes[i];
         if (n->type == AST_FUNC_DECL) {
@@ -577,16 +623,20 @@ bool codegen_generate(CodeGenerator *g, ProgramNode *program, Bytecode *output) 
             bytecode_add_function(output, f->name, 0xFFFFFFFF, (int)f->param_count);
         }
     }
+
+    /* Emit function bodies first, then top-level statements. */
     for (size_t i = 0; i < program->node_count; i++)
         if (program->nodes[i]->type == AST_FUNC_DECL) emit_node(g, program->nodes[i]);
     for (size_t i = 0; i < program->node_count; i++)
         if (program->nodes[i]->type != AST_FUNC_DECL) emit_node(g, program->nodes[i]);
 
+    /* Emit an automatic call to main() if defined. */
     int main_idx = bytecode_find_function(output, "main");
     if (main_idx >= 0) {
         SourceLocation entry = {1, 1, "entry"};
         bytecode_emit(output, OP_CALL, (uint32_t)main_idx, 0, entry);
     }
+
     SourceLocation halt_loc = {1, 1, "end"};
     bytecode_emit(output, OP_HALT, 0, 0, halt_loc);
     return true;

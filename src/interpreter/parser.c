@@ -87,12 +87,25 @@ static ExprNode *parse_expression(Parser *p) { return parse_assignment(p); }
 
 static ExprNode *parse_assignment(Parser *p) {
     ExprNode *lhs = parse_or(p); if (!lhs) return NULL;
+
     if (match(p, TOKEN_EQUAL)) {
         SourceLocation loc = prev_tok(p)->location;
         ExprNode *rhs = parse_assignment(p);
         return ast_create_binary_op(loc, lhs, "=", rhs);
     }
-    /* Compound assignment: x op= y  →  x = x op y */
+
+    /* Compound assignment: x op= y  →  x = x op y
+     *
+     * IMPORTANT: We must deep-duplicate the LHS so that two independent
+     * AST subtrees own separate copies.  Using the same pointer for both
+     * the outer "=" node and the inner arithmetic node would cause a
+     * double-free when ast_free walks the tree.
+     *
+     * Supported LHS forms:
+     *   - Simple identifier   → duplicate as a new AST_IDENTIFIER node
+     *   - Index access a[i]   → compound index-assign is NOT supported;
+     *     emit an error and return the plain LHS to allow parsing to continue.
+     */
     static const struct { TokenType tok; const char *op; } compound[] = {
         { TOKEN_PLUS_EQUAL,    "+" },
         { TOKEN_MINUS_EQUAL,   "-" },
@@ -101,24 +114,31 @@ static ExprNode *parse_assignment(Parser *p) {
         { TOKEN_PERCENT_EQUAL, "%" },
         { (TokenType)0, NULL }
     };
+
     for (int i = 0; compound[i].op; i++) {
         if (match(p, compound[i].tok)) {
             SourceLocation loc = prev_tok(p)->location;
             ExprNode *rhs = parse_assignment(p);
-            /* Duplicate lhs as the left operand of the inner op */
-            ExprNode *lhs_copy = NULL;
+
             if (lhs->base.type == AST_IDENTIFIER) {
-                char *dup_name = ocl_strdup(((IdentifierNode *)lhs)->name);
-                lhs_copy = ast_create_identifier(loc, dup_name);
-            } else {
-                /* For non-identifier lhs (e.g. array index), fall back to
-                   a plain assignment — compound index ops aren't supported yet */
-                lhs_copy = lhs;
+                /* Safe: make an independent copy of the identifier. */
+                const char *orig_name = ((IdentifierNode *)lhs)->name;
+                ExprNode   *lhs_copy  = ast_create_identifier(loc, ocl_strdup(orig_name));
+                ExprNode   *arith     = ast_create_binary_op(loc, lhs_copy, compound[i].op, rhs);
+                return ast_create_binary_op(loc, lhs, "=", arith);
             }
-            ExprNode *arith = ast_create_binary_op(loc, lhs_copy, compound[i].op, rhs);
-            return ast_create_binary_op(loc, lhs, "=", arith);
+
+            /* Non-identifier LHS (e.g. a[i] += v) — not supported.
+             * Free the RHS we already parsed, emit an error, and return
+             * the plain LHS so the caller gets something non-NULL. */
+            error_add(p->errors, ERROR_PARSER, loc,
+                      "Compound assignment '%s=' requires a simple variable on the left-hand side",
+                      compound[i].op);
+            ast_free((ASTNode *)rhs);
+            return lhs;
         }
     }
+
     return lhs;
 }
 
@@ -183,11 +203,21 @@ static ExprNode *parse_multiplication(Parser *p) {
     return e;
 }
 
+/*
+ * make_inc_dec — desugar prefix/postfix ++/-- into "var = var + 1".
+ *
+ * Takes OWNERSHIP of `var` (it becomes the lhs of the "=" node).
+ * Creates a fresh copy of the identifier for the rhs arithmetic operand.
+ *
+ * PRECONDITION: `var->base.type == AST_IDENTIFIER`.  Callers must check
+ * this before calling; passing any other node type is a logic error.
+ */
 static ExprNode *make_inc_dec(SourceLocation loc, ExprNode *var, const char *op) {
-    ExprNode *one  = ast_create_literal(loc, value_int(1));
-    char *dup_name = ocl_strdup(((IdentifierNode *)var)->name);
-    ExprNode *var2 = ast_create_identifier(loc, dup_name);
-    ExprNode *arith = ast_create_binary_op(loc, var2, op, one);
+    /* var must be an identifier — callers are responsible for enforcing this. */
+    const char *orig_name = ((IdentifierNode *)var)->name;
+    ExprNode   *var_copy  = ast_create_identifier(loc, ocl_strdup(orig_name));
+    ExprNode   *one       = ast_create_literal(loc, value_int(1));
+    ExprNode   *arith     = ast_create_binary_op(loc, var_copy, op, one);
     return ast_create_binary_op(loc, var, "=", arith);
 }
 
@@ -195,14 +225,20 @@ static ExprNode *parse_unary(Parser *p) {
     if (match(p, TOKEN_PLUS_PLUS)) {
         SourceLocation loc = prev_tok(p)->location;
         Token *t = cur_tok(p);
-        if (t->type != TOKEN_IDENTIFIER) { error_add(p->errors, ERROR_PARSER, loc, "Expected identifier after '++'"); return NULL; }
+        if (t->type != TOKEN_IDENTIFIER) {
+            error_add(p->errors, ERROR_PARSER, loc, "Expected identifier after '++'");
+            return NULL;
+        }
         char *name = dup_lexeme(t); p->current++;
         return make_inc_dec(loc, ast_create_identifier(loc, name), "+");
     }
     if (match(p, TOKEN_MINUS_MINUS)) {
         SourceLocation loc = prev_tok(p)->location;
         Token *t = cur_tok(p);
-        if (t->type != TOKEN_IDENTIFIER) { error_add(p->errors, ERROR_PARSER, loc, "Expected identifier after '--'"); return NULL; }
+        if (t->type != TOKEN_IDENTIFIER) {
+            error_add(p->errors, ERROR_PARSER, loc, "Expected identifier after '--'");
+            return NULL;
+        }
         char *name = dup_lexeme(t); p->current++;
         return make_inc_dec(loc, ast_create_identifier(loc, name), "-");
     }
@@ -254,10 +290,17 @@ static ExprNode *parse_call_expr(Parser *p) {
         return ast_create_call(loc, fname, args, arg_cnt);
     }
 
-    /* Postfix ++ / -- */
+    /*
+     * Postfix ++ / --
+     *
+     * FIX: Only apply postfix ++/-- when `expr` is still a plain identifier.
+     * After index-access chaining (e.g. a[i]++), `expr` is an IndexAccessNode,
+     * and casting it to IdentifierNode to read `->name` is undefined behaviour.
+     * Emit an error for that unsupported form instead of crashing.
+     */
     if (expr->base.type == AST_IDENTIFIER) {
         SourceLocation loc = expr->base.location;
-        if (match(p, TOKEN_PLUS_PLUS))  return make_inc_dec(loc, expr, "+");
+        if (match(p, TOKEN_PLUS_PLUS))   return make_inc_dec(loc, expr, "+");
         if (match(p, TOKEN_MINUS_MINUS)) return make_inc_dec(loc, expr, "-");
     }
 
@@ -268,6 +311,22 @@ static ExprNode *parse_call_expr(Parser *p) {
         consume(p, TOKEN_RBRACKET, "Expected ']'");
         expr = ast_create_index_access(loc, expr, index);
     }
+
+    /*
+     * Postfix ++/-- after index access (e.g. arr[i]++) is not supported.
+     * Check for it here so we can emit a clear error rather than silently
+     * producing wrong code or crashing.
+     */
+    if (expr->base.type == AST_INDEX_ACCESS) {
+        SourceLocation loc = expr->base.location;
+        if (check(p, TOKEN_PLUS_PLUS) || check(p, TOKEN_MINUS_MINUS)) {
+            error_add(p->errors, ERROR_PARSER, loc,
+                      "Postfix '++' / '--' on array/string subscripts is not supported; "
+                      "use an explicit assignment instead (e.g. arr[i] = arr[i] + 1)");
+            p->current++; /* consume the bad token so parsing can continue */
+        }
+    }
+
     return expr;
 }
 
@@ -351,17 +410,6 @@ static ASTNode *parse_statement(Parser *p) {
         consume(p, TOKEN_GREATER, "Expected '>'"); match(p, TOKEN_SEMICOLON);
         ImportNode *n = ocl_malloc(sizeof(ImportNode));
         n->base.type = AST_IMPORT; n->base.location = loc; n->filename = ocl_strdup(name_buf);
-
-        /* ── Import resolution ─────────────────────────────────────────
-           Look for a stdlib header in the same directory as the source,
-           then in a built-in search path.  Recognised extensions:
-             .sxh  (OCL standard header)
-             .ocl  (OCL source)
-           The file is read and pre-pended to the token stream by
-           re-lexing it in-place.  For this we return a sentinel and
-           the caller (parser_parse) handles it.
-        ─────────────────────────────────────────────────────────────── */
-        n->base.type = AST_IMPORT;
         return (ASTNode *)n;
     }
 
@@ -403,7 +451,7 @@ static ASTNode *parse_statement(Parser *p) {
         return ast_create_var_decl(loc, name, type, init);
     }
 
-    /* if / else-if / else  ─── now produces a flat chain, no synthetic blocks */
+    /* if / else-if / else  ─── flat chain, no synthetic blocks */
     if (match(p, TOKEN_IF)) {
         consume(p, TOKEN_LPAREN, "Expected '(' after if");
         ExprNode *cond = parse_expression(p);
@@ -490,8 +538,9 @@ void parser_free(Parser *p) { ocl_free(p); }
 /* ── Import file resolution ─────────────────────────────────────────────
    Search paths (in order):
      1. Same directory as the source file being parsed
-     2. ./stdlib_headers/
-     3. <executable dir>/stdlib_headers/
+     2. ./ocl_headers/
+     3. ./stdlib_headers/
+     4. Current working directory
    File extensions tried: as-is, then .ocl, then .sxh
 ──────────────────────────────────────────────────────────────────────── */
 static char *find_import_file(const char *importing_file, const char *import_name) {
@@ -604,7 +653,7 @@ ProgramNode *parser_parse(Parser *p) {
                         for (size_t i = 0; i < sub_prog->node_count; i++) {
                             prog->nodes = ocl_realloc(prog->nodes, (prog->node_count+1)*sizeof(ASTNode *));
                             prog->nodes[prog->node_count++] = sub_prog->nodes[i];
-                            sub_prog->nodes[i] = NULL; /* transferred ownership */
+                            sub_prog->nodes[i] = NULL; /* ownership transferred */
                         }
                         ocl_free(sub_prog->nodes);
                         ocl_free(sub_prog);
@@ -615,7 +664,6 @@ ProgramNode *parser_parse(Parser *p) {
                 error_add(p->errors, ERROR_PARSER, import_node->location,
                           "Import not found: '%s'", imp->filename);
             }
-
 
             /* Keep the Import node itself (for the type checker / codegen to ignore) */
             prog->nodes = ocl_realloc(prog->nodes, (prog->node_count+1)*sizeof(ASTNode *));
