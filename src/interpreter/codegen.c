@@ -39,7 +39,6 @@ static int lookup_global(CodeGenerator *g, const char *name) {
  * Assigns the next available slot from the frame's local counter.
  */
 static int add_local(CodeGenerator *g, const char *name) {
-    /* The top of local_stack[] tracks the next free slot for this frame. */
     int slot = g->local_stack[g->local_stack_top - 1]++;
     if (g->var_count >= g->var_cap) {
         g->var_cap = g->var_cap ? g->var_cap * 2 : 32;
@@ -70,7 +69,6 @@ static int add_global(CodeGenerator *g, const char *name) {
 static void enter_scope(CodeGenerator *g) { g->scope_level++; }
 
 static void exit_scope(CodeGenerator *g) {
-    /* Remove all vars at the current level (they are going out of scope). */
     size_t write = 0;
     for (size_t i = 0; i < g->var_count; i++) {
         if (g->vars[i].scope_level < g->scope_level)
@@ -85,9 +83,6 @@ static void exit_scope(CodeGenerator *g) {
 /*
  * purge_vars_at_or_above_scope — free all var-name strings whose scope_level
  * is >= `min_level`, without changing g->scope_level.
- *
- * Used by the function emitter to clean up locals that were registered
- * during body emission, even after abnormal control flow (e.g. early return).
  */
 static void purge_vars_at_or_above_scope(CodeGenerator *g, int min_level) {
     size_t write = 0;
@@ -104,7 +99,6 @@ static void purge_vars_at_or_above_scope(CodeGenerator *g, int min_level) {
    Loop context — break / continue backpatching
    ══════════════════════════════════════════════════════════════════ */
 
-/* Push a new loop context onto the loop stack. */
 static void loop_push(CodeGenerator *g) {
     if (g->loop_depth >= CODEGEN_MAX_LOOP_DEPTH) {
         if (g->errors)
@@ -122,7 +116,6 @@ static void loop_push(CodeGenerator *g) {
 static void loop_pop(CodeGenerator *g)           { if (g->loop_depth > 0) g->loop_depth--; }
 static LoopContext *loop_current(CodeGenerator *g){ return g->loop_depth > 0 ? &g->loop_stack[g->loop_depth - 1] : NULL; }
 
-/* Record a break/continue jump that needs to be backpatched later. */
 static void loop_add_break(CodeGenerator *g, uint32_t idx) {
     LoopContext *ctx = loop_current(g);
     if (ctx && ctx->break_count < CODEGEN_MAX_BREAKS)
@@ -135,7 +128,6 @@ static void loop_add_continue(CodeGenerator *g, uint32_t idx) {
         ctx->continues[ctx->continue_count++].patch_idx = idx;
 }
 
-/* Patch all pending break jumps to point to `exit_ip` (first instruction after loop). */
 static void loop_patch_breaks(CodeGenerator *g, uint32_t exit_ip) {
     LoopContext *ctx = loop_current(g);
     if (!ctx) return;
@@ -143,7 +135,6 @@ static void loop_patch_breaks(CodeGenerator *g, uint32_t exit_ip) {
         bytecode_patch(g->bytecode, ctx->breaks[i].patch_idx, exit_ip);
 }
 
-/* Patch all pending continue jumps to point to `cont_ip` (loop increment/condition). */
 static void loop_patch_continues(CodeGenerator *g, uint32_t cont_ip) {
     LoopContext *ctx = loop_current(g);
     if (!ctx) return;
@@ -169,7 +160,6 @@ static void emit_expr(CodeGenerator *g, ExprNode *expr) {
     switch (expr->base.type) {
 
     case AST_LITERAL: {
-        /* Push a constant directly from the constant pool. */
         LiteralNode *lit = (LiteralNode *)expr;
         uint32_t ci = bytecode_add_constant(bc, lit->value);
         bytecode_emit(bc, OP_PUSH_CONST, ci, 0, lit->base.location);
@@ -177,7 +167,6 @@ static void emit_expr(CodeGenerator *g, ExprNode *expr) {
     }
 
     case AST_IDENTIFIER: {
-        /* Load a variable — local takes priority over global. */
         IdentifierNode *id = (IdentifierNode *)expr;
         int local = lookup_local(g, id->name);
         if (local >= 0) {
@@ -192,7 +181,6 @@ static void emit_expr(CodeGenerator *g, ExprNode *expr) {
         if (g->errors)
             error_add(g->errors, ERROR_PARSER, id->base.location,
                       "Undefined variable '%s'", id->name);
-        /* Emit a null push so the rest of the expression can continue. */
         uint32_t ci = bytecode_add_constant(bc, value_null());
         bytecode_emit(bc, OP_PUSH_CONST, ci, 0, id->base.location);
         break;
@@ -218,7 +206,6 @@ static void emit_expr(CodeGenerator *g, ExprNode *expr) {
                                   "Cannot assign to undefined '%s'", id->name);
                 }
             } else if (b->left && b->left->base.type == AST_INDEX_ACCESS) {
-                /* arr[i] = val — emit array, index, then SET. */
                 IndexAccessNode *ia = (IndexAccessNode *)b->left;
                 emit_expr(g, ia->array_expr);
                 emit_expr(g, ia->index_expr);
@@ -230,19 +217,7 @@ static void emit_expr(CodeGenerator *g, ExprNode *expr) {
             break;
         }
 
-        /* ── Short-circuit &&  ───────────────────────────────────────
-         *
-         * Emits:
-         *   <left>
-         *   JUMP_IF_FALSE → sc_false
-         *   <right>
-         *   JUMP_IF_FALSE → sc_false
-         *   PUSH true
-         *   JUMP → end
-         * sc_false:
-         *   PUSH false
-         * end:
-         */
+        /* ── Short-circuit && ────────────────────────────────────── */
         if (!strcmp(b->operator, "&&")) {
             emit_expr(g, b->left);
             uint32_t jf1 = (uint32_t)bc->instruction_count;
@@ -267,19 +242,7 @@ static void emit_expr(CodeGenerator *g, ExprNode *expr) {
             break;
         }
 
-        /* ── Short-circuit ||  ───────────────────────────────────────
-         *
-         * Emits:
-         *   <left>
-         *   JUMP_IF_TRUE → sc_true
-         *   <right>
-         *   JUMP_IF_TRUE → sc_true
-         *   PUSH false
-         *   JUMP → end
-         * sc_true:
-         *   PUSH true
-         * end:
-         */
+        /* ── Short-circuit || ────────────────────────────────────── */
         if (!strcmp(b->operator, "||")) {
             emit_expr(g, b->left);
             uint32_t jt1 = (uint32_t)bc->instruction_count;
@@ -333,10 +296,6 @@ static void emit_expr(CodeGenerator *g, ExprNode *expr) {
     }
 
     case AST_CALL: {
-        /*
-         * Built-ins are resolved by name and dispatched via OP_CALL_BUILTIN.
-         * User functions use OP_CALL with a function-table index.
-         */
         CallNode *c = (CallNode *)expr;
         int bid = lookup_builtin(g, c->function_name);
         if (bid > 0) {
@@ -349,7 +308,6 @@ static void emit_expr(CodeGenerator *g, ExprNode *expr) {
             int fidx = bytecode_find_function(bc, c->function_name);
             for (size_t i = 0; i < c->argument_count; i++)
                 emit_expr(g, c->arguments[i]);
-            /* 0xFFFFFFFF = unresolved forward reference (will produce a runtime error). */
             bytecode_emit(bc, OP_CALL,
                           fidx >= 0 ? (uint32_t)fidx : 0xFFFFFFFF,
                           (uint32_t)c->argument_count,
@@ -359,7 +317,6 @@ static void emit_expr(CodeGenerator *g, ExprNode *expr) {
     }
 
     case AST_ARRAY_LITERAL: {
-        /* Push each element then OP_ARRAY_NEW to collect them. */
         ArrayLiteralNode *al = (ArrayLiteralNode *)expr;
         for (size_t i = 0; i < al->element_count; i++)
             emit_expr(g, al->elements[i]);
@@ -368,7 +325,6 @@ static void emit_expr(CodeGenerator *g, ExprNode *expr) {
     }
 
     case AST_INDEX_ACCESS: {
-        /* Push array/string then index, then OP_ARRAY_GET. */
         IndexAccessNode *ia = (IndexAccessNode *)expr;
         emit_expr(g, ia->array_expr);
         emit_expr(g, ia->index_expr);
@@ -377,7 +333,6 @@ static void emit_expr(CodeGenerator *g, ExprNode *expr) {
     }
 
     default:
-        /* Fallback: treat the node as a statement-level expression. */
         emit_node(g, (ASTNode *)expr);
         break;
     }
@@ -393,7 +348,6 @@ static void emit_node(CodeGenerator *g, ASTNode *node) {
 
     switch (node->type) {
 
-    /* Expression-statement forms: evaluate the expression then discard the result. */
     case AST_LITERAL:
     case AST_IDENTIFIER:
     case AST_ARRAY_LITERAL:
@@ -406,7 +360,6 @@ static void emit_node(CodeGenerator *g, ASTNode *node) {
     case AST_BIN_OP: {
         BinOpNode *_b = (BinOpNode *)node;
         if (!strcmp(_b->operator, "=")) {
-            /* Assignment as a statement — result is intentionally discarded. */
             emit_expr(g, (ExprNode *)node);
         } else {
             emit_expr(g, (ExprNode *)node);
@@ -421,14 +374,9 @@ static void emit_node(CodeGenerator *g, ASTNode *node) {
         break;
 
     case AST_IMPORT:
-        /* Imports are resolved at parse time; nothing to emit. */
         break;
 
     case AST_DECLARE: {
-        /*
-         * `declare name : Type` — forward-declare a variable to the type checker
-         * without a user-supplied initialiser.  Emits null into the slot.
-         */
         DeclareNode *d = (DeclareNode *)node;
         if (g->in_global_scope) {
             if (lookup_global(g, d->name) < 0) {
@@ -451,7 +399,6 @@ static void emit_node(CodeGenerator *g, ASTNode *node) {
     case AST_VAR_DECL: {
         VarDeclNode *v = (VarDeclNode *)node;
         if (g->in_global_scope) {
-            /* Global variable: find or create a global slot. */
             int slot = lookup_global(g, v->name);
             if (slot < 0) slot = add_global(g, v->name);
             if (v->initializer)
@@ -462,7 +409,6 @@ static void emit_node(CodeGenerator *g, ASTNode *node) {
             }
             bytecode_emit(bc, OP_STORE_GLOBAL, (uint32_t)slot, 0, v->base.location);
         } else {
-            /* Local variable: allocate the next slot in the current frame. */
             int slot = add_local(g, v->name);
             if (v->initializer)
                 emit_expr(g, v->initializer);
@@ -476,17 +422,6 @@ static void emit_node(CodeGenerator *g, ASTNode *node) {
     }
 
     case AST_FUNC_DECL: {
-        /*
-         * Function body emission strategy:
-         *
-         * 1. Register the function in the function table (pre-pass already did this,
-         *    but bytecode_add_function is idempotent for the same name).
-         * 2. Emit OP_JUMP over the body so that falling through at runtime skips it.
-         * 3. Emit the body instructions.
-         * 4. Append an implicit `return null` if the body doesn't end with OP_RETURN.
-         * 5. Backpatch the OP_JUMP from step 2 to land after the body.
-         * 6. Restore the caller's code-generation state.
-         */
         FuncDeclNode *f = (FuncDeclNode *)node;
         uint32_t fidx = bytecode_add_function(bc, f->name, 0, (int)f->param_count);
 
@@ -495,17 +430,13 @@ static void emit_node(CodeGenerator *g, ASTNode *node) {
         uint32_t start_ip = (uint32_t)bc->instruction_count;
         bc->functions[fidx].start_ip = start_ip;
 
-        /* Save caller code-gen state. */
         bool saved_global = g->in_global_scope;
         int  saved_scope  = g->scope_level;
 
         g->in_global_scope = false;
-        /* Push a new frame-local counter initialised to param_count
-           (params occupy slots 0..param_count-1). */
         g->local_stack[g->local_stack_top++] = (int)f->param_count;
         g->scope_level++;
 
-        /* Register parameter names as local slots 0..param_count-1. */
         for (size_t i = 0; i < f->param_count; i++) {
             if (g->var_count >= g->var_cap) {
                 g->var_cap = g->var_cap ? g->var_cap * 2 : 32;
@@ -517,12 +448,10 @@ static void emit_node(CodeGenerator *g, ASTNode *node) {
             g->var_count++;
         }
 
-        /* Emit function body statements. */
         if (f->body)
             for (size_t i = 0; i < f->body->statement_count; i++)
                 emit_node(g, f->body->statements[i]);
 
-        /* Implicit `return null` if the body doesn't already end with OP_RETURN. */
         if (bc->instruction_count == 0 ||
             bc->instructions[bc->instruction_count - 1].opcode != OP_RETURN) {
             uint32_t ci = bytecode_add_constant(bc, value_null());
@@ -530,22 +459,14 @@ static void emit_node(CodeGenerator *g, ASTNode *node) {
             bytecode_emit(bc, OP_RETURN, 0, 0, f->base.location);
         }
 
-        /* Record how many local slots this function actually used. */
         bc->functions[fidx].local_count = g->local_stack[g->local_stack_top - 1];
 
-        /*
-         * Restore caller state. purge_vars_at_or_above_scope() frees the
-         * name strings for every variable that was registered inside this
-         * function, including any that weren't cleaned up by exit_scope()
-         * due to early returns or other abnormal control flow.
-         */
         purge_vars_at_or_above_scope(g, saved_scope + 1);
 
         g->local_stack_top--;
         g->scope_level     = saved_scope;
         g->in_global_scope = saved_global;
 
-        /* Patch the jump-over instruction to land after the function body. */
         bytecode_patch(bc, jump_over, (uint32_t)bc->instruction_count);
         break;
     }
@@ -560,18 +481,6 @@ static void emit_node(CodeGenerator *g, ASTNode *node) {
     }
 
     case AST_IF_STMT: {
-        /*
-         * if/else-if/else chain.
-         *
-         * Each branch:
-         *   <condition>
-         *   JUMP_IF_FALSE → next_branch_or_end
-         *   <then body>
-         *   JUMP → end               ← exit_jumps[] entry (backpatched later)
-         * next_branch_or_end:
-         *   ...
-         * end:
-         */
         uint32_t exit_jumps[256];
         int      exit_jump_count = 0;
 
@@ -589,19 +498,16 @@ static void emit_node(CodeGenerator *g, ASTNode *node) {
                     emit_node(g, s->then_block->statements[i]);
             exit_scope(g);
 
-            /* Jump past all remaining branches (backpatched to `end`). */
             if (exit_jump_count < 256) {
                 uint32_t je_idx = (uint32_t)bc->instruction_count;
                 bytecode_emit(bc, OP_JUMP, 0, 0, s->base.location);
                 exit_jumps[exit_jump_count++] = je_idx;
             }
 
-            /* Patch the JUMP_IF_FALSE to land at the next branch/else/end. */
             bytecode_patch(bc, jf_idx, (uint32_t)bc->instruction_count);
             cur = s->else_next;
         }
 
-        /* Optional plain `else { ... }` block. */
         if (cur && cur->type == AST_BLOCK) {
             enter_scope(g);
             BlockNode *eb = (BlockNode *)cur;
@@ -610,7 +516,6 @@ static void emit_node(CodeGenerator *g, ASTNode *node) {
             exit_scope(g);
         }
 
-        /* Patch all `JUMP → end` instructions now that we know where `end` is. */
         uint32_t exit_ip = (uint32_t)bc->instruction_count;
         for (int i = 0; i < exit_jump_count; i++)
             bytecode_patch(bc, exit_jumps[i], exit_ip);
@@ -637,13 +542,10 @@ static void emit_node(CodeGenerator *g, ASTNode *node) {
         uint32_t jf_idx = (uint32_t)bc->instruction_count;
         bytecode_emit(bc, OP_JUMP_IF_FALSE, 0, 0, lp->base.location);
 
-        enter_scope(g);
+        /* Emit body through AST_BLOCK handler for proper inner scope. */
         if (lp->body)
-            for (size_t i = 0; i < lp->body->statement_count; i++)
-                emit_node(g, lp->body->statements[i]);
-        exit_scope(g);
+            emit_node(g, (ASTNode *)lp->body);
 
-        /* `continue` jumps here — the backwards jump that re-tests the condition. */
         uint32_t continue_ip = (uint32_t)bc->instruction_count;
         bytecode_emit(bc, OP_JUMP, loop_start, 0, lp->base.location);
 
@@ -659,19 +561,31 @@ static void emit_node(CodeGenerator *g, ASTNode *node) {
         /*
          * for (init; cond; incr) { body }
          *
-         *   <init>
+         * The init variable (e.g. "int i = 0") is scoped to the loop:
+         * it lives at scope_level N (the outer scope + 1), and the body
+         * runs at scope_level N+1.  The init var is visible inside the
+         * body because lookup_local searches all active scopes.
+         *
+         *   <init>               ← declares loop var at scope N
          * loop_start:
-         *   [<condition> + JUMP_IF_FALSE → exit]   (omitted if no condition)
-         *   <body>
+         *   [<condition>]        ← may reference loop var
+         *   [JUMP_IF_FALSE → exit]
+         *   <body>               ← emitted via AST_BLOCK (scope N+1)
          * continue_ip:
-         *   <increment>
+         *   <increment>          ← e.g. i = i + 1
          *   JUMP → loop_start
          * exit:
          */
         LoopNode *lp = (LoopNode *)node;
         loop_push(g);
-        enter_scope(g); /* the init variable lives in this scope */
 
+        /*
+         * Open a scope for the init variable.  Body variables will live
+         * one level deeper (inside the AST_BLOCK handler below).
+         */
+        enter_scope(g);
+
+        /* Emit the initializer — typically a VAR_DECL like "int i = 0". */
         if (lp->init) emit_node(g, lp->init);
 
         uint32_t loop_start = (uint32_t)bc->instruction_count;
@@ -683,19 +597,36 @@ static void emit_node(CodeGenerator *g, ASTNode *node) {
             bytecode_emit(bc, OP_JUMP_IF_FALSE, 0, 0, lp->base.location);
         }
 
+        /*
+         * Emit the body through the AST_BLOCK handler.
+         * This gives body-local variables their own inner scope (N+1),
+         * cleanly separated from the init variable at scope N.
+         * The init variable is still visible because lookup_local searches
+         * backwards through all active scopes.
+         */
         if (lp->body)
-            for (size_t i = 0; i < lp->body->statement_count; i++)
-                emit_node(g, lp->body->statements[i]);
+            emit_node(g, (ASTNode *)lp->body);
 
-        /* `continue` lands here so the increment still runs. */
+        /*
+         * continue_ip is where `continue` statements jump to — the increment
+         * must run before re-testing the condition.
+         */
         uint32_t continue_ip = (uint32_t)bc->instruction_count;
+
         if (lp->increment) {
+            /*
+             * The increment expression is typically a desugared i++ (i = i + 1).
+             * Emit it as a statement: if it's an assignment, the result is
+             * consumed by STORE_VAR/STORE_GLOBAL; otherwise pop any leftover value.
+             */
             ExprNode *inc_expr = (ExprNode *)lp->increment;
             if (inc_expr->base.type == AST_BIN_OP &&
                 !strcmp(((BinOpNode *)inc_expr)->operator, "=")) {
-                /* Assignment — result left on stack, caller discards. */
+                /* Assignment desugared from i++/i-- or compound-assign.
+                   STORE_VAR/STORE_GLOBAL pop the value, so no OP_POP needed. */
                 emit_expr(g, inc_expr);
             } else {
+                /* Any other expression (e.g. a bare function call) — discard result. */
                 emit_expr(g, inc_expr);
                 bytecode_emit(bc, OP_POP, 0, 0, lp->base.location);
             }
@@ -708,6 +639,8 @@ static void emit_node(CodeGenerator *g, ASTNode *node) {
         loop_patch_breaks(g, exit_ip);
         loop_patch_continues(g, continue_ip);
         loop_pop(g);
+
+        /* Close the init-variable scope. */
         exit_scope(g);
         break;
     }
@@ -717,7 +650,6 @@ static void emit_node(CodeGenerator *g, ASTNode *node) {
         if (r->value)
             emit_expr(g, r->value);
         else {
-            /* Implicit `return null` — void functions still push a value. */
             uint32_t ci = bytecode_add_constant(bc, value_null());
             bytecode_emit(bc, OP_PUSH_CONST, ci, 0, r->base.location);
         }
@@ -732,7 +664,6 @@ static void emit_node(CodeGenerator *g, ASTNode *node) {
                           "'break' used outside of a loop");
             break;
         }
-        /* Emit a forward jump; target is backpatched by loop_patch_breaks(). */
         uint32_t patch_idx = (uint32_t)bc->instruction_count;
         bytecode_emit(bc, OP_JUMP, 0, 0, node->location);
         loop_add_break(g, patch_idx);
@@ -746,7 +677,6 @@ static void emit_node(CodeGenerator *g, ASTNode *node) {
                           "'continue' used outside of a loop");
             break;
         }
-        /* Emit a forward jump; target is backpatched by loop_patch_continues(). */
         uint32_t patch_idx = (uint32_t)bc->instruction_count;
         bytecode_emit(bc, OP_JUMP, 0, 0, node->location);
         loop_add_continue(g, patch_idx);
@@ -778,12 +708,10 @@ CodeGenerator *codegen_create(ErrorCollector *errors) {
     g->global_cap      = 0;
     g->loop_depth      = 0;
 
-    /* Build the builtin name→id table from the stdlib registry. */
     size_t             stdlib_count = 0;
     const StdlibEntry *tbl          = stdlib_get_table(&stdlib_count);
     size_t             total        = 2 + stdlib_count;
     g->builtins = ocl_malloc(total * sizeof(BuiltinDesc));
-    /* print and printf are handled specially in the VM, so register them first. */
     g->builtins[0]     = (BuiltinDesc){"print",  BUILTIN_PRINT};
     g->builtins[1]     = (BuiltinDesc){"printf", BUILTIN_PRINTF};
     g->builtin_count   = 2;
@@ -797,14 +725,10 @@ CodeGenerator *codegen_create(ErrorCollector *errors) {
 
 void codegen_free(CodeGenerator *g) {
     if (!g) return;
-    /* Free any var-name strings still alive (e.g. after a failed generation). */
     for (size_t i = 0; i < g->var_count;   i++) ocl_free(g->vars[i].name);
     for (size_t i = 0; i < g->global_count; i++) ocl_free(g->globals[i].name);
     ocl_free(g->vars);
     ocl_free(g->globals);
-    /* Builtin name pointers at [0] and [1] are string literals;
-       entries [2..] borrow pointers from the stdlib table.
-       Neither set is heap-owned, so only free the array itself. */
     ocl_free(g->builtins);
     ocl_free(g);
 }
@@ -821,8 +745,7 @@ bool codegen_generate(CodeGenerator *g, ProgramNode *program, Bytecode *output) 
     g->local_stack_top = 1;
     g->loop_depth      = 0;
 
-    /* Pass 1: pre-register all top-level global variable names so that
-       forward references inside function bodies resolve correctly. */
+    /* Pass 1: pre-register all top-level global variable names. */
     for (size_t i = 0; i < program->node_count; i++) {
         ASTNode *n = program->nodes[i];
         if (n->type == AST_VAR_DECL) {
@@ -843,24 +766,23 @@ bool codegen_generate(CodeGenerator *g, ProgramNode *program, Bytecode *output) 
         }
     }
 
-    /* Pass 2: emit function bodies (they jump over themselves at runtime). */
+    /* Pass 2: emit function bodies. */
     for (size_t i = 0; i < program->node_count; i++)
         if (program->nodes[i]->type == AST_FUNC_DECL)
             emit_node(g, program->nodes[i]);
 
-    /* Pass 3: emit top-level statements (globals and the main program flow). */
+    /* Pass 3: emit top-level statements. */
     for (size_t i = 0; i < program->node_count; i++)
         if (program->nodes[i]->type != AST_FUNC_DECL)
             emit_node(g, program->nodes[i]);
 
-    /* If `main()` is defined, call it automatically after global initialisers. */
+    /* Call main() automatically if defined. */
     int main_idx = bytecode_find_function(output, "main");
     if (main_idx >= 0) {
         SourceLocation entry = {1, 1, "entry"};
         bytecode_emit(output, OP_CALL, (uint32_t)main_idx, 0, entry);
     }
 
-    /* OP_HALT ends execution and propagates the exit code. */
     SourceLocation halt_loc = {1, 1, "end"};
     bytecode_emit(output, OP_HALT, 0, 0, halt_loc);
     return true;

@@ -68,7 +68,7 @@ static TypeNode *parse_type(Parser *p) {
     Token *t = cur_tok(p);
     if (t->type != TOKEN_IDENTIFIER) {
         error_add(p->errors, ERROR_PARSER, t->location, "Expected type name");
-        return ast_create_type(TYPE_UNKNOWN);   /* FIX: single argument */
+        return ast_create_type(TYPE_UNKNOWN);
     }
     char *name = dup_lexeme(t); p->current++;
     BuiltinType bt = TYPE_UNKNOWN;
@@ -86,10 +86,10 @@ static TypeNode *parse_type(Parser *p) {
         if (v == 32 || v == 64) p->current++;
     }
 
-    TypeNode *tn = ast_create_type(bt);   /* FIX: single argument */
+    TypeNode *tn = ast_create_type(bt);
 
     /* Consume optional [] — array type annotations are parsed but not tracked. */
-    if (match(p, TOKEN_LBRACKET)) {       /* FIX: removed tn->is_array = true */
+    if (match(p, TOKEN_LBRACKET)) {
         consume(p, TOKEN_RBRACKET, "Expected ']'");
     }
     return tn;
@@ -408,6 +408,68 @@ static bool is_c_style_var_decl(Parser *p) {
 }
 
 /*
+ * parse_for_init_var — parse the C-style typed variable declaration inside a
+ * for-loop init clause: "Type name = expr"
+ *
+ * Unlike a regular C-style var decl, the initializer is REQUIRED here so that
+ * the loop variable is always defined before the condition is checked.
+ * Emits a clear error if "= expr" is missing.
+ *
+ * Returns an AST_VAR_DECL node.
+ */
+static ASTNode *parse_for_init_var(Parser *p, SourceLocation loc) {
+    TypeNode *vtype = parse_type(p);
+    Token n_tok = consume(p, TOKEN_IDENTIFIER, "Expected variable name in for-loop initializer");
+    char *vname = dup_lexeme(&n_tok);
+
+    ExprNode *vinit = NULL;
+    if (match(p, TOKEN_EQUAL)) {
+        vinit = parse_expression(p);
+    } else {
+        /* Initializer is required for for-loop variables. */
+        error_add(p->errors, ERROR_PARSER, n_tok.location,
+                  "for-loop variable '%s' must be initialized (e.g. %s %s = 0)",
+                  vname,
+                  vtype && vtype->type == TYPE_INT    ? "int"   :
+                  vtype && vtype->type == TYPE_FLOAT  ? "float" :
+                  vtype && vtype->type == TYPE_STRING ? "string" : "int",
+                  vname);
+        /* Supply a null initializer so codegen can continue. */
+        vinit = ast_create_literal(loc, value_null());
+    }
+
+    return ast_create_var_decl(loc, vname, vtype, vinit);
+}
+
+/*
+ * parse_for_init_let — parse the Let-style variable declaration inside a
+ * for-loop init clause: "Let name:Type = expr"
+ *
+ * Initializer is REQUIRED.
+ */
+static ASTNode *parse_for_init_let(Parser *p, SourceLocation loc) {
+    Token n_tok = consume(p, TOKEN_IDENTIFIER, "Expected variable name");
+    char *vname = dup_lexeme(&n_tok);
+    consume(p, TOKEN_COLON, "Expected ':' after variable name in for-loop initializer");
+    TypeNode *vtype = parse_type(p);
+
+    ExprNode *vinit = NULL;
+    if (match(p, TOKEN_EQUAL)) {
+        vinit = parse_expression(p);
+    } else {
+        error_add(p->errors, ERROR_PARSER, n_tok.location,
+                  "for-loop variable '%s' must be initialized (e.g. Let %s:%s = 0)",
+                  vname, vname,
+                  vtype && vtype->type == TYPE_INT    ? "Int"    :
+                  vtype && vtype->type == TYPE_FLOAT  ? "Float"  :
+                  vtype && vtype->type == TYPE_STRING ? "String" : "Int");
+        vinit = ast_create_literal(loc, value_null());
+    }
+
+    return ast_create_var_decl(loc, vname, vtype, vinit);
+}
+
+/*
  * Parse the else / else-if chain that follows a then-block.
  * Returns: NULL (no else), AST_IF_STMT (else if), or AST_BLOCK (plain else).
  */
@@ -441,7 +503,7 @@ static ASTNode *parse_statement(Parser *p) {
         char *name = dup_lexeme(&name_tok);
         TypeNode *type = match(p, TOKEN_COLON)
                          ? parse_type(p)
-                         : ast_create_type(TYPE_UNKNOWN);   /* FIX: single argument */
+                         : ast_create_type(TYPE_UNKNOWN);
         match(p, TOKEN_SEMICOLON);
         DeclareNode *dn = ocl_malloc(sizeof(DeclareNode));
         dn->base.type = AST_DECLARE; dn->base.location = loc;
@@ -493,31 +555,42 @@ static ASTNode *parse_statement(Parser *p) {
         return (ASTNode *)lp;
     }
 
-    /* for */
+    /*
+     * for loop
+     *
+     * Supported init forms:
+     *   for (Let i:Int = 0; ...)      — OCL-style, initializer required
+     *   for (int i = 0; ...)          — C-style, initializer required
+     *   for (expr; ...)               — expression init (e.g. i = 0)
+     *   for (; ...)                   — empty init
+     *
+     * The variable declared in the init clause is scoped to the loop
+     * (visible in condition, body, and increment).
+     */
     if (match(p, TOKEN_FOR)) {
-        consume(p, TOKEN_LPAREN, "Expected '('");
+        consume(p, TOKEN_LPAREN, "Expected '(' after 'for'");
         ASTNode *init = NULL;
+
         if (match(p, TOKEN_LET)) {
-            Token n_tok = consume(p, TOKEN_IDENTIFIER, "Expected variable name");
-            char *vname = dup_lexeme(&n_tok);
-            consume(p, TOKEN_COLON, "Expected ':'");
-            TypeNode *vtype = parse_type(p);
-            ExprNode *vinit = match(p, TOKEN_EQUAL) ? parse_expression(p) : NULL;
-            init = ast_create_var_decl(loc, vname, vtype, vinit);
+            /* Let i:Type = expr */
+            init = parse_for_init_let(p, loc);
         } else if (is_c_style_var_decl(p)) {
-            TypeNode *vtype = parse_type(p);
-            Token n_tok = consume(p, TOKEN_IDENTIFIER, "Expected variable name");
-            char *vname = dup_lexeme(&n_tok);
-            ExprNode *vinit = match(p, TOKEN_EQUAL) ? parse_expression(p) : NULL;
-            init = ast_create_var_decl(loc, vname, vtype, vinit);
+            /* Type i = expr  — e.g. "int i = 0" */
+            init = parse_for_init_var(p, loc);
         } else if (!check(p, TOKEN_SEMICOLON)) {
+            /* Plain expression init — e.g. "i = 0" */
             init = (ASTNode *)parse_expression(p);
         }
-        match(p, TOKEN_SEMICOLON);
+        /* else: empty init clause, init stays NULL */
+
+        consume(p, TOKEN_SEMICOLON, "Expected ';' after for-loop initializer");
+
         ExprNode *cond = check(p, TOKEN_SEMICOLON) ? NULL : parse_expression(p);
-        match(p, TOKEN_SEMICOLON);
-        ASTNode  *incr = check(p, TOKEN_RPAREN)    ? NULL : (ASTNode *)parse_expression(p);
-        consume(p, TOKEN_RPAREN, "Expected ')'");
+        consume(p, TOKEN_SEMICOLON, "Expected ';' after for-loop condition");
+
+        ASTNode  *incr = check(p, TOKEN_RPAREN) ? NULL : (ASTNode *)parse_expression(p);
+        consume(p, TOKEN_RPAREN, "Expected ')' after for-loop increment");
+
         BlockNode *body = parse_block(p);
         LoopNode *lp = ocl_malloc(sizeof(LoopNode));
         lp->base.type = AST_FOR_LOOP; lp->base.location = loc;
@@ -623,7 +696,7 @@ ProgramNode *parser_parse(Parser *p) {
             SourceLocation loc = prev_tok(p)->location;
 
             /* Optional return type before the function name. */
-            TypeNode *ret = ast_create_type(TYPE_VOID);   /* FIX: single argument */
+            TypeNode *ret = ast_create_type(TYPE_VOID);
             if (check(p, TOKEN_IDENTIFIER)) {
                 char *maybe_type = cur_tok(p)->lexeme;
                 if (is_type_name(maybe_type)) { ocl_free(ret); ret = parse_type(p); }
