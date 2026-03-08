@@ -14,8 +14,6 @@
    Argument helpers
    ══════════════════════════════════════════════════════════════════ */
 
-/* Pop `argc` values from the VM stack into a caller-owned buffer.
-   Returns NULL if argc <= 0.  Caller must call free_args() when done. */
 static Value *pop_args(VM *vm, int argc) {
     if (argc <= 0) return NULL;
     Value *args = ocl_malloc((size_t)argc * sizeof(Value));
@@ -24,14 +22,12 @@ static Value *pop_args(VM *vm, int argc) {
     return args;
 }
 
-/* Free a buffer returned by pop_args. */
 static void free_args(Value *args, int argc) {
     if (!args) return;
     for (int i = 0; i < argc; i++) value_free(args[i]);
     ocl_free(args);
 }
 
-/* Convenience: pop, check count, push null and return NULL on undercount. */
 #define REQUIRE_ARGS(vm, args, argc, needed, name) \
     do { \
         if ((argc) < (needed)) { \
@@ -84,7 +80,6 @@ static void builtin_input(VM *vm, int argc) {
         vm_push(vm, value_string(ocl_strdup("")));
         return;
     }
-    /* Strip trailing newline / CR. */
     size_t len = strlen(buf);
     while (len > 0 && (buf[len - 1] == '\n' || buf[len - 1] == '\r'))
         buf[--len] = '\0';
@@ -92,7 +87,6 @@ static void builtin_input(VM *vm, int argc) {
     vm_push(vm, value_string(ocl_strdup(buf)));
 }
 
-/* readLine() — same as input() with no prompt. */
 static void builtin_readline(VM *vm, int argc) {
     builtin_input(vm, argc);
 }
@@ -106,7 +100,7 @@ static void builtin_abs(VM *vm, int argc) {
     REQUIRE_ARGS(vm, args, argc, 1, "abs");
 
     Value a = args[0];
-    free_args(args, argc);  /* frees everything except a which is a copy */
+    free_args(args, argc);
 
     if (a.type == VALUE_INT)
         vm_push(vm, value_int(a.data.int_val < 0 ? -a.data.int_val : a.data.int_val));
@@ -132,7 +126,6 @@ static void builtin_pow(VM *vm, int argc) {
     vm_push(vm, value_float(pow(base, exp)));
 }
 
-/* One-argument float math functions. */
 #define MATH1(fname, cfn) \
 static void builtin_##fname(VM *vm, int argc) { \
     Value *a = pop_args(vm, argc); \
@@ -280,7 +273,6 @@ static void builtin_strreplace(VM *vm, int argc) {
     const char *new_str = (args[2].type == VALUE_STRING) ? args[2].data.string_val : "";
 
     if (!old_str || old_str[0] == '\0') {
-        /* Nothing to replace — return a copy of the original. */
         char *copy = ocl_strdup(src);
         free_args(args, argc);
         vm_push(vm, value_string(copy));
@@ -291,7 +283,6 @@ static void builtin_strreplace(VM *vm, int argc) {
     size_t new_len = new_str ? strlen(new_str) : 0;
     size_t src_len = strlen(src);
 
-    /* Count occurrences to pre-allocate. */
     size_t      count = 0;
     const char *cur   = src;
     while ((cur = strstr(cur, old_str)) != NULL) { count++; cur += old_len; }
@@ -330,35 +321,6 @@ static void builtin_strtrim(VM *vm, int argc) {
     vm_push(vm, value_string(result));
 }
 
-/*
- * strSplit(s, delim) — returns an Int count of tokens.
- * The individual tokens are not accessible from OCL code (known limitation).
- */
-static void builtin_strsplit(VM *vm, int argc) {
-    Value *args = pop_args(vm, argc);
-    REQUIRE_ARGS(vm, args, argc, 2, "strSplit");
-
-    if (args[0].type != VALUE_STRING) {
-        free_args(args, argc);
-        vm_push(vm, value_int(0));
-        return;
-    }
-    char *copy  = ocl_strdup(args[0].data.string_val ? args[0].data.string_val : "");
-    char *delim = ocl_strdup((args[1].type == VALUE_STRING && args[1].data.string_val)
-                              ? args[1].data.string_val : " ");
-    free_args(args, argc);
-
-    int64_t count   = 0;
-    char   *saveptr = NULL;
-    for (char *tok = strtok_r(copy, delim, &saveptr); tok;
-              tok = strtok_r(NULL,  delim, &saveptr))
-        count++;
-
-    ocl_free(copy);
-    ocl_free(delim);
-    vm_push(vm, value_int(count));
-}
-
 /* ══════════════════════════════════════════════════════════════════
    Type conversions
    ══════════════════════════════════════════════════════════════════ */
@@ -382,7 +344,7 @@ static void builtin_to_float(VM *vm, int argc) {
 static void builtin_to_string(VM *vm, int argc) {
     Value *args = pop_args(vm, argc);
     REQUIRE_ARGS(vm, args, argc, 1, "toString");
-    char *s = ocl_strdup(value_to_string(args[0]));  /* copy from static pool */
+    char *s = ocl_strdup(value_to_string(args[0]));
     free_args(args, argc);
     vm_push(vm, value_string(s));
 }
@@ -436,7 +398,6 @@ static void builtin_assert(VM *vm, int argc) {
     vm_push(vm, value_null());
 }
 
-/* Type inspection functions. */
 #define IS_TYPE(fname, vtype) \
 static void builtin_##fname(VM *vm, int argc) { \
     Value *a = pop_args(vm, argc); \
@@ -472,7 +433,7 @@ static void builtin_array_new(VM *vm, int argc) {
     for (int64_t i = 0; i < sz; i++)
         ocl_array_push(arr, value_null());
     vm_push(vm, value_array(arr));
-    ocl_array_release(arr);   /* drop creator ref; stack value holds the only ref */
+    ocl_array_release(arr);
 }
 
 static void builtin_array_push(VM *vm, int argc) {
@@ -569,7 +530,6 @@ static void builtin_time_now(VM *vm, int argc) {
     vm_push(vm, value_int(ns));
 }
 
-/* Seed from /dev/urandom once, fall back to time(). */
 static uint32_t ocl_rand32(void) {
     static bool seeded = false;
     if (!seeded) {
@@ -580,7 +540,6 @@ static uint32_t ocl_rand32(void) {
         srand(seed);
         seeded = true;
     }
-    /* Combine two 15-bit rand() calls for ~30 bits of randomness. */
     return (uint32_t)(((uint32_t)rand() << 16) ^ (uint32_t)rand());
 }
 
@@ -630,7 +589,6 @@ static const StdlibEntry STDLIB_TABLE[] = {
     { BUILTIN_STRINDEXOF,  "strIndexOf",  builtin_strindexof  },
     { BUILTIN_STRREPLACE,  "strReplace",  builtin_strreplace  },
     { BUILTIN_STRTRIM,     "strTrim",     builtin_strtrim     },
-    { BUILTIN_STRSPLIT,    "strSplit",    builtin_strsplit    },
     { BUILTIN_TO_INT,      "toInt",       builtin_to_int      },
     { BUILTIN_TO_FLOAT,    "toFloat",     builtin_to_float    },
     { BUILTIN_TO_STRING,   "toString",    builtin_to_string   },
@@ -657,9 +615,6 @@ static const size_t STDLIB_TABLE_SIZE =
     sizeof(STDLIB_TABLE) / sizeof(STDLIB_TABLE[0]);
 
 /* ── Public API ───────────────────────────────────────────────────── */
-
-void stdlib_init(void)    {}
-void stdlib_cleanup(void) {}
 
 bool stdlib_dispatch(VM *vm, int id, int argc) {
     for (size_t i = 0; i < STDLIB_TABLE_SIZE; i++) {

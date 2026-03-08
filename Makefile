@@ -96,7 +96,7 @@ clean:
 	@echo "  CLEAN"
 	@rm -rf $(BUILD_DIR) $(TARGET)
 
-# ── Test ──────────────────────────────────────────────────────────────────────
+# ── Test (.ocl integration tests only) ───────────────────────────────────────
 .PHONY: test
 test: all
 	@echo "── Running tests ──────────────────────────────────────"
@@ -135,6 +135,6 @@ help:
 	@echo "  make release    Build optimised release binary"
 	@echo "  make debug      Explicit debug build"
 	@echo "  make clean      Remove build artefacts"
-	@echo "  make test       Build and run all tests in $(TEST_DIR)/"
+	@echo "  make test       Build and run all .ocl integration tests in $(TEST_DIR)/"
 	@echo "  make run FILE=x Build and run a specific .ocl file"
 	@echo "  make help       Show this message"

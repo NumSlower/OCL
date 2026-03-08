@@ -103,7 +103,6 @@ static bool parse_options(int argc, char *argv[], Options *out) {
     return true;
 }
 
-/* Report errors from a given phase and return false if any exist. */
 static bool check_errors(ErrorCollector *ec, const char *phase_desc) {
     if (!error_has_errors(ec)) return true;
     fprintf(stderr, "%s — aborting:\n", phase_desc);
@@ -141,7 +140,6 @@ int main(int argc, char *argv[]) {
         goto cleanup;
     }
 
-    /* Fail fast on lex errors before parsing. */
     {
         bool lex_err = false;
         for (size_t i = 0; i < token_count; i++) {
@@ -194,7 +192,7 @@ int main(int argc, char *argv[]) {
         bool           cg_ok   = codegen_generate(gen, program, bytecode);
         codegen_free(gen);
 
-        ast_free((ASTNode *)program);   /* AST no longer needed after codegen */
+        ast_free((ASTNode *)program);
 
         if (!cg_ok || !check_errors(errors, "Code generation errors")) {
             exit_code = 1;
@@ -209,13 +207,11 @@ int main(int argc, char *argv[]) {
         }
 
         /* ── Stage 5: Execute ─────────────────────────────────── */
-        stdlib_init();
         VM *vm = vm_create(bytecode);
         if (!vm) {
             fprintf(stderr, "ocl: failed to create VM\n");
             exit_code = 1;
             bytecode_free(bytecode);
-            stdlib_cleanup();
             goto cleanup;
         }
 
@@ -234,7 +230,6 @@ int main(int argc, char *argv[]) {
         }
 
         vm_free(vm);
-        stdlib_cleanup();
         bytecode_free(bytecode);
     }
 

@@ -25,7 +25,6 @@ struct VM; typedef struct VM VM;
 #define BUILTIN_STRINDEXOF  35
 #define BUILTIN_STRREPLACE  36
 #define BUILTIN_STRTRIM     37
-#define BUILTIN_STRSPLIT    38
 #define BUILTIN_TO_INT      40
 #define BUILTIN_TO_FLOAT    41
 #define BUILTIN_TO_STRING   42
@@ -50,9 +49,7 @@ struct VM; typedef struct VM VM;
 #define BUILTIN_RANDOM      67
 
 typedef struct { int id; const char *name; void (*fn)(VM *vm, int argc); } StdlibEntry;
-void  stdlib_init(void);
-void  stdlib_cleanup(void);
-bool  stdlib_dispatch(VM *vm, int id, int argc);
+bool               stdlib_dispatch(VM *vm, int id, int argc);
 const StdlibEntry *stdlib_lookup_by_name(const char *name);
 const StdlibEntry *stdlib_get_table(size_t *out_count);
 #endif
