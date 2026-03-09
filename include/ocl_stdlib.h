@@ -25,6 +25,7 @@ struct VM; typedef struct VM VM;
 #define BUILTIN_STRINDEXOF  35
 #define BUILTIN_STRREPLACE  36
 #define BUILTIN_STRTRIM     37
+#define BUILTIN_STRSPLIT    38
 #define BUILTIN_TO_INT      40
 #define BUILTIN_TO_FLOAT    41
 #define BUILTIN_TO_STRING   42

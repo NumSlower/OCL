@@ -321,6 +321,26 @@ static void builtin_strtrim(VM *vm, int argc) {
     vm_push(vm, value_string(result));
 }
 
+static void builtin_strsplit(VM *vm, int argc) {
+    Value *args = pop_args(vm, argc);
+    REQUIRE_ARGS(vm, args, argc, 2, "strSplit");
+    const char *str   = (args[0].type == VALUE_STRING && args[0].data.string_val)
+                        ? args[0].data.string_val : "";
+    const char *delim = (args[1].type == VALUE_STRING && args[1].data.string_val)
+                        ? args[1].data.string_val : "";
+    free_args(args, argc);
+    if (!delim || delim[0] == '\0') {
+        vm_push(vm, value_int((int64_t)strlen(str)));
+        return;
+    }
+    int64_t count = 0;
+    size_t  dlen  = strlen(delim);
+    const char *cur = str, *found;
+    while ((found = strstr(cur, delim)) != NULL) { count++; cur = found + dlen; }
+    if (str[0] != '\0') count++;
+    vm_push(vm, value_int(count));
+}
+
 /* ══════════════════════════════════════════════════════════════════
    Type conversions
    ══════════════════════════════════════════════════════════════════ */
@@ -589,6 +609,7 @@ static const StdlibEntry STDLIB_TABLE[] = {
     { BUILTIN_STRINDEXOF,  "strIndexOf",  builtin_strindexof  },
     { BUILTIN_STRREPLACE,  "strReplace",  builtin_strreplace  },
     { BUILTIN_STRTRIM,     "strTrim",     builtin_strtrim     },
+    { BUILTIN_STRSPLIT,    "strSplit",    builtin_strsplit    },
     { BUILTIN_TO_INT,      "toInt",       builtin_to_int      },
     { BUILTIN_TO_FLOAT,    "toFloat",     builtin_to_float    },
     { BUILTIN_TO_STRING,   "toString",    builtin_to_string   },
