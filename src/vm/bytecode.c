@@ -105,9 +105,6 @@ static const char *opcode_name(Opcode op) {
         case OP_RETURN:          return "RETURN";
         case OP_HALT:            return "HALT";
         case OP_CALL_BUILTIN:    return "CALL_BUILTIN";
-        case OP_TO_INT:          return "TO_INT";
-        case OP_TO_FLOAT:        return "TO_FLOAT";
-        case OP_TO_STRING:       return "TO_STRING";
         case OP_ARRAY_NEW:       return "ARRAY_NEW";
         case OP_ARRAY_GET:       return "ARRAY_GET";
         case OP_ARRAY_SET:       return "ARRAY_SET";
@@ -123,7 +120,6 @@ void bytecode_dump(Bytecode *bc) {
     printf("Instructions: %zu  Constants: %zu  Functions: %zu\n\n",
            bc->instruction_count, bc->constant_count, bc->function_count);
 
-    /* ── Constants pool ─────────────────────────────────────────── */
     if (bc->constant_count > 0) {
         printf("--- Constants ---\n");
         for (size_t i = 0; i < bc->constant_count; i++) {
@@ -135,7 +131,6 @@ void bytecode_dump(Bytecode *bc) {
         printf("\n");
     }
 
-    /* ── Function table ─────────────────────────────────────────── */
     if (bc->function_count > 0) {
         printf("--- Functions ---\n");
         for (size_t i = 0; i < bc->function_count; i++) {
@@ -150,24 +145,20 @@ void bytecode_dump(Bytecode *bc) {
         printf("\n");
     }
 
-    /* ── Instructions ───────────────────────────────────────────── */
     printf("--- Instructions ---\n");
     for (size_t ip = 0; ip < bc->instruction_count; ip++) {
         Instruction *ins = &bc->instructions[ip];
 
-        /* Annotate entry points from the function table. */
         for (size_t f = 0; f < bc->function_count; f++) {
             if (bc->functions[f].start_ip == (uint32_t)ip)
                 printf("\n<%s>:\n", bc->functions[f].name ? bc->functions[f].name : "?");
         }
 
-        /* Location prefix (filename:line when available). */
         if (ins->location.filename && ins->location.line > 0)
             printf("  %4zu  %-20s  ", ip, opcode_name(ins->opcode));
         else
             printf("  %4zu  %-20s  ", ip, opcode_name(ins->opcode));
 
-        /* Operand annotation per opcode. */
         switch (ins->opcode) {
             case OP_PUSH_CONST:
                 if (ins->operand1 < (uint32_t)bc->constant_count)
@@ -177,26 +168,21 @@ void bytecode_dump(Bytecode *bc) {
                 else
                     printf("const[%u] (out of range)", ins->operand1);
                 break;
-
             case OP_LOAD_VAR:
             case OP_STORE_VAR:
                 printf("local[%u]", ins->operand1);
                 break;
-
             case OP_LOAD_GLOBAL:
             case OP_STORE_GLOBAL:
                 printf("global[%u]", ins->operand1);
                 break;
-
             case OP_JUMP:
                 printf("-> %u", ins->operand1);
                 break;
-
             case OP_JUMP_IF_FALSE:
             case OP_JUMP_IF_TRUE:
                 printf("-> %u", ins->operand1);
                 break;
-
             case OP_CALL:
                 if (ins->operand1 == 0xFFFFFFFF)
                     printf("func=unresolved  argc=%u", ins->operand2);
@@ -208,25 +194,19 @@ void bytecode_dump(Bytecode *bc) {
                 else
                     printf("func[%u]  argc=%u", ins->operand1, ins->operand2);
                 break;
-
             case OP_CALL_BUILTIN:
                 printf("builtin_id=%u  argc=%u", ins->operand1, ins->operand2);
                 break;
-
             case OP_ARRAY_NEW:
                 printf("count=%u", ins->operand1);
                 break;
-
             case OP_HALT:
                 printf("exit_code=%u", ins->operand1);
                 break;
-
             default:
-                /* No operands worth printing for zero-operand instructions. */
                 break;
         }
 
-        /* Source location suffix. */
         if (ins->location.filename && ins->location.line > 0)
             printf("  ; %s:%d", ins->location.filename, ins->location.line);
 

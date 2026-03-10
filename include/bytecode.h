@@ -10,7 +10,6 @@ typedef enum {
     OP_JUMP, OP_JUMP_IF_FALSE, OP_JUMP_IF_TRUE,
     OP_CALL, OP_RETURN, OP_HALT,
     OP_CALL_BUILTIN,
-    OP_TO_INT, OP_TO_FLOAT, OP_TO_STRING,
     OP_ARRAY_NEW,   /* operand1 = element_count */
     OP_ARRAY_GET,   /* stack: [array, index] -> value */
     OP_ARRAY_SET,   /* stack: [value, array, index] */

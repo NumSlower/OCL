@@ -6,17 +6,7 @@ struct VM; typedef struct VM VM;
 #define BUILTIN_PRINTF      2
 #define BUILTIN_INPUT       3
 #define BUILTIN_READLINE    4
-#define BUILTIN_ABS         10
-#define BUILTIN_SQRT        11
-#define BUILTIN_POW         12
-#define BUILTIN_SIN         13
-#define BUILTIN_COS         14
-#define BUILTIN_TAN         15
-#define BUILTIN_FLOOR       16
-#define BUILTIN_CEIL        17
-#define BUILTIN_ROUND       18
-#define BUILTIN_MAX         19
-#define BUILTIN_MIN         20
+/* Math builtins removed: abs, sqrt, pow, sin, cos, tan, floor, ceil, round, max, min */
 #define BUILTIN_STRLEN      30
 #define BUILTIN_SUBSTR      31
 #define BUILTIN_TOUPPER     32
@@ -26,18 +16,10 @@ struct VM; typedef struct VM VM;
 #define BUILTIN_STRREPLACE  36
 #define BUILTIN_STRTRIM     37
 #define BUILTIN_STRSPLIT    38
-#define BUILTIN_TO_INT      40
-#define BUILTIN_TO_FLOAT    41
-#define BUILTIN_TO_STRING   42
-#define BUILTIN_TO_BOOL     43
-#define BUILTIN_TYPEOF      44
+/* Type conversion builtins removed: toInt, toFloat, toString, toBool, typeOf */
+/* Inspection builtins removed: isNull, isInt, isFloat, isString, isBool */
 #define BUILTIN_EXIT        50
-#define BUILTIN_ASSERT      51
-#define BUILTIN_IS_NULL     52
-#define BUILTIN_IS_INT      53
-#define BUILTIN_IS_FLOAT    54
-#define BUILTIN_IS_STRING   55
-#define BUILTIN_IS_BOOL     56
+/* assert removed */
 /* Array builtins */
 #define BUILTIN_ARRAY_NEW   60
 #define BUILTIN_ARRAY_PUSH  61
@@ -45,8 +27,7 @@ struct VM; typedef struct VM VM;
 #define BUILTIN_ARRAY_GET   63
 #define BUILTIN_ARRAY_SET   64
 #define BUILTIN_ARRAY_LEN   65
-
-#define BUILTIN_TIME_NOW    66
+/* timeNow removed */
 #define BUILTIN_RANDOM      67
 
 typedef struct { int id; const char *name; void (*fn)(VM *vm, int argc); } StdlibEntry;

@@ -1,7 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <math.h>
 #include <ctype.h>
 #include <time.h>
 #include <inttypes.h>
@@ -38,17 +37,6 @@ static void free_args(Value *args, int argc) {
             return; \
         } \
     } while (0)
-
-/* ── Numeric coercions ────────────────────────────────────────────── */
-
-static double to_double(Value v) {
-    switch (v.type) {
-        case VALUE_INT:   return (double)v.data.int_val;
-        case VALUE_FLOAT: return v.data.float_val;
-        case VALUE_BOOL:  return v.data.bool_val ? 1.0 : 0.0;
-        default:          return 0.0;
-    }
-}
 
 static int64_t to_int64(Value v) {
     switch (v.type) {
@@ -89,91 +77,6 @@ static void builtin_input(VM *vm, int argc) {
 
 static void builtin_readline(VM *vm, int argc) {
     builtin_input(vm, argc);
-}
-
-/* ══════════════════════════════════════════════════════════════════
-   Math
-   ══════════════════════════════════════════════════════════════════ */
-
-static void builtin_abs(VM *vm, int argc) {
-    Value *args = pop_args(vm, argc);
-    REQUIRE_ARGS(vm, args, argc, 1, "abs");
-
-    Value a = args[0];
-    free_args(args, argc);
-
-    if (a.type == VALUE_INT)
-        vm_push(vm, value_int(a.data.int_val < 0 ? -a.data.int_val : a.data.int_val));
-    else
-        vm_push(vm, value_float(fabs(to_double(a))));
-    value_free(a);
-}
-
-static void builtin_sqrt(VM *vm, int argc) {
-    Value *args = pop_args(vm, argc);
-    REQUIRE_ARGS(vm, args, argc, 1, "sqrt");
-    double x = to_double(args[0]);
-    free_args(args, argc);
-    vm_push(vm, value_float(x < 0.0 ? 0.0 : sqrt(x)));
-}
-
-static void builtin_pow(VM *vm, int argc) {
-    Value *args = pop_args(vm, argc);
-    REQUIRE_ARGS(vm, args, argc, 2, "pow");
-    double base = to_double(args[0]);
-    double exp  = to_double(args[1]);
-    free_args(args, argc);
-    vm_push(vm, value_float(pow(base, exp)));
-}
-
-#define MATH1(fname, cfn) \
-static void builtin_##fname(VM *vm, int argc) { \
-    Value *a = pop_args(vm, argc); \
-    REQUIRE_ARGS(vm, a, argc, 1, #fname); \
-    double x = to_double(a[0]); \
-    free_args(a, argc); \
-    vm_push(vm, value_float(cfn(x))); \
-}
-
-MATH1(sin,   sin)
-MATH1(cos,   cos)
-MATH1(tan,   tan)
-MATH1(floor, floor)
-MATH1(ceil,  ceil)
-MATH1(round, round)
-
-#undef MATH1
-
-static void builtin_max(VM *vm, int argc) {
-    Value *args = pop_args(vm, argc);
-    REQUIRE_ARGS(vm, args, argc, 2, "max");
-    Value a = args[0], b = args[1];
-    free_args(args, argc);
-
-    if (a.type == VALUE_INT && b.type == VALUE_INT)
-        vm_push(vm, value_int(a.data.int_val >= b.data.int_val
-                              ? a.data.int_val : b.data.int_val));
-    else {
-        double da = to_double(a), db = to_double(b);
-        vm_push(vm, value_float(da >= db ? da : db));
-    }
-    value_free(a); value_free(b);
-}
-
-static void builtin_min(VM *vm, int argc) {
-    Value *args = pop_args(vm, argc);
-    REQUIRE_ARGS(vm, args, argc, 2, "min");
-    Value a = args[0], b = args[1];
-    free_args(args, argc);
-
-    if (a.type == VALUE_INT && b.type == VALUE_INT)
-        vm_push(vm, value_int(a.data.int_val <= b.data.int_val
-                              ? a.data.int_val : b.data.int_val));
-    else {
-        double da = to_double(a), db = to_double(b);
-        vm_push(vm, value_float(da <= db ? da : db));
-    }
-    value_free(a); value_free(b);
 }
 
 /* ══════════════════════════════════════════════════════════════════
@@ -335,54 +238,10 @@ static void builtin_strsplit(VM *vm, int argc) {
     }
     int64_t count = 0;
     size_t  dlen  = strlen(delim);
-    const char *cur = str, *found;
-    while ((found = strstr(cur, delim)) != NULL) { count++; cur = found + dlen; }
+    const char *cur = str, *found_ptr;
+    while ((found_ptr = strstr(cur, delim)) != NULL) { count++; cur = found_ptr + dlen; }
     if (str[0] != '\0') count++;
     vm_push(vm, value_int(count));
-}
-
-/* ══════════════════════════════════════════════════════════════════
-   Type conversions
-   ══════════════════════════════════════════════════════════════════ */
-
-static void builtin_to_int(VM *vm, int argc) {
-    Value *args = pop_args(vm, argc);
-    REQUIRE_ARGS(vm, args, argc, 1, "toInt");
-    int64_t r = to_int64(args[0]);
-    free_args(args, argc);
-    vm_push(vm, value_int(r));
-}
-
-static void builtin_to_float(VM *vm, int argc) {
-    Value *args = pop_args(vm, argc);
-    REQUIRE_ARGS(vm, args, argc, 1, "toFloat");
-    double r = to_double(args[0]);
-    free_args(args, argc);
-    vm_push(vm, value_float(r));
-}
-
-static void builtin_to_string(VM *vm, int argc) {
-    Value *args = pop_args(vm, argc);
-    REQUIRE_ARGS(vm, args, argc, 1, "toString");
-    char *s = ocl_strdup(value_to_string(args[0]));
-    free_args(args, argc);
-    vm_push(vm, value_string(s));
-}
-
-static void builtin_to_bool(VM *vm, int argc) {
-    Value *args = pop_args(vm, argc);
-    REQUIRE_ARGS(vm, args, argc, 1, "toBool");
-    bool r = value_is_truthy(args[0]);
-    free_args(args, argc);
-    vm_push(vm, value_bool(r));
-}
-
-static void builtin_typeof(VM *vm, int argc) {
-    Value *args = pop_args(vm, argc);
-    REQUIRE_ARGS(vm, args, argc, 1, "typeOf");
-    const char *name = value_type_name(args[0].type);
-    free_args(args, argc);
-    vm_push(vm, value_string(ocl_strdup(name)));
 }
 
 /* ══════════════════════════════════════════════════════════════════
@@ -397,47 +256,6 @@ static void builtin_exit(VM *vm, int argc) {
     vm->exit_code = code;
     vm_push(vm, value_null());
 }
-
-static void builtin_assert(VM *vm, int argc) {
-    Value *args = pop_args(vm, argc);
-    REQUIRE_ARGS(vm, args, argc, 1, "assert");
-
-    bool ok = value_is_truthy(args[0]);
-    if (!ok) {
-        if (argc >= 2 && args[1].type == VALUE_STRING && args[1].data.string_val)
-            fprintf(stderr, "ASSERTION FAILED: %s\n", args[1].data.string_val);
-        else
-            fprintf(stderr, "ASSERTION FAILED\n");
-        free_args(args, argc);
-        vm->halted    = true;
-        vm->exit_code = 1;
-        vm_push(vm, value_null());
-        return;
-    }
-    free_args(args, argc);
-    vm_push(vm, value_null());
-}
-
-#define IS_TYPE(fname, vtype) \
-static void builtin_##fname(VM *vm, int argc) { \
-    Value *a = pop_args(vm, argc); \
-    bool r = (argc >= 1 && a[0].type == (vtype)); \
-    free_args(a, argc); \
-    vm_push(vm, value_bool(r)); \
-}
-
-static void builtin_is_null(VM *vm, int argc) {
-    Value *a = pop_args(vm, argc);
-    bool r = (argc < 1 || a[0].type == VALUE_NULL);
-    free_args(a, argc);
-    vm_push(vm, value_bool(r));
-}
-IS_TYPE(is_int,    VALUE_INT)
-IS_TYPE(is_float,  VALUE_FLOAT)
-IS_TYPE(is_string, VALUE_STRING)
-IS_TYPE(is_bool,   VALUE_BOOL)
-
-#undef IS_TYPE
 
 /* ══════════════════════════════════════════════════════════════════
    Array built-ins
@@ -539,16 +357,8 @@ static void builtin_array_len(VM *vm, int argc) {
 }
 
 /* ══════════════════════════════════════════════════════════════════
-   Time and random
+   Random
    ══════════════════════════════════════════════════════════════════ */
-
-static void builtin_time_now(VM *vm, int argc) {
-    (void)argc;
-    struct timespec ts;
-    clock_gettime(CLOCK_REALTIME, &ts);
-    int64_t ns = (int64_t)ts.tv_sec * 1000000000LL + (int64_t)ts.tv_nsec;
-    vm_push(vm, value_int(ns));
-}
 
 static uint32_t ocl_rand32(void) {
     static bool seeded = false;
@@ -590,17 +400,6 @@ static void builtin_random(VM *vm, int argc) {
 static const StdlibEntry STDLIB_TABLE[] = {
     { BUILTIN_INPUT,       "input",       builtin_input       },
     { BUILTIN_READLINE,    "readLine",    builtin_readline    },
-    { BUILTIN_ABS,         "abs",         builtin_abs         },
-    { BUILTIN_SQRT,        "sqrt",        builtin_sqrt        },
-    { BUILTIN_POW,         "pow",         builtin_pow         },
-    { BUILTIN_SIN,         "sin",         builtin_sin         },
-    { BUILTIN_COS,         "cos",         builtin_cos         },
-    { BUILTIN_TAN,         "tan",         builtin_tan         },
-    { BUILTIN_FLOOR,       "floor",       builtin_floor       },
-    { BUILTIN_CEIL,        "ceil",        builtin_ceil        },
-    { BUILTIN_ROUND,       "round",       builtin_round       },
-    { BUILTIN_MAX,         "max",         builtin_max         },
-    { BUILTIN_MIN,         "min",         builtin_min         },
     { BUILTIN_STRLEN,      "strLen",      builtin_strlen      },
     { BUILTIN_SUBSTR,      "substr",      builtin_substr      },
     { BUILTIN_TOUPPER,     "toUpperCase", builtin_toupper     },
@@ -610,25 +409,13 @@ static const StdlibEntry STDLIB_TABLE[] = {
     { BUILTIN_STRREPLACE,  "strReplace",  builtin_strreplace  },
     { BUILTIN_STRTRIM,     "strTrim",     builtin_strtrim     },
     { BUILTIN_STRSPLIT,    "strSplit",    builtin_strsplit    },
-    { BUILTIN_TO_INT,      "toInt",       builtin_to_int      },
-    { BUILTIN_TO_FLOAT,    "toFloat",     builtin_to_float    },
-    { BUILTIN_TO_STRING,   "toString",    builtin_to_string   },
-    { BUILTIN_TO_BOOL,     "toBool",      builtin_to_bool     },
-    { BUILTIN_TYPEOF,      "typeOf",      builtin_typeof      },
     { BUILTIN_EXIT,        "exit",        builtin_exit        },
-    { BUILTIN_ASSERT,      "assert",      builtin_assert      },
-    { BUILTIN_IS_NULL,     "isNull",      builtin_is_null     },
-    { BUILTIN_IS_INT,      "isInt",       builtin_is_int      },
-    { BUILTIN_IS_FLOAT,    "isFloat",     builtin_is_float    },
-    { BUILTIN_IS_STRING,   "isString",    builtin_is_string   },
-    { BUILTIN_IS_BOOL,     "isBool",      builtin_is_bool     },
     { BUILTIN_ARRAY_NEW,   "arrayNew",    builtin_array_new   },
     { BUILTIN_ARRAY_PUSH,  "arrayPush",   builtin_array_push  },
     { BUILTIN_ARRAY_POP,   "arrayPop",    builtin_array_pop   },
     { BUILTIN_ARRAY_GET,   "arrayGet",    builtin_array_get   },
     { BUILTIN_ARRAY_SET,   "arraySet",    builtin_array_set   },
     { BUILTIN_ARRAY_LEN,   "arrayLen",    builtin_array_len   },
-    { BUILTIN_TIME_NOW,    "timeNow",     builtin_time_now    },
     { BUILTIN_RANDOM,      "random",      builtin_random      },
 };
 

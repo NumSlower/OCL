@@ -27,11 +27,9 @@ VM *vm_create(Bytecode *bytecode) {
 void vm_free(VM *vm) {
     if (!vm) return;
 
-    /* Drain the value stack */
     for (size_t i = 0; i < vm->stack_top; i++)
         value_free(vm->stack[i]);
 
-    /* Free every call frame */
     for (size_t i = 0; i < vm->frame_top; i++) {
         CallFrame *f = &vm->frames[i];
         for (size_t j = 0; j < f->local_count; j++)
@@ -40,7 +38,6 @@ void vm_free(VM *vm) {
     }
     ocl_free(vm->frames);
 
-    /* Free globals */
     for (size_t i = 0; i < vm->global_count; i++)
         value_free(vm->globals[i]);
     ocl_free(vm->globals);
@@ -76,7 +73,6 @@ Value vm_pop(VM *vm) {
     return vm->stack[--vm->stack_top];
 }
 
-/* Free and discard the top value. */
 static void vm_pop_free(VM *vm) { value_free(vm_pop(vm)); }
 
 Value vm_peek(VM *vm, size_t depth) {
@@ -92,7 +88,6 @@ static CallFrame *current_frame(VM *vm) {
     return vm->frame_top > 0 ? &vm->frames[vm->frame_top - 1] : NULL;
 }
 
-/* Grow a frame's locals[] if `idx` would be out of range. */
 static void ensure_local(VM *vm, CallFrame *f, uint32_t idx) {
     (void)vm;
     if (idx < (uint32_t)f->local_capacity) {
@@ -108,7 +103,6 @@ static void ensure_local(VM *vm, CallFrame *f, uint32_t idx) {
     f->local_count    = (size_t)idx + 1;
 }
 
-/* Grow globals[] if `idx` would be out of range. */
 static void ensure_global(VM *vm, uint32_t idx) {
     if (idx < (uint32_t)vm->global_capacity) {
         if (idx >= (uint32_t)vm->global_count)
@@ -147,15 +141,13 @@ static void vm_error(VM *vm, SourceLocation loc, const char *fmt, ...) {
     vm->exit_code = 1;
 }
 
-/* Pop `n` args and push null — used for error recovery after a bad call. */
 static void discard_args_push_null(VM *vm, int n) {
     for (int i = 0; i < n; i++) vm_pop_free(vm);
     vm_push(vm, value_null());
 }
 
 /* ══════════════════════════════════════════════════════════════════
-   Built-in print / printf (live in the VM so they can access the
-   fast print path without going through stdlib_dispatch)
+   Built-in print / printf
    ══════════════════════════════════════════════════════════════════ */
 
 static Value *pop_n(VM *vm, int n) {
@@ -197,7 +189,6 @@ static void builtin_printf(VM *vm, int argc) {
 
     Value *args = pop_n(vm, argc);
 
-    /* If the first arg is not a string, fall back to just printing it. */
     if (args[0].type != VALUE_STRING) {
         printf("%s", value_to_string(args[0]));
         free_n(args, argc);
@@ -210,9 +201,6 @@ static void builtin_printf(VM *vm, int argc) {
 
     for (size_t i = 0; fmt[i]; i++) {
         if (fmt[i] == '\\' && fmt[i + 1]) {
-            /* Note: the lexer already resolves escape sequences in string
-               literals, so this branch only fires for strings that were
-               assembled at runtime (e.g. from strReplace or user input). */
             switch (fmt[++i]) {
                 case 'n': putchar('\n'); break;
                 case 't': putchar('\t'); break;
@@ -223,7 +211,6 @@ static void builtin_printf(VM *vm, int argc) {
         } else if (fmt[i] == '%' && fmt[i + 1]) {
             char spec = fmt[++i];
             if (arg_idx >= argc && spec != '%') {
-                /* More specifiers than arguments — print literally. */
                 putchar('%');
                 putchar(spec);
                 continue;
@@ -277,7 +264,6 @@ static void builtin_printf(VM *vm, int argc) {
    Arithmetic / comparison helpers (macros)
    ══════════════════════════════════════════════════════════════════ */
 
-/* Both operands must be numeric (Int or Float). */
 #define ARITH_OP(loc, INT_EXPR, FLOAT_EXPR)                                     \
 do {                                                                            \
     Value _b = vm_pop(vm); Value _a = vm_pop(vm);                               \
@@ -329,7 +315,6 @@ int vm_execute(VM *vm) {
         return 1;
     }
 
-/* Shorthand for the current instruction's source location. */
 #define LOC (ins.location)
 
     while (!vm->halted &&
@@ -339,7 +324,6 @@ int vm_execute(VM *vm) {
 
         switch (ins.opcode) {
 
-        /* ── Constants ──────────────────────────────────────────── */
         case OP_PUSH_CONST:
             if (ins.operand1 >= (uint32_t)vm->bytecode->constant_count) {
                 vm_error(vm, LOC, "invalid constant index %u (pool size=%zu)",
@@ -360,7 +344,6 @@ int vm_execute(VM *vm) {
             vm_pop_free(vm);
             break;
 
-        /* ── Local variable access ──────────────────────────────── */
         case OP_LOAD_VAR: {
             CallFrame *f = current_frame(vm);
             if (!f) {
@@ -392,7 +375,6 @@ int vm_execute(VM *vm) {
                 break;
             }
             Value raw = vm_pop(vm);
-            /* Promote borrowed strings to owned before storing. */
             Value v = (raw.type == VALUE_STRING && !raw.owned)
                       ? value_string_copy(raw.data.string_val)
                       : raw;
@@ -402,7 +384,6 @@ int vm_execute(VM *vm) {
             break;
         }
 
-        /* ── Global variable access ─────────────────────────────── */
         case OP_LOAD_GLOBAL:
             ensure_global(vm, ins.operand1);
             {
@@ -427,7 +408,6 @@ int vm_execute(VM *vm) {
             break;
         }
 
-        /* ── Arithmetic ─────────────────────────────────────────── */
         case OP_ADD: {
             Value b = vm_pop(vm);
             Value a = vm_pop(vm);
@@ -543,7 +523,6 @@ int vm_execute(VM *vm) {
             break;
         }
 
-        /* ── Comparison ─────────────────────────────────────────── */
         case OP_EQUAL: {
             Value b = vm_pop(vm);
             Value a = vm_pop(vm);
@@ -607,8 +586,6 @@ int vm_execute(VM *vm) {
         case OP_GREATER:       CMP_OP(LOC, a > b,  a > b);  break;
         case OP_GREATER_EQUAL: CMP_OP(LOC, a >= b, a >= b); break;
 
-        /* Fallback non-short-circuit AND/OR (codegen now emits jump sequences,
-           but these handle any pre-compiled bytecode that still uses them). */
         case OP_AND: {
             Value b = vm_pop(vm); Value a = vm_pop(vm);
             bool  r = value_is_truthy(a) && value_is_truthy(b);
@@ -624,7 +601,6 @@ int vm_execute(VM *vm) {
             break;
         }
 
-        /* ── Control flow ───────────────────────────────────────── */
         case OP_JUMP:
             vm->pc = ins.operand1;
             continue;
@@ -645,7 +621,6 @@ int vm_execute(VM *vm) {
             break;
         }
 
-        /* ── Function calls ─────────────────────────────────────── */
         case OP_CALL: {
             uint32_t fidx = ins.operand1;
             uint32_t argc = ins.operand2;
@@ -672,7 +647,6 @@ int vm_execute(VM *vm) {
                 break;
             }
 
-            /* Grow the frame stack if needed (hard cap enforced). */
             if (vm->frame_top >= VM_FRAMES_MAX) {
                 vm_error(vm, LOC,
                          "call stack overflow (max %d frames, called '%s')",
@@ -698,7 +672,6 @@ int vm_execute(VM *vm) {
             for (int i = 0; i < local_cap; i++)
                 frame->locals[i] = value_null();
 
-            /* Transfer arguments (rightmost first). */
             for (int i = (int)argc - 1; i >= 0; i--) {
                 Value popped = vm_pop(vm);
                 frame->locals[i] = (popped.type == VALUE_STRING && !popped.owned)
@@ -714,7 +687,6 @@ int vm_execute(VM *vm) {
             Value ret_raw = vm_pop(vm);
 
             if (vm->frame_top == 0) {
-                /* Returning from the top level — treat as exit. */
                 if (ret_raw.type == VALUE_INT)
                     vm->exit_code = (int)ret_raw.data.int_val;
                 value_free(ret_raw);
@@ -722,7 +694,6 @@ int vm_execute(VM *vm) {
                 break;
             }
 
-            /* Ensure the returned value is heap-owned before the frame dies. */
             Value ret = (ret_raw.type == VALUE_STRING && !ret_raw.owned)
                         ? value_string_copy(ret_raw.data.string_val)
                         : ret_raw;
@@ -730,12 +701,10 @@ int vm_execute(VM *vm) {
             CallFrame *frame = &vm->frames[--vm->frame_top];
             uint32_t   ret_ip = frame->return_ip;
 
-            /* Free locals. */
             for (size_t i = 0; i < frame->local_count; i++)
                 value_free(frame->locals[i]);
             ocl_free(frame->locals);
 
-            /* Unwind the value stack to the caller's base. */
             while (vm->stack_top > frame->stack_base)
                 vm_pop_free(vm);
 
@@ -753,7 +722,6 @@ int vm_execute(VM *vm) {
             }
             break;
 
-        /* ── Built-in dispatch ──────────────────────────────────── */
         case OP_CALL_BUILTIN: {
             int bid  = (int)ins.operand1;
             int argc = (int)ins.operand2;
@@ -770,58 +738,11 @@ int vm_execute(VM *vm) {
             break;
         }
 
-        /* ── Type coercions ─────────────────────────────────────── */
-        case OP_TO_INT: {
-            Value a = vm_pop(vm);
-            int64_t r;
-            switch (a.type) {
-                case VALUE_INT:    r = a.data.int_val;                                     break;
-                case VALUE_FLOAT:  r = (int64_t)a.data.float_val;                         break;
-                case VALUE_BOOL:   r = a.data.bool_val ? 1 : 0;                           break;
-                case VALUE_CHAR:   r = (int64_t)(unsigned char)a.data.char_val;           break;
-                case VALUE_STRING: r = a.data.string_val
-                                       ? (int64_t)strtoll(a.data.string_val, NULL, 10)
-                                       : 0;                                                break;
-                default:           r = 0; break;
-            }
-            value_free(a);
-            vm_push(vm, value_int(r));
-            break;
-        }
-
-        case OP_TO_FLOAT: {
-            Value a = vm_pop(vm);
-            double r;
-            switch (a.type) {
-                case VALUE_FLOAT:  r = a.data.float_val;                                   break;
-                case VALUE_INT:    r = (double)a.data.int_val;                             break;
-                case VALUE_BOOL:   r = a.data.bool_val ? 1.0 : 0.0;                       break;
-                case VALUE_CHAR:   r = (double)(unsigned char)a.data.char_val;             break;
-                case VALUE_STRING: r = a.data.string_val
-                                       ? strtod(a.data.string_val, NULL)
-                                       : 0.0;                                              break;
-                default:           r = 0.0; break;
-            }
-            value_free(a);
-            vm_push(vm, value_float(r));
-            break;
-        }
-
-        case OP_TO_STRING: {
-            Value a     = vm_pop(vm);
-            char *owned = ocl_strdup(value_to_string(a));  /* copy from static pool */
-            value_free(a);
-            vm_push(vm, value_string(owned));
-            break;
-        }
-
-        /* ── Array opcodes ──────────────────────────────────────── */
         case OP_ARRAY_NEW: {
             uint32_t count = ins.operand1;
             OclArray *arr  = ocl_array_new(count > 0 ? (size_t)count : 8);
 
             if (count > 0) {
-                /* Pop elements in order (they were pushed left-to-right). */
                 Value *tmp = ocl_malloc((size_t)count * sizeof(Value));
                 for (uint32_t i = count; i-- > 0; )
                     tmp[i] = vm_pop(vm);
@@ -833,7 +754,7 @@ int vm_execute(VM *vm) {
             }
 
             vm_push(vm, value_array(arr));
-            ocl_array_release(arr);  /* drop creator reference; stack owns it now */
+            ocl_array_release(arr);
             break;
         }
 
@@ -841,7 +762,6 @@ int vm_execute(VM *vm) {
             Value idx_v = vm_pop(vm);
             Value arr_v = vm_pop(vm);
 
-            /* String character access: s[i] → Char */
             if (arr_v.type == VALUE_STRING) {
                 if (idx_v.type != VALUE_INT) {
                     vm_error(vm, LOC, "string index must be Int, got %s",
@@ -945,7 +865,6 @@ int vm_execute(VM *vm) {
             break;
         }
 
-        /* ── Unknown opcode ─────────────────────────────────────── */
         default:
             vm_error(vm, LOC, "unknown opcode %d at ip=%u",
                      (int)ins.opcode, vm->pc);
