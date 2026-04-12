@@ -1,0 +1,43 @@
+func Array args() {
+    return __terminalArgs();
+}
+
+func Int argCount() {
+    return arrayLen(args());
+}
+
+func String arg(index:Int) {
+    return arrayGet(args(), index);
+}
+
+func Int runExec(program:String, processArgs:Array) {
+    return __terminalExec(program, processArgs);
+}
+
+func Int run(command:String) {
+    return __terminalShell(command);
+}
+
+func Array capture(program:String, processArgs:Array) {
+    return __terminalCapture(program, processArgs);
+}
+
+func Int runShell(command:String) {
+    return __terminalShell(command);
+}
+
+func Array captureShell(command:String) {
+    return __terminalShellCapture(command);
+}
+
+func Int status(result:Array) {
+    return arrayGet(result, 0);
+}
+
+func String output(result:Array) {
+    return arrayGet(result, 1);
+}
+
+func String os() {
+    return __terminalOs();
+}

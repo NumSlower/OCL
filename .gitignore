@@ -1,0 +1,13 @@
+avage_time.ocl
+/Testfiles
+/build
+/out
+*.elf
+*.exe
+*.o
+*.obj
+*.a
+*.lib
+*.dll
+*.so
+*.dylib

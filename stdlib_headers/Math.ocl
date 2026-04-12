@@ -1,0 +1,1278 @@
+/# 
+  Math.ocl
+  Comprehensive math toolkit for OCL.
+#/
+
+Let MATH_PI:Float = 3.141592653589793;
+Let MATH_TAU:Float = 6.283185307179586;
+Let MATH_E:Float = 2.718281828459045;
+Let MATH_HALF_PI:Float = 1.5707963267948966;
+Let MATH_EPSILON:Float = 0.000001;
+Let MATH_GOLDEN_RATIO:Float = 1.618033988749895;
+Let MATH_EULER_MASCHERONI:Float = 0.5772156649015329;
+
+struct Point2 {
+    x:Float;
+    y:Float;
+}
+
+struct Vector2 {
+    x:Float;
+    y:Float;
+}
+
+struct Matrix2 {
+    m11:Float;
+    m12:Float;
+    m21:Float;
+    m22:Float;
+}
+
+struct ComplexNumber {
+    real:Float;
+    imaginary:Float;
+}
+
+func Float absFloat(value:Float) {
+    if (value < 0.0) {
+        return -value;
+    }
+    return value;
+}
+
+func int absInt(value:Int) {
+    if (value < 0) {
+        return -value;
+    }
+    return value;
+}
+
+func Float maxFloat(a:Float, b:Float) {
+    if (a > b) {
+        return a;
+    }
+    return b;
+}
+
+func Float minFloat(a:Float, b:Float) {
+    if (a < b) {
+        return a;
+    }
+    return b;
+}
+
+func bool approxEqual(leftValue:Float, rightValue:Float, tolerance:Float) {
+    return absFloat(leftValue - rightValue) <= tolerance;
+}
+
+func Float reciprocal(value:Float) {
+    return 1.0 / value;
+}
+
+func Float square(value:Float) {
+    return value * value;
+}
+
+func Float cube(value:Float) {
+    return value * value * value;
+}
+
+func Float positiveModulo(value:Float, modulus:Float) {
+    Let remainder:Float = value - floor(value / modulus) * modulus;
+    if (remainder < 0.0) {
+        remainder = remainder + modulus;
+    }
+    return remainder;
+}
+
+func int positiveModuloInt(value:Int, modulus:Int) {
+    Let remainder:Int = value % modulus;
+    if (remainder < 0) {
+        remainder = remainder + modulus;
+    }
+    return remainder;
+}
+
+func Float clampFloat(value:Float, lowerBound:Float, upperBound:Float) {
+    if (value < lowerBound) {
+        return lowerBound;
+    }
+    if (value > upperBound) {
+        return upperBound;
+    }
+    return value;
+}
+
+func int clampInt(value:Int, lowerBound:Int, upperBound:Int) {
+    if (value < lowerBound) {
+        return lowerBound;
+    }
+    if (value > upperBound) {
+        return upperBound;
+    }
+    return value;
+}
+
+func int signInt(value:Int) {
+    if (value > 0) {
+        return 1;
+    }
+    if (value < 0) {
+        return -1;
+    }
+    return 0;
+}
+
+func Float signFloat(value:Float) {
+    if (value > 0.0) {
+        return 1.0;
+    }
+    if (value < 0.0) {
+        return -1.0;
+    }
+    return 0.0;
+}
+
+func Float percentOf(baseValue:Float, percentValue:Float) {
+    return baseValue * (percentValue / 100.0);
+}
+
+func Float permilleOf(baseValue:Float, permilleValue:Float) {
+    return baseValue * (permilleValue / 1000.0);
+}
+
+func Float partsPerMillionOf(baseValue:Float, ppmValue:Float) {
+    return baseValue * (ppmValue / 1000000.0);
+}
+
+func Float partsPerBillionOf(baseValue:Float, ppbValue:Float) {
+    return baseValue * (ppbValue / 1000000000.0);
+}
+
+func Float partsPerTrillionOf(baseValue:Float, pptValue:Float) {
+    return baseValue * (pptValue / 1000000000000.0);
+}
+
+func Float degreesToRadians(angleDegrees:Float) {
+    return angleDegrees * (MATH_PI / 180.0);
+}
+
+func Float radiansToDegrees(angleRadians:Float) {
+    return angleRadians * (180.0 / MATH_PI);
+}
+
+func Float degreesToGradians(angleDegrees:Float) {
+    return angleDegrees * (400.0 / 360.0);
+}
+
+func Float gradiansToDegrees(angleGradians:Float) {
+    return angleGradians * (360.0 / 400.0);
+}
+
+func Float degreesMinutesSecondsToDegrees(degreesPart:Float, minutesPart:Float, secondsPart:Float) {
+    return degreesPart + (minutesPart / 60.0) + (secondsPart / 3600.0);
+}
+
+func Float nthRoot(value:Float, rootDegree:Float) {
+    return pow(value, 1.0 / rootDegree);
+}
+
+func Float cubeRoot(value:Float) {
+    return nthRoot(value, 3.0);
+}
+
+func Float fourthRoot(value:Float) {
+    return nthRoot(value, 4.0);
+}
+
+func Float expApprox(value:Float) {
+    if (value < 0.0) {
+        return 1.0 / expApprox(-value);
+    }
+    Let term:Float = 1.0;
+    Let sum:Float = 1.0;
+    Let index:Int = 1;
+    while (index <= 24) {
+        term = term * (value / toFloat(index));
+        sum = sum + term;
+        index = index + 1;
+    }
+    return sum;
+}
+
+func Float lnApprox(value:Float) {
+    if (value <= 0.0) {
+        return 0.0;
+    }
+
+    Let scaledValue:Float = value;
+    Let shifts:Int = 0;
+
+    while (scaledValue > 1.5) {
+        scaledValue = scaledValue / MATH_E;
+        shifts = shifts + 1;
+    }
+
+    while (scaledValue < 0.75) {
+        scaledValue = scaledValue * MATH_E;
+        shifts = shifts - 1;
+    }
+
+    Let ratio:Float = (scaledValue - 1.0) / (scaledValue + 1.0);
+    Let ratioSquared:Float = ratio * ratio;
+    Let term:Float = ratio;
+    Let sum:Float = 0.0;
+    Let divisor:Int = 1;
+    Let index:Int = 0;
+
+    while (index < 18) {
+        sum = sum + (term / toFloat(divisor));
+        term = term * ratioSquared;
+        divisor = divisor + 2;
+        index = index + 1;
+    }
+
+    return 2.0 * sum + toFloat(shifts);
+}
+
+func Float atanApprox(value:Float) {
+    if (value > 1.0) {
+        return MATH_HALF_PI - atanApprox(1.0 / value);
+    }
+    if (value < -1.0) {
+        return -MATH_HALF_PI - atanApprox(1.0 / value);
+    }
+
+    Let sum:Float = 0.0;
+    Let power:Float = value;
+    Let sign:Float = 1.0;
+    Let divisor:Int = 1;
+    Let index:Int = 0;
+
+    while (index < 18) {
+        sum = sum + sign * (power / toFloat(divisor));
+        power = power * value * value;
+        divisor = divisor + 2;
+        sign = -sign;
+        index = index + 1;
+    }
+
+    return sum;
+}
+
+func Float atan2Approx(yValue:Float, xValue:Float) {
+    if (xValue > 0.0) {
+        return atanApprox(yValue / xValue);
+    }
+    if (xValue < 0.0 && yValue >= 0.0) {
+        return atanApprox(yValue / xValue) + MATH_PI;
+    }
+    if (xValue < 0.0 && yValue < 0.0) {
+        return atanApprox(yValue / xValue) - MATH_PI;
+    }
+    if (xValue == 0.0 && yValue > 0.0) {
+        return MATH_HALF_PI;
+    }
+    if (xValue == 0.0 && yValue < 0.0) {
+        return -MATH_HALF_PI;
+    }
+    return 0.0;
+}
+
+func Float asinApprox(value:Float) {
+    Let clampedValue:Float = clampFloat(value, -1.0, 1.0);
+    return atan2Approx(clampedValue, sqrt(1.0 - clampedValue * clampedValue));
+}
+
+func Float acosApprox(value:Float) {
+    return MATH_HALF_PI - asinApprox(value);
+}
+
+func int gcdInt(a:Int, b:Int) {
+    Let leftValue:Int = absInt(a);
+    Let rightValue:Int = absInt(b);
+    while (rightValue != 0) {
+        Let temp:Int = rightValue;
+        rightValue = leftValue % rightValue;
+        leftValue = temp;
+    }
+    return leftValue;
+}
+
+func int lcmInt(a:Int, b:Int) {
+    if (a == 0 || b == 0) {
+        return 0;
+    }
+    return absInt((a / gcdInt(a, b)) * b);
+}
+
+func int factorialInt(value:Int) {
+    if (value < 0) {
+        return -1;
+    }
+    Let result:Int = 1;
+    Let index:Int = 2;
+    while (index <= value) {
+        result = result * index;
+        index = index + 1;
+    }
+    return result;
+}
+
+func int permutationCount(totalItems:Int, chosenItems:Int) {
+    if (chosenItems < 0 || chosenItems > totalItems) {
+        return 0;
+    }
+    return factorialInt(totalItems) / factorialInt(totalItems - chosenItems);
+}
+
+func int combinationCount(totalItems:Int, chosenItems:Int) {
+    if (chosenItems < 0 || chosenItems > totalItems) {
+        return 0;
+    }
+    Let reducedChosen:Int = chosenItems;
+    if (reducedChosen > totalItems - reducedChosen) {
+        reducedChosen = totalItems - reducedChosen;
+    }
+    Let numerator:Int = 1;
+    Let denominator:Int = 1;
+    Let index:Int = 1;
+    while (index <= reducedChosen) {
+        numerator = numerator * (totalItems - reducedChosen + index);
+        denominator = denominator * index;
+        index = index + 1;
+    }
+    return numerator / denominator;
+}
+
+func bool isPrimeInt(value:Int) {
+    if (value < 2) {
+        return false;
+    }
+    if (value == 2) {
+        return true;
+    }
+    if (value % 2 == 0) {
+        return false;
+    }
+    Let divisor:Int = 3;
+    while (divisor * divisor <= value) {
+        if (value % divisor == 0) {
+            return false;
+        }
+        divisor = divisor + 2;
+    }
+    return true;
+}
+
+func int fibonacciInt(indexValue:Int) {
+    if (indexValue <= 0) {
+        return 0;
+    }
+    if (indexValue == 1) {
+        return 1;
+    }
+    Let previous:Int = 0;
+    Let current:Int = 1;
+    Let index:Int = 2;
+    while (index <= indexValue) {
+        Let nextValue:Int = previous + current;
+        previous = current;
+        current = nextValue;
+        index = index + 1;
+    }
+    return current;
+}
+
+func Float discriminant(a:Float, b:Float, c:Float) {
+    return b * b - 4.0 * a * c;
+}
+
+func bool inOpenInterval(value:Float, lowerBound:Float, upperBound:Float) {
+    return value > lowerBound && value < upperBound;
+}
+
+func bool inClosedInterval(value:Float, lowerBound:Float, upperBound:Float) {
+    return value >= lowerBound && value <= upperBound;
+}
+
+func Float proportionalValue(scaleConstant:Float, xValue:Float) {
+    return scaleConstant * xValue;
+}
+
+func Float linearInterpolate(startValue:Float, endValue:Float, tValue:Float) {
+    return startValue + (endValue - startValue) * tValue;
+}
+
+func Point2 makePoint2(xValue:Float, yValue:Float) {
+    return Point2{ x: xValue, y: yValue };
+}
+
+func Float distanceBetweenPoints(firstPoint:Point2, secondPoint:Point2) {
+    Let deltaX:Float = secondPoint.x - firstPoint.x;
+    Let deltaY:Float = secondPoint.y - firstPoint.y;
+    return sqrt(deltaX * deltaX + deltaY * deltaY);
+}
+
+func Point2 midpointBetweenPoints(firstPoint:Point2, secondPoint:Point2) {
+    return Point2{
+        x: (firstPoint.x + secondPoint.x) / 2.0,
+        y: (firstPoint.y + secondPoint.y) / 2.0
+    };
+}
+
+func Float slopeBetweenPoints(firstPoint:Point2, secondPoint:Point2) {
+    return (secondPoint.y - firstPoint.y) / (secondPoint.x - firstPoint.x);
+}
+
+func Float angleFromPointToPoint(firstPoint:Point2, secondPoint:Point2) {
+    return atan2Approx(secondPoint.y - firstPoint.y, secondPoint.x - firstPoint.x);
+}
+
+func bool arePerpendicularSlopes(firstSlope:Float, secondSlope:Float, tolerance:Float) {
+    return approxEqual(firstSlope * secondSlope, -1.0, tolerance);
+}
+
+func Float circleCircumference(radius:Float) {
+    return 2.0 * MATH_PI * radius;
+}
+
+func Float circleArea(radius:Float) {
+    return MATH_PI * radius * radius;
+}
+
+func Float arcLength(radius:Float, angleRadians:Float) {
+    return radius * angleRadians;
+}
+
+func Float sectorArea(radius:Float, angleRadians:Float) {
+    return 0.5 * radius * radius * angleRadians;
+}
+
+func Float rectangleArea(width:Float, height:Float) {
+    return width * height;
+}
+
+func Float triangleArea(baseLength:Float, height:Float) {
+    return 0.5 * baseLength * height;
+}
+
+func Float heronTriangleArea(sideA:Float, sideB:Float, sideC:Float) {
+    Let semiperimeter:Float = (sideA + sideB + sideC) / 2.0;
+    return sqrt(semiperimeter *
+                (semiperimeter - sideA) *
+                (semiperimeter - sideB) *
+                (semiperimeter - sideC));
+}
+
+func Float sphereSurfaceArea(radius:Float) {
+    return 4.0 * MATH_PI * radius * radius;
+}
+
+func Float sphereVolume(radius:Float) {
+    return (4.0 / 3.0) * MATH_PI * radius * radius * radius;
+}
+
+func Vector2 makeVector2(xValue:Float, yValue:Float) {
+    return Vector2{ x: xValue, y: yValue };
+}
+
+func Vector2 vectorAdd(firstVector:Vector2, secondVector:Vector2) {
+    return Vector2{
+        x: firstVector.x + secondVector.x,
+        y: firstVector.y + secondVector.y
+    };
+}
+
+func Vector2 vectorSubtract(firstVector:Vector2, secondVector:Vector2) {
+    return Vector2{
+        x: firstVector.x - secondVector.x,
+        y: firstVector.y - secondVector.y
+    };
+}
+
+func Vector2 vectorScale(vectorValue:Vector2, scalarValue:Float) {
+    return Vector2{
+        x: vectorValue.x * scalarValue,
+        y: vectorValue.y * scalarValue
+    };
+}
+
+func Float dotProduct2(firstVector:Vector2, secondVector:Vector2) {
+    return firstVector.x * secondVector.x + firstVector.y * secondVector.y;
+}
+
+func Float crossProduct2(firstVector:Vector2, secondVector:Vector2) {
+    return firstVector.x * secondVector.y - firstVector.y * secondVector.x;
+}
+
+func Float vectorMagnitude2(vectorValue:Vector2) {
+    return sqrt(dotProduct2(vectorValue, vectorValue));
+}
+
+func Vector2 normalizeVector2(vectorValue:Vector2) {
+    Let magnitude:Float = vectorMagnitude2(vectorValue);
+    if (magnitude == 0.0) {
+        return Vector2{ x: 0.0, y: 0.0 };
+    }
+    return vectorScale(vectorValue, 1.0 / magnitude);
+}
+
+func Float angleBetweenVectors(firstVector:Vector2, secondVector:Vector2) {
+    Let magnitudeProduct:Float = vectorMagnitude2(firstVector) * vectorMagnitude2(secondVector);
+    if (magnitudeProduct == 0.0) {
+        return 0.0;
+    }
+    Let cosineValue:Float = clampFloat(dotProduct2(firstVector, secondVector) / magnitudeProduct, -1.0, 1.0);
+    return acosApprox(cosineValue);
+}
+
+func Matrix2 makeMatrix2(m11:Float, m12:Float, m21:Float, m22:Float) {
+    return Matrix2{ m11: m11, m12: m12, m21: m21, m22: m22 };
+}
+
+func Float determinant2(matrixValue:Matrix2) {
+    return matrixValue.m11 * matrixValue.m22 - matrixValue.m12 * matrixValue.m21;
+}
+
+func Matrix2 transpose2(matrixValue:Matrix2) {
+    return Matrix2{
+        m11: matrixValue.m11,
+        m12: matrixValue.m21,
+        m21: matrixValue.m12,
+        m22: matrixValue.m22
+    };
+}
+
+func Matrix2 matrixAdd2(firstMatrix:Matrix2, secondMatrix:Matrix2) {
+    return Matrix2{
+        m11: firstMatrix.m11 + secondMatrix.m11,
+        m12: firstMatrix.m12 + secondMatrix.m12,
+        m21: firstMatrix.m21 + secondMatrix.m21,
+        m22: firstMatrix.m22 + secondMatrix.m22
+    };
+}
+
+func Matrix2 matrixMultiply2(firstMatrix:Matrix2, secondMatrix:Matrix2) {
+    return Matrix2{
+        m11: firstMatrix.m11 * secondMatrix.m11 + firstMatrix.m12 * secondMatrix.m21,
+        m12: firstMatrix.m11 * secondMatrix.m12 + firstMatrix.m12 * secondMatrix.m22,
+        m21: firstMatrix.m21 * secondMatrix.m11 + firstMatrix.m22 * secondMatrix.m21,
+        m22: firstMatrix.m21 * secondMatrix.m12 + firstMatrix.m22 * secondMatrix.m22
+    };
+}
+
+func Vector2 matrixVectorMultiply2(matrixValue:Matrix2, vectorValue:Vector2) {
+    return Vector2{
+        x: matrixValue.m11 * vectorValue.x + matrixValue.m12 * vectorValue.y,
+        y: matrixValue.m21 * vectorValue.x + matrixValue.m22 * vectorValue.y
+    };
+}
+
+func Matrix2 inverse2(matrixValue:Matrix2) {
+    Let determinantValue:Float = determinant2(matrixValue);
+    if (approxEqual(determinantValue, 0.0, MATH_EPSILON)) {
+        return Matrix2{ m11: 0.0, m12: 0.0, m21: 0.0, m22: 0.0 };
+    }
+    Let inverseScale:Float = 1.0 / determinantValue;
+    return Matrix2{
+        m11:  matrixValue.m22 * inverseScale,
+        m12: -matrixValue.m12 * inverseScale,
+        m21: -matrixValue.m21 * inverseScale,
+        m22:  matrixValue.m11 * inverseScale
+    };
+}
+
+func Array copyArray(values:Array) {
+    Let copiedValues:Array = arrayNew(arrayLen(values));
+    Let index:Int = 0;
+    while (index < arrayLen(values)) {
+        arraySet(copiedValues, index, arrayGet(values, index));
+        index = index + 1;
+    }
+    return copiedValues;
+}
+
+func Float sumArray(values:Array) {
+    Let sumValue:Float = 0.0;
+    Let index:Int = 0;
+    while (index < arrayLen(values)) {
+        sumValue = sumValue + toFloat(arrayGet(values, index));
+        index = index + 1;
+    }
+    return sumValue;
+}
+
+func Float productArray(values:Array) {
+    Let productValue:Float = 1.0;
+    Let index:Int = 0;
+    while (index < arrayLen(values)) {
+        productValue = productValue * toFloat(arrayGet(values, index));
+        index = index + 1;
+    }
+    return productValue;
+}
+
+func Float minArray(values:Array) {
+    if (arrayLen(values) == 0) {
+        return 0.0;
+    }
+    Let bestValue:Float = toFloat(arrayGet(values, 0));
+    Let index:Int = 1;
+    while (index < arrayLen(values)) {
+        Let currentValue:Float = toFloat(arrayGet(values, index));
+        if (currentValue < bestValue) {
+            bestValue = currentValue;
+        }
+        index = index + 1;
+    }
+    return bestValue;
+}
+
+func Float maxArray(values:Array) {
+    if (arrayLen(values) == 0) {
+        return 0.0;
+    }
+    Let bestValue:Float = toFloat(arrayGet(values, 0));
+    Let index:Int = 1;
+    while (index < arrayLen(values)) {
+        Let currentValue:Float = toFloat(arrayGet(values, index));
+        if (currentValue > bestValue) {
+            bestValue = currentValue;
+        }
+        index = index + 1;
+    }
+    return bestValue;
+}
+
+func Array sortArrayAscending(values:Array) {
+    Let sortedValues:Array = copyArray(values);
+    Let length:Int = arrayLen(sortedValues);
+    Let outerIndex:Int = 0;
+    while (outerIndex < length) {
+        Let innerIndex:Int = 0;
+        while (innerIndex + 1 < length - outerIndex) {
+            Let leftValue:Float = toFloat(arrayGet(sortedValues, innerIndex));
+            Let rightValue:Float = toFloat(arrayGet(sortedValues, innerIndex + 1));
+            if (leftValue > rightValue) {
+                declare tempValue;
+                tempValue = arrayGet(sortedValues, innerIndex);
+                arraySet(sortedValues, innerIndex, arrayGet(sortedValues, innerIndex + 1));
+                arraySet(sortedValues, innerIndex + 1, tempValue);
+            }
+            innerIndex = innerIndex + 1;
+        }
+        outerIndex = outerIndex + 1;
+    }
+    return sortedValues;
+}
+
+func Float meanArray(values:Array) {
+    if (arrayLen(values) == 0) {
+        return 0.0;
+    }
+    return sumArray(values) / toFloat(arrayLen(values));
+}
+
+func Float medianArray(values:Array) {
+    if (arrayLen(values) == 0) {
+        return 0.0;
+    }
+    Let sortedValues:Array = sortArrayAscending(values);
+    Let length:Int = arrayLen(sortedValues);
+    Let middleIndex:Int = length / 2;
+    if (length % 2 == 1) {
+        return toFloat(arrayGet(sortedValues, middleIndex));
+    }
+    return (toFloat(arrayGet(sortedValues, middleIndex - 1)) +
+            toFloat(arrayGet(sortedValues, middleIndex))) / 2.0;
+}
+
+func Float midRange(values:Array) {
+    return (minArray(values) + maxArray(values)) / 2.0;
+}
+
+func Float variancePopulation(values:Array) {
+    if (arrayLen(values) == 0) {
+        return 0.0;
+    }
+    Let averageValue:Float = meanArray(values);
+    Let squaredDifferenceSum:Float = 0.0;
+    Let index:Int = 0;
+    while (index < arrayLen(values)) {
+        Let difference:Float = toFloat(arrayGet(values, index)) - averageValue;
+        squaredDifferenceSum = squaredDifferenceSum + difference * difference;
+        index = index + 1;
+    }
+    return squaredDifferenceSum / toFloat(arrayLen(values));
+}
+
+func Float varianceSample(values:Array) {
+    if (arrayLen(values) <= 1) {
+        return 0.0;
+    }
+    Let averageValue:Float = meanArray(values);
+    Let squaredDifferenceSum:Float = 0.0;
+    Let index:Int = 0;
+    while (index < arrayLen(values)) {
+        Let difference:Float = toFloat(arrayGet(values, index)) - averageValue;
+        squaredDifferenceSum = squaredDifferenceSum + difference * difference;
+        index = index + 1;
+    }
+    return squaredDifferenceSum / toFloat(arrayLen(values) - 1);
+}
+
+func Float standardDeviationPopulation(values:Array) {
+    return sqrt(variancePopulation(values));
+}
+
+func Float standardDeviationSample(values:Array) {
+    return sqrt(varianceSample(values));
+}
+
+func Float zScore(value:Float, averageValue:Float, standardDeviationValue:Float) {
+    if (standardDeviationValue == 0.0) {
+        return 0.0;
+    }
+    return (value - averageValue) / standardDeviationValue;
+}
+
+func Float covariancePopulation(firstValues:Array, secondValues:Array) {
+    Let length:Int = min(arrayLen(firstValues), arrayLen(secondValues));
+    if (length == 0) {
+        return 0.0;
+    }
+    Let firstMean:Float = meanArray(firstValues);
+    Let secondMean:Float = meanArray(secondValues);
+    Let sumValue:Float = 0.0;
+    Let index:Int = 0;
+    while (index < length) {
+        sumValue = sumValue +
+            (toFloat(arrayGet(firstValues, index)) - firstMean) *
+            (toFloat(arrayGet(secondValues, index)) - secondMean);
+        index = index + 1;
+    }
+    return sumValue / toFloat(length);
+}
+
+func Float correlationCoefficient(firstValues:Array, secondValues:Array) {
+    Let covarianceValue:Float = covariancePopulation(firstValues, secondValues);
+    Let firstDeviation:Float = standardDeviationPopulation(firstValues);
+    Let secondDeviation:Float = standardDeviationPopulation(secondValues);
+    if (firstDeviation == 0.0 || secondDeviation == 0.0) {
+        return 0.0;
+    }
+    return covarianceValue / (firstDeviation * secondDeviation);
+}
+
+func int modeIntArray(values:Array) {
+    if (arrayLen(values) == 0) {
+        return 0;
+    }
+    Let bestValue:Int = toInt(arrayGet(values, 0));
+    Let bestCount:Int = 0;
+    Let outerIndex:Int = 0;
+    while (outerIndex < arrayLen(values)) {
+        Let currentValue:Int = toInt(arrayGet(values, outerIndex));
+        Let currentCount:Int = 0;
+        Let innerIndex:Int = 0;
+        while (innerIndex < arrayLen(values)) {
+            if (toInt(arrayGet(values, innerIndex)) == currentValue) {
+                currentCount = currentCount + 1;
+            }
+            innerIndex = innerIndex + 1;
+        }
+        if (currentCount > bestCount) {
+            bestCount = currentCount;
+            bestValue = currentValue;
+        }
+        outerIndex = outerIndex + 1;
+    }
+    return bestValue;
+}
+
+func Float quartileQ1(values:Array) {
+    if (arrayLen(values) == 0) {
+        return 0.0;
+    }
+    Let sortedValues:Array = sortArrayAscending(values);
+    Let halfLength:Int = arrayLen(sortedValues) / 2;
+    Let lowerHalf:Array = arrayNew(halfLength);
+    Let index:Int = 0;
+    while (index < halfLength) {
+        arraySet(lowerHalf, index, arrayGet(sortedValues, index));
+        index = index + 1;
+    }
+    return medianArray(lowerHalf);
+}
+
+func Float quartileQ2(values:Array) {
+    return medianArray(values);
+}
+
+func Float quartileQ3(values:Array) {
+    if (arrayLen(values) == 0) {
+        return 0.0;
+    }
+    Let sortedValues:Array = sortArrayAscending(values);
+    Let length:Int = arrayLen(sortedValues);
+    Let startIndex:Int = (length + 1) / 2;
+    Let upperLength:Int = length - startIndex;
+    Let upperHalf:Array = arrayNew(upperLength);
+    Let index:Int = 0;
+    while (index < upperLength) {
+        arraySet(upperHalf, index, arrayGet(sortedValues, startIndex + index));
+        index = index + 1;
+    }
+    return medianArray(upperHalf);
+}
+
+func Float probabilityIntersectionIndependent(probabilityA:Float, probabilityB:Float) {
+    return probabilityA * probabilityB;
+}
+
+func Float probabilityUnion(probabilityA:Float, probabilityB:Float, probabilityIntersectionValue:Float) {
+    return probabilityA + probabilityB - probabilityIntersectionValue;
+}
+
+func Float conditionalProbability(probabilityIntersectionValue:Float, probabilityGivenValue:Float) {
+    if (probabilityGivenValue == 0.0) {
+        return 0.0;
+    }
+    return probabilityIntersectionValue / probabilityGivenValue;
+}
+
+func Float expectationDiscrete(values:Array, probabilities:Array) {
+    Let length:Int = min(arrayLen(values), arrayLen(probabilities));
+    Let sumValue:Float = 0.0;
+    Let index:Int = 0;
+    while (index < length) {
+        sumValue = sumValue +
+            toFloat(arrayGet(values, index)) * toFloat(arrayGet(probabilities, index));
+        index = index + 1;
+    }
+    return sumValue;
+}
+
+func Float bernoulliProbability(probabilityOfSuccess:Float, outcome:Int) {
+    if (outcome == 1) {
+        return probabilityOfSuccess;
+    }
+    if (outcome == 0) {
+        return 1.0 - probabilityOfSuccess;
+    }
+    return 0.0;
+}
+
+func Float binomialProbability(trials:Int, successes:Int, probabilityOfSuccess:Float) {
+    if (successes < 0 || successes > trials) {
+        return 0.0;
+    }
+    return toFloat(combinationCount(trials, successes)) *
+           pow(probabilityOfSuccess, toFloat(successes)) *
+           pow(1.0 - probabilityOfSuccess, toFloat(trials - successes));
+}
+
+func Float geometricProbability(trialNumber:Int, probabilityOfSuccess:Float) {
+    if (trialNumber <= 0) {
+        return 0.0;
+    }
+    return pow(1.0 - probabilityOfSuccess, toFloat(trialNumber - 1)) * probabilityOfSuccess;
+}
+
+func Float poissonProbability(lambdaValue:Float, eventCount:Int) {
+    if (eventCount < 0) {
+        return 0.0;
+    }
+    return expApprox(-lambdaValue) *
+           pow(lambdaValue, toFloat(eventCount)) /
+           toFloat(factorialInt(eventCount));
+}
+
+func Float uniformProbabilityDensity(lowerBound:Float, upperBound:Float, xValue:Float) {
+    if (xValue < lowerBound || xValue > upperBound || upperBound <= lowerBound) {
+        return 0.0;
+    }
+    return 1.0 / (upperBound - lowerBound);
+}
+
+func Float exponentialProbabilityDensity(lambdaValue:Float, xValue:Float) {
+    if (xValue < 0.0 || lambdaValue <= 0.0) {
+        return 0.0;
+    }
+    return lambdaValue * expApprox(-lambdaValue * xValue);
+}
+
+func Float normalProbabilityDensity(meanValue:Float, standardDeviationValue:Float, xValue:Float) {
+    if (standardDeviationValue <= 0.0) {
+        return 0.0;
+    }
+    Let standardizedValue:Float = (xValue - meanValue) / standardDeviationValue;
+    Let exponentValue:Float = -0.5 * standardizedValue * standardizedValue;
+    Let scaleValue:Float = standardDeviationValue * sqrt(MATH_TAU);
+    return expApprox(exponentValue) / scaleValue;
+}
+
+func bool intArrayContains(values:Array, targetValue:Int) {
+    Let index:Int = 0;
+    while (index < arrayLen(values)) {
+        if (toInt(arrayGet(values, index)) == targetValue) {
+            return true;
+        }
+        index = index + 1;
+    }
+    return false;
+}
+
+func Array uniqueIntSet(values:Array) {
+    Let uniqueValues:Array = arrayNew(0);
+    Let index:Int = 0;
+    while (index < arrayLen(values)) {
+        Let currentValue:Int = toInt(arrayGet(values, index));
+        if (!intArrayContains(uniqueValues, currentValue)) {
+            arrayPush(uniqueValues, currentValue);
+        }
+        index = index + 1;
+    }
+    return uniqueValues;
+}
+
+func Array setUnionInt(firstSet:Array, secondSet:Array) {
+    Let resultSet:Array = uniqueIntSet(firstSet);
+    Let index:Int = 0;
+    while (index < arrayLen(secondSet)) {
+        Let currentValue:Int = toInt(arrayGet(secondSet, index));
+        if (!intArrayContains(resultSet, currentValue)) {
+            arrayPush(resultSet, currentValue);
+        }
+        index = index + 1;
+    }
+    return resultSet;
+}
+
+func Array setIntersectionInt(firstSet:Array, secondSet:Array) {
+    Let resultSet:Array = arrayNew(0);
+    Let uniqueFirst:Array = uniqueIntSet(firstSet);
+    Let index:Int = 0;
+    while (index < arrayLen(uniqueFirst)) {
+        Let currentValue:Int = toInt(arrayGet(uniqueFirst, index));
+        if (intArrayContains(secondSet, currentValue)) {
+            arrayPush(resultSet, currentValue);
+        }
+        index = index + 1;
+    }
+    return resultSet;
+}
+
+func Array setDifferenceInt(firstSet:Array, secondSet:Array) {
+    Let resultSet:Array = arrayNew(0);
+    Let uniqueFirst:Array = uniqueIntSet(firstSet);
+    Let index:Int = 0;
+    while (index < arrayLen(uniqueFirst)) {
+        Let currentValue:Int = toInt(arrayGet(uniqueFirst, index));
+        if (!intArrayContains(secondSet, currentValue)) {
+            arrayPush(resultSet, currentValue);
+        }
+        index = index + 1;
+    }
+    return resultSet;
+}
+
+func Array setSymmetricDifferenceInt(firstSet:Array, secondSet:Array) {
+    return setUnionInt(setDifferenceInt(firstSet, secondSet), setDifferenceInt(secondSet, firstSet));
+}
+
+func Array setComplementInt(universalSet:Array, subset:Array) {
+    return setDifferenceInt(universalSet, subset);
+}
+
+func bool isSubsetInt(subset:Array, superset:Array) {
+    Let uniqueSubset:Array = uniqueIntSet(subset);
+    Let index:Int = 0;
+    while (index < arrayLen(uniqueSubset)) {
+        if (!intArrayContains(superset, toInt(arrayGet(uniqueSubset, index)))) {
+            return false;
+        }
+        index = index + 1;
+    }
+    return true;
+}
+
+func bool isProperSubsetInt(subset:Array, superset:Array) {
+    return isSubsetInt(subset, superset) &&
+           arrayLen(uniqueIntSet(subset)) < arrayLen(uniqueIntSet(superset));
+}
+
+func int setCardinality(values:Array) {
+    return arrayLen(uniqueIntSet(values));
+}
+
+func Array powerSetStrings(values:Array) {
+    Let uniqueValues:Array = uniqueIntSet(values);
+    Let count:Int = arrayLen(uniqueValues);
+    Let subsetCount:Int = 1;
+    Let powerIndex:Int = 0;
+    while (powerIndex < count) {
+        subsetCount = subsetCount * 2;
+        powerIndex = powerIndex + 1;
+    }
+
+    Let subsets:Array = arrayNew(0);
+    Let mask:Int = 0;
+    while (mask < subsetCount) {
+        Let subsetText:String = "{";
+        Let index:Int = 0;
+        Let itemCount:Int = 0;
+        while (index < count) {
+            if (((mask >> index) & 1) == 1) {
+                if (itemCount > 0) {
+                    subsetText = subsetText + ", ";
+                }
+                subsetText = subsetText + toString(arrayGet(uniqueValues, index));
+                itemCount = itemCount + 1;
+            }
+            index = index + 1;
+        }
+        subsetText = subsetText + "}";
+        arrayPush(subsets, subsetText);
+        mask = mask + 1;
+    }
+    return subsets;
+}
+
+func Array cartesianProductPairs(firstSet:Array, secondSet:Array) {
+    Let resultPairs:Array = arrayNew(0);
+    Let uniqueFirst:Array = uniqueIntSet(firstSet);
+    Let uniqueSecond:Array = uniqueIntSet(secondSet);
+    Let firstIndex:Int = 0;
+    while (firstIndex < arrayLen(uniqueFirst)) {
+        Let secondIndex:Int = 0;
+        while (secondIndex < arrayLen(uniqueSecond)) {
+            Let pairText:String = "(" +
+                                  toString(arrayGet(uniqueFirst, firstIndex)) +
+                                  ", " +
+                                  toString(arrayGet(uniqueSecond, secondIndex)) +
+                                  ")";
+            arrayPush(resultPairs, pairText);
+            secondIndex = secondIndex + 1;
+        }
+        firstIndex = firstIndex + 1;
+    }
+    return resultPairs;
+}
+
+func bool logicalAndValue(leftValue:Bool, rightValue:Bool) {
+    return leftValue && rightValue;
+}
+
+func bool logicalOrValue(leftValue:Bool, rightValue:Bool) {
+    return leftValue || rightValue;
+}
+
+func bool logicalNotValue(value:Bool) {
+    return !value;
+}
+
+func bool logicalXorValue(leftValue:Bool, rightValue:Bool) {
+    return (leftValue && !rightValue) || (!leftValue && rightValue);
+}
+
+func bool logicalImplication(leftValue:Bool, rightValue:Bool) {
+    return !leftValue || rightValue;
+}
+
+func bool logicalEquivalence(leftValue:Bool, rightValue:Bool) {
+    return leftValue == rightValue;
+}
+
+func bool allTrue(values:Array) {
+    Let index:Int = 0;
+    while (index < arrayLen(values)) {
+        if (!toBool(arrayGet(values, index))) {
+            return false;
+        }
+        index = index + 1;
+    }
+    return true;
+}
+
+func bool anyTrue(values:Array) {
+    Let index:Int = 0;
+    while (index < arrayLen(values)) {
+        if (toBool(arrayGet(values, index))) {
+            return true;
+        }
+        index = index + 1;
+    }
+    return false;
+}
+
+func bool noneTrue(values:Array) {
+    return !anyTrue(values);
+}
+
+func Float limitFromBothSides(leftNearValue:Float, rightNearValue:Float) {
+    return (leftNearValue + rightNearValue) / 2.0;
+}
+
+func Float centralDifferenceDerivative(leftValue:Float, rightValue:Float, stepSize:Float) {
+    return (rightValue - leftValue) / (2.0 * stepSize);
+}
+
+func Float secondCentralDifference(leftValue:Float, centerValue:Float, rightValue:Float, stepSize:Float) {
+    return (leftValue - 2.0 * centerValue + rightValue) / (stepSize * stepSize);
+}
+
+func Float partialDerivativeX(leftValue:Float, rightValue:Float, stepX:Float) {
+    return centralDifferenceDerivative(leftValue, rightValue, stepX);
+}
+
+func Float partialDerivativeY(lowerValue:Float, upperValue:Float, stepY:Float) {
+    return centralDifferenceDerivative(lowerValue, upperValue, stepY);
+}
+
+func Vector2 gradient2(partialXValue:Float, partialYValue:Float) {
+    return Vector2{ x: partialXValue, y: partialYValue };
+}
+
+func Float divergence2(partialFxWithRespectToX:Float, partialFyWithRespectToY:Float) {
+    return partialFxWithRespectToX + partialFyWithRespectToY;
+}
+
+func Float curl2(partialFyWithRespectToX:Float, partialFxWithRespectToY:Float) {
+    return partialFyWithRespectToX - partialFxWithRespectToY;
+}
+
+func Float trapezoidIntegral(samples:Array, stepSize:Float) {
+    if (arrayLen(samples) == 0) {
+        return 0.0;
+    }
+    if (arrayLen(samples) == 1) {
+        return toFloat(arrayGet(samples, 0)) * stepSize;
+    }
+    Let areaValue:Float = 0.0;
+    Let index:Int = 0;
+    while (index + 1 < arrayLen(samples)) {
+        Let leftValue:Float = toFloat(arrayGet(samples, index));
+        Let rightValue:Float = toFloat(arrayGet(samples, index + 1));
+        areaValue = areaValue + ((leftValue + rightValue) * 0.5 * stepSize);
+        index = index + 1;
+    }
+    return areaValue;
+}
+
+func Float simpsonIntegral(samples:Array, stepSize:Float) {
+    Let length:Int = arrayLen(samples);
+    if (length < 3 || length % 2 == 0) {
+        return trapezoidIntegral(samples, stepSize);
+    }
+
+    Let areaValue:Float = toFloat(arrayGet(samples, 0)) + toFloat(arrayGet(samples, length - 1));
+    Let index:Int = 1;
+    while (index < length - 1) {
+        Let weight:Float = 2.0;
+        if (index % 2 == 1) {
+            weight = 4.0;
+        }
+        areaValue = areaValue + weight * toFloat(arrayGet(samples, index));
+        index = index + 1;
+    }
+    return areaValue * (stepSize / 3.0);
+}
+
+func Float laplaceTransformFromSamples(samples:Array, timeStep:Float, sValue:Float) {
+    Let weightedSamples:Array = arrayNew(arrayLen(samples));
+    Let index:Int = 0;
+    while (index < arrayLen(samples)) {
+        Let timeValue:Float = toFloat(index) * timeStep;
+        Let scaledValue:Float = toFloat(arrayGet(samples, index)) * expApprox(-sValue * timeValue);
+        arraySet(weightedSamples, index, scaledValue);
+        index = index + 1;
+    }
+    return trapezoidIntegral(weightedSamples, timeStep);
+}
+
+func ComplexNumber makeComplexNumber(realValue:Float, imaginaryValue:Float) {
+    return ComplexNumber{ real: realValue, imaginary: imaginaryValue };
+}
+
+func ComplexNumber complexAdd(firstValue:ComplexNumber, secondValue:ComplexNumber) {
+    return ComplexNumber{
+        real: firstValue.real + secondValue.real,
+        imaginary: firstValue.imaginary + secondValue.imaginary
+    };
+}
+
+func ComplexNumber complexSubtract(firstValue:ComplexNumber, secondValue:ComplexNumber) {
+    return ComplexNumber{
+        real: firstValue.real - secondValue.real,
+        imaginary: firstValue.imaginary - secondValue.imaginary
+    };
+}
+
+func ComplexNumber complexMultiply(firstValue:ComplexNumber, secondValue:ComplexNumber) {
+    return ComplexNumber{
+        real: firstValue.real * secondValue.real - firstValue.imaginary * secondValue.imaginary,
+        imaginary: firstValue.real * secondValue.imaginary + firstValue.imaginary * secondValue.real
+    };
+}
+
+func ComplexNumber complexConjugate(value:ComplexNumber) {
+    return ComplexNumber{
+        real: value.real,
+        imaginary: -value.imaginary
+    };
+}
+
+func Float complexMagnitude(value:ComplexNumber) {
+    return sqrt(value.real * value.real + value.imaginary * value.imaginary);
+}
+
+func Float complexArgument(value:ComplexNumber) {
+    return atan2Approx(value.imaginary, value.real);
+}
+
+func ComplexNumber complexDivide(firstValue:ComplexNumber, secondValue:ComplexNumber) {
+    Let denominator:Float = secondValue.real * secondValue.real +
+                            secondValue.imaginary * secondValue.imaginary;
+    if (denominator == 0.0) {
+        return ComplexNumber{ real: 0.0, imaginary: 0.0 };
+    }
+    return ComplexNumber{
+        real: (firstValue.real * secondValue.real + firstValue.imaginary * secondValue.imaginary) / denominator,
+        imaginary: (firstValue.imaginary * secondValue.real - firstValue.real * secondValue.imaginary) / denominator
+    };
+}
+
+func ComplexNumber complexFromPolar(radiusValue:Float, angleValue:Float) {
+    return ComplexNumber{
+        real: radiusValue * cos(angleValue),
+        imaginary: radiusValue * sin(angleValue)
+    };
+}
+
+func Array discreteConvolution(firstSignal:Array, secondSignal:Array) {
+    Let outputLength:Int = arrayLen(firstSignal) + arrayLen(secondSignal) - 1;
+    Let result:Array = arrayNew(outputLength);
+    Let index:Int = 0;
+    while (index < outputLength) {
+        arraySet(result, index, 0.0);
+        index = index + 1;
+    }
+
+    Let firstIndex:Int = 0;
+    while (firstIndex < arrayLen(firstSignal)) {
+        Let secondIndex:Int = 0;
+        while (secondIndex < arrayLen(secondSignal)) {
+            Let resultIndex:Int = firstIndex + secondIndex;
+            Let currentValue:Float = toFloat(arrayGet(result, resultIndex));
+            Let addedValue:Float = toFloat(arrayGet(firstSignal, firstIndex)) *
+                                   toFloat(arrayGet(secondSignal, secondIndex));
+            arraySet(result, resultIndex, currentValue + addedValue);
+            secondIndex = secondIndex + 1;
+        }
+        firstIndex = firstIndex + 1;
+    }
+    return result;
+}
+
