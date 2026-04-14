@@ -17,6 +17,9 @@
 #include <windows.h>
 #undef TokenType
 #include <bcrypt.h>
+#include <fcntl.h>
+#include <io.h>
+#include <process.h>
 #include <sys/stat.h>
 #else
 #include <dirent.h>
@@ -168,6 +171,16 @@ static bool host_path_is_dir(const char *path) {
 #endif
 }
 
+static bool host_path_exists(const char *path) {
+    if (!path || !path[0]) return false;
+#if defined(_WIN32)
+    return GetFileAttributesA(path) != INVALID_FILE_ATTRIBUTES;
+#else
+    struct stat st;
+    return stat(path, &st) == 0;
+#endif
+}
+
 static char *host_path_join(const char *base, const char *name) {
 #if defined(_WIN32)
     const char sep = '\\';
@@ -189,6 +202,9 @@ static char *host_path_join(const char *base, const char *name) {
 
 static void host_list_files_recursive(const char *path, OclArray *out) {
     if (!path || !out) return;
+    if (!host_path_exists(path)) {
+        return;
+    }
     if (!host_path_is_dir(path)) {
         ocl_array_push(out, value_string_copy(path));
         return;
@@ -469,73 +485,17 @@ static int OCL_UNUSED terminal_wait_status_to_exit_code(int status) {
 }
 
 #if defined(_WIN32)
-static void append_windows_quoted_arg(char **buf, size_t *len, size_t *cap,
-                                      const char *arg) {
-    size_t backslash_count = 0;
-    bool needs_quotes;
-
-    if (!arg) arg = "";
-    needs_quotes = arg[0] == '\0' || strpbrk(arg, " \t\n\v\"") != NULL;
-    if (!needs_quotes) {
-        append_cstr(buf, len, cap, arg);
-        return;
-    }
-
-    append_char(buf, len, cap, '"');
-    for (size_t i = 0; arg[i]; i++) {
-        if (arg[i] == '\\') {
-            backslash_count++;
-            continue;
-        }
-
-        if (arg[i] == '"') {
-            for (size_t j = 0; j < backslash_count * 2 + 1; j++)
-                append_char(buf, len, cap, '\\');
-            append_char(buf, len, cap, '"');
-            backslash_count = 0;
-            continue;
-        }
-
-        for (size_t j = 0; j < backslash_count; j++)
-            append_char(buf, len, cap, '\\');
-        backslash_count = 0;
-        append_char(buf, len, cap, arg[i]);
-    }
-
-    for (size_t j = 0; j < backslash_count * 2; j++)
-        append_char(buf, len, cap, '\\');
-    append_char(buf, len, cap, '"');
-}
-
-static char *build_windows_command_line(char **argv, size_t argc) {
-    char *command_line = NULL;
-    size_t len = 0;
-    size_t cap = 0;
-
-    for (size_t i = 0; i < argc; i++) {
-        if (i > 0) append_char(&command_line, &len, &cap, ' ');
-        append_windows_quoted_arg(&command_line, &len, &cap, argv[i]);
-    }
-
-    if (!command_line)
-        command_line = ocl_strdup("");
-    return command_line;
-}
-
 static bool terminal_spawn_windows(const char *builtin_name, char **argv, size_t argc,
                                    bool capture_output, int *out_exit_code,
                                    char **out_output) {
-    SECURITY_ATTRIBUTES sa;
-    STARTUPINFOA si;
-    PROCESS_INFORMATION pi;
-    HANDLE read_pipe = NULL;
-    HANDLE write_pipe = NULL;
-    HANDLE std_input = GetStdHandle(STD_INPUT_HANDLE);
-    HANDLE std_output = GetStdHandle(STD_OUTPUT_HANDLE);
-    HANDLE std_error = GetStdHandle(STD_ERROR_HANDLE);
-    char *command_line;
+    intptr_t spawn_result;
     char *captured_output = NULL;
-    DWORD exit_code = 0;
+    int exit_code = 0;
+    int saved_stdout_fd = -1;
+    int saved_stderr_fd = -1;
+    int capture_fd = -1;
+    char temp_path[MAX_PATH] = {0};
+    char temp_file[MAX_PATH] = {0};
     bool ok = false;
 
     if (out_exit_code) *out_exit_code = 0;
@@ -545,97 +505,100 @@ static bool terminal_spawn_windows(const char *builtin_name, char **argv, size_t
         return false;
     }
 
-    command_line = build_windows_command_line(argv, argc);
-
-    ZeroMemory(&si, sizeof(si));
-    ZeroMemory(&pi, sizeof(pi));
-    si.cb = sizeof(si);
-    si.dwFlags |= STARTF_USESTDHANDLES;
-    si.hStdInput = std_input;
-
     if (capture_output) {
-        sa.nLength = sizeof(sa);
-        sa.lpSecurityDescriptor = NULL;
-        sa.bInheritHandle = TRUE;
-
-        if (!CreatePipe(&read_pipe, &write_pipe, &sa, 0)) {
-            terminal_runtime_diag(builtin_name, "failed to create capture pipe");
+        DWORD temp_len = GetTempPathA((DWORD)sizeof(temp_path), temp_path);
+        if (temp_len == 0 || temp_len >= sizeof(temp_path)) {
+            terminal_runtime_diag(builtin_name, "failed to resolve temporary directory (%lu)",
+                                  (unsigned long)GetLastError());
             goto cleanup;
         }
-        if (!SetHandleInformation(read_pipe, HANDLE_FLAG_INHERIT, 0)) {
-            terminal_runtime_diag(builtin_name, "failed to configure capture pipe");
+        if (GetTempFileNameA(temp_path, "ocl", 0, temp_file) == 0) {
+            terminal_runtime_diag(builtin_name, "failed to create temporary capture file (%lu)",
+                                  (unsigned long)GetLastError());
             goto cleanup;
         }
 
-        si.hStdOutput = write_pipe;
-        si.hStdError = write_pipe;
-    } else {
-        si.hStdOutput = std_output;
-        si.hStdError = std_error;
-    }
+        saved_stdout_fd = _dup(_fileno(stdout));
+        saved_stderr_fd = _dup(_fileno(stderr));
+        if (saved_stdout_fd < 0 || saved_stderr_fd < 0) {
+            terminal_runtime_diag(builtin_name, "failed to duplicate standard handles");
+            goto cleanup;
+        }
 
-    if (!CreateProcessA(NULL, command_line, NULL, NULL, TRUE, 0,
-                        NULL, NULL, &si, &pi)) {
-        terminal_runtime_diag(builtin_name, "failed to start '%s' (%lu)",
-                              argv[0], (unsigned long)GetLastError());
-        goto cleanup;
-    }
+        capture_fd = _open(temp_file, _O_CREAT | _O_TRUNC | _O_RDWR | _O_BINARY,
+                           _S_IREAD | _S_IWRITE);
+        if (capture_fd < 0) {
+            terminal_runtime_diag(builtin_name, "failed to open capture file: %s",
+                                  strerror(errno));
+            goto cleanup;
+        }
 
-    if (write_pipe) {
-        CloseHandle(write_pipe);
-        write_pipe = NULL;
-    }
-
-    if (capture_output) {
-        size_t out_len = 0;
-        size_t out_cap = 0;
-
-        for (;;) {
-            char chunk[4096];
-            DWORD read_count = 0;
-            BOOL read_ok = ReadFile(read_pipe, chunk, sizeof(chunk), &read_count, NULL);
-
-            if (!read_ok) {
-                DWORD err = GetLastError();
-                if (err == ERROR_BROKEN_PIPE)
-                    break;
-                terminal_runtime_diag(builtin_name, "failed while reading child output (%lu)",
-                                      (unsigned long)err);
-                goto cleanup;
-            }
-
-            if (read_count == 0)
-                break;
-            append_bytes(&captured_output, &out_len, &out_cap, chunk, (size_t)read_count);
+        fflush(stdout);
+        fflush(stderr);
+        if (_dup2(capture_fd, _fileno(stdout)) < 0 ||
+            _dup2(capture_fd, _fileno(stderr)) < 0) {
+            terminal_runtime_diag(builtin_name, "failed to redirect child output");
+            goto cleanup;
         }
     }
 
-    if (WaitForSingleObject(pi.hProcess, INFINITE) != WAIT_OBJECT_0) {
-        terminal_runtime_diag(builtin_name, "failed while waiting for child process");
+    spawn_result = _spawnvp(_P_WAIT, argv[0], (const char * const *)argv);
+    if (spawn_result == -1) {
+        terminal_runtime_diag(builtin_name, "failed to start '%s': %s",
+                              argv[0], strerror(errno));
         goto cleanup;
     }
-
-    if (!GetExitCodeProcess(pi.hProcess, &exit_code)) {
-        terminal_runtime_diag(builtin_name, "failed to read child exit code");
-        goto cleanup;
-    }
+    exit_code = (int)spawn_result;
 
     if (out_exit_code)
-        *out_exit_code = (int)exit_code;
-    if (out_output)
+        *out_exit_code = exit_code;
+
+    if (capture_output) {
+        fflush(stdout);
+        fflush(stderr);
+        if (saved_stdout_fd >= 0) {
+            _dup2(saved_stdout_fd, _fileno(stdout));
+            _close(saved_stdout_fd);
+            saved_stdout_fd = -1;
+        }
+        if (saved_stderr_fd >= 0) {
+            _dup2(saved_stderr_fd, _fileno(stderr));
+            _close(saved_stderr_fd);
+            saved_stderr_fd = -1;
+        }
+        if (capture_fd >= 0) {
+            _close(capture_fd);
+            capture_fd = -1;
+        }
+        captured_output = host_read_file(temp_file, NULL);
+    }
+
+    if (out_output) {
         *out_output = captured_output ? captured_output : ocl_strdup("");
-    else
+    } else {
         ocl_free(captured_output);
+    }
     ok = true;
 
 cleanup:
+    if (capture_output) {
+        fflush(stdout);
+        fflush(stderr);
+    }
+    if (saved_stdout_fd >= 0) {
+        _dup2(saved_stdout_fd, _fileno(stdout));
+        _close(saved_stdout_fd);
+    }
+    if (saved_stderr_fd >= 0) {
+        _dup2(saved_stderr_fd, _fileno(stderr));
+        _close(saved_stderr_fd);
+    }
+    if (capture_fd >= 0)
+        _close(capture_fd);
+    if (temp_file[0])
+        DeleteFileA(temp_file);
     if (!ok)
         ocl_free(captured_output);
-    if (read_pipe) CloseHandle(read_pipe);
-    if (write_pipe) CloseHandle(write_pipe);
-    if (pi.hThread) CloseHandle(pi.hThread);
-    if (pi.hProcess) CloseHandle(pi.hProcess);
-    ocl_free(command_line);
     return ok;
 }
 #else
@@ -804,22 +767,43 @@ static bool terminal_spawn_program(const char *builtin_name, char **argv, size_t
 static bool terminal_spawn_shell(const char *builtin_name, const char *command,
                                  bool capture_output, int *out_exit_code,
                                  char **out_output) {
-    char **argv = ocl_malloc(4 * sizeof(char *));
+    char **argv = ocl_malloc(
+#if defined(_WIN32)
+        5 * sizeof(char *)
+#else
+        4 * sizeof(char *)
+#endif
+    );
     bool ok;
 
 #if defined(_WIN32)
-    argv[0] = ocl_strdup("cmd.exe");
-    argv[1] = ocl_strdup("/C");
+    argv[0] = ocl_strdup("powershell.exe");
+    argv[1] = ocl_strdup("-NoProfile");
+    argv[2] = ocl_strdup("-Command");
+    argv[3] = ocl_strdup(command ? command : "");
+    argv[4] = NULL;
 #else
     argv[0] = ocl_strdup("/bin/sh");
     argv[1] = ocl_strdup("-c");
-#endif
     argv[2] = ocl_strdup(command ? command : "");
     argv[3] = NULL;
+#endif
 
-    ok = terminal_spawn_program(builtin_name, argv, 3, capture_output,
+    ok = terminal_spawn_program(builtin_name, argv,
+#if defined(_WIN32)
+                                4,
+#else
+                                3,
+#endif
+                                capture_output,
                                 out_exit_code, out_output);
-    free_string_list(argv, 4);
+    free_string_list(argv,
+#if defined(_WIN32)
+                     5
+#else
+                     4
+#endif
+    );
     return ok;
 }
 

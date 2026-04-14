@@ -405,12 +405,8 @@ int vm_execute(VM *vm) {
                 Value g = vm->globals[ins.operand1];
                 if (g.type == VALUE_STRING)
                     vm_push(vm, value_string_borrow(g.data.string_val));
-                else if (g.type == VALUE_ARRAY)
-                    { ocl_array_retain(g.data.array_val); vm_push(vm, g); }
-                else if (g.type == VALUE_STRUCT)
-                    { ocl_struct_retain(g.data.struct_val); vm_push(vm, g); }
                 else
-                    vm_push(vm, g);
+                    vm_push(vm, value_own_copy(g));
             }
             break;
 

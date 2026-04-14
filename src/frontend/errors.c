@@ -184,7 +184,7 @@ static const char *kind_color(ErrorKind k) {
         case ERRK_SYNTAX:    return "\x1b[31m";   /* red */
         case ERRK_TYPE:      return "\x1b[35m";   /* magenta */
         case ERRK_OPERATION: return "\x1b[33m";   /* yellow */
-        case ERRK_MEMORY:    return "\x1b[1;31m"; /* bold red */
+        case ERRK_MEMORY:    return "\x1b[1;34m"; /* bold blue */
         case ERRK_LOGIC:     return "\x1b[36m";   /* cyan */
     }
     return "\x1b[0m";

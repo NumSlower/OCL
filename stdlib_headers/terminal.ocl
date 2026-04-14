@@ -10,7 +10,7 @@ func String arg(index:Int) {
 
 Let runExec:Func(String, Array) -> Int = __terminalExec;
 
-Let run:Func(String) -> Int = __terminalShell;
+Let run:Func(String, Array) -> Int = __terminalExec;
 
 Let capture:Func(String, Array) -> Array = __terminalCapture;
 
