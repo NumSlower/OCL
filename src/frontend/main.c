@@ -52,10 +52,16 @@ static void print_program_result(const VM *vm);
 
 /* ── Helpers ──────────────────────────────────────────────────────── */
 
+#if defined(_WIN32)
+#define OCL_EXEC_EXT ".exe"
+#else
+#define OCL_EXEC_EXT ".elf"
+#endif
+
 static void print_usage(const char *prog) {
     fprintf(stderr,
         "Usage: %s [options] <file.ocl> [-- args...]\n"
-        "       %s [options] -r <file.elf> [-- args...]\n"
+        "       %s [options] -r <file" OCL_EXEC_EXT "> [-- args...]\n"
         "\n"
         "Options:\n"
         "  --dump-tokens    Print lexer tokens and exit\n"
@@ -64,7 +70,7 @@ static void print_usage(const char *prog) {
         "  --watch          Re-run when the source or imported files change\n"
         "  --time           Report execution time\n"
         "  -r FILE          Run a compiled OCL executable\n"
-        "  -e NAME          Compile to NAME.elf in the current directory\n"
+        "  -e NAME          Compile to NAME" OCL_EXEC_EXT " in the current directory\n"
         "  --emit-elf PATH  Compile the input file to a NumOS ELF executable\n"
         "  --               Pass remaining values to terminal.args()\n"
         "  -h, --help       Show this help\n",
@@ -89,8 +95,10 @@ static bool has_suffix_ci(const char *s, const char *suffix) {
 static bool build_exec_output_path(const char *name, char *out, size_t cap) {
     if (!name || !out || cap == 0) return false;
     int n;
-    if (has_suffix_ci(name, ".elf")) n = snprintf(out, cap, "%s", name);
-    else                             n = snprintf(out, cap, "%s.elf", name);
+    if (has_suffix_ci(name, ".elf") || has_suffix_ci(name, ".exe"))
+        n = snprintf(out, cap, "%s", name);
+    else
+        n = snprintf(out, cap, "%s" OCL_EXEC_EXT, name);
     return n >= 0 && (size_t)n < cap;
 }
 
@@ -382,7 +390,7 @@ static int run_source_file_once(const Options *opts, WatchSet *watch_paths) {
     if (opts->emit_exec) {
         char out_path[4096];
         if (!build_exec_output_path(opts->emit_exec, out_path, sizeof(out_path)) ||
-            !bytecode_write_executable(bytecode, out_path)) {
+            !bytecode_write_standalone(bytecode, out_path)) {
             fprintf(stderr, "ocl: failed to write executable '%s'\n", opts->emit_exec);
             exit_code = 1;
         } else {
@@ -511,6 +519,45 @@ static void print_program_result(const VM *vm) {
 /* ── Entry point ──────────────────────────────────────────────────── */
 
 int main(int argc, char *argv[]) {
+    /* Check for embedded self-payload (standalone executable mode) */
+    {
+        Bytecode *self_bc = bytecode_read_self_payload();
+        if (self_bc) {
+            int exit_code = 0;
+            ErrorCollector *errors = error_collector_create();
+            VM *vm = vm_create(self_bc, errors);
+            if (!vm) {
+                fprintf(stderr, "ocl: failed to create VM\n");
+                bytecode_free(self_bc);
+                error_collector_free(errors);
+                return 1;
+            }
+
+            /* Support "exe -- arg1 arg2" for passing program arguments */
+            int prog_argc = 0;
+            char **prog_argv = NULL;
+            for (int i = 1; i < argc; i++) {
+                if (strcmp(argv[i], "--") == 0) {
+                    prog_argc = argc - i - 1;
+                    prog_argv = argv + i + 1;
+                    break;
+                }
+            }
+            vm_set_program_args(vm, prog_argc, (const char *const *)prog_argv);
+
+            exit_code = vm_execute(vm);
+            if (error_has_errors(errors))
+                error_print_all(errors);
+            else if (vm->has_result && vm->result.type != VALUE_NULL)
+                puts(value_to_string(vm->result));
+
+            vm_free(vm);
+            bytecode_free(self_bc);
+            error_collector_free(errors);
+            return exit_code;
+        }
+    }
+
     Options opts;
     if (!parse_options(argc, argv, &opts))
         return 1;
@@ -768,7 +815,7 @@ int main(int argc, char *argv[]) {
                 error_print_all(errors);
                 error_collector_reset(errors);
                 exit_code = 1;
-            } else if (!bytecode_write_executable(bytecode, output_path)) {
+            } else if (!bytecode_write_standalone(bytecode, output_path)) {
                 error_add(errors, ERRK_OPERATION, ERROR_CODEGEN, LOC_NONE,
                           "failed to write compiled executable '%s'", output_path);
                 error_print_all(errors);

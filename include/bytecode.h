@@ -105,6 +105,8 @@ uint32_t  bytecode_add_function(Bytecode *bc, const char *name, uint32_t start_i
 int       bytecode_find_function(Bytecode *bc, const char *name);
 void      bytecode_dump(Bytecode *bc);
 bool      bytecode_write_executable(Bytecode *bc, const char *path);
+bool      bytecode_write_standalone(Bytecode *bc, const char *path);
 Bytecode *bytecode_read_executable(const char *path, bool *is_executable);
+Bytecode *bytecode_read_self_payload(void);
 
 #endif

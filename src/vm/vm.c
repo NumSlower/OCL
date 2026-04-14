@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 #include <inttypes.h>
 #include "vm.h"
 #include "common.h"
@@ -403,10 +404,7 @@ int vm_execute(VM *vm) {
             ensure_global(vm, ins.operand1);
             {
                 Value g = vm->globals[ins.operand1];
-                if (g.type == VALUE_STRING)
-                    vm_push(vm, value_string_borrow(g.data.string_val));
-                else
-                    vm_push(vm, value_own_copy(g));
+                vm_push(vm, value_own_copy(g));
             }
             break;
 
@@ -470,7 +468,47 @@ int vm_execute(VM *vm) {
         }
 
         case OP_SUBTRACT: ARITH_OP(LOC, a - b, a - b); break;
-        case OP_MULTIPLY: ARITH_OP(LOC, a * b, a * b); break;
+
+        case OP_MULTIPLY: {
+            Value b = vm_pop(vm);
+            Value a = vm_pop(vm);
+            /* String repetition: "abc" * 3 or 3 * "abc" */
+            if ((a.type == VALUE_STRING && b.type == VALUE_INT) ||
+                (a.type == VALUE_INT && b.type == VALUE_STRING)) {
+                const char *src = (a.type == VALUE_STRING) ? a.data.string_val : b.data.string_val;
+                int64_t count   = (a.type == VALUE_INT)    ? a.data.int_val    : b.data.int_val;
+                if (!src) src = "";
+                if (count <= 0) {
+                    value_free(a); value_free(b);
+                    vm_push(vm, value_string(ocl_strdup("")));
+                } else {
+                    size_t slen = strlen(src);
+                    size_t total = slen * (size_t)count;
+                    char *s = ocl_malloc(total + 1);
+                    for (int64_t i = 0; i < count; i++)
+                        memcpy(s + (size_t)i * slen, src, slen);
+                    s[total] = '\0';
+                    value_free(a); value_free(b);
+                    vm_push(vm, value_string(s));
+                }
+            } else if (a.type == VALUE_INT && b.type == VALUE_INT) {
+                int64_t r = a.data.int_val * b.data.int_val;
+                value_free(a); value_free(b);
+                vm_push(vm, value_int(r));
+            } else if ((a.type == VALUE_INT || a.type == VALUE_FLOAT) &&
+                       (b.type == VALUE_INT || b.type == VALUE_FLOAT)) {
+                double af = (a.type == VALUE_FLOAT) ? a.data.float_val : (double)a.data.int_val;
+                double bf = (b.type == VALUE_FLOAT) ? b.data.float_val : (double)b.data.int_val;
+                value_free(a); value_free(b);
+                vm_push(vm, value_float(af * bf));
+            } else {
+                vm_op_error(vm, LOC, "'*' cannot combine %s and %s",
+                         value_type_name(a.type), value_type_name(b.type));
+                value_free(a); value_free(b);
+                vm_push(vm, value_null());
+            }
+            break;
+        }
 
         case OP_DIVIDE: {
             Value b = vm_pop(vm);
@@ -497,19 +535,33 @@ int vm_execute(VM *vm) {
         case OP_MODULO: {
             Value b = vm_pop(vm);
             Value a = vm_pop(vm);
-            if (a.type != VALUE_INT || b.type != VALUE_INT) {
-                vm_op_error(vm, LOC, "'%%' requires Int operands, got %s and %s",
+            if (a.type == VALUE_INT && b.type == VALUE_INT) {
+                if (b.data.int_val == 0) {
+                    vm_op_error(vm, LOC, "modulo by zero");
+                    value_free(a); value_free(b);
+                    vm_push(vm, value_null());
+                } else {
+                    int64_t r = a.data.int_val % b.data.int_val;
+                    value_free(a); value_free(b);
+                    vm_push(vm, value_int(r));
+                }
+            } else if ((a.type == VALUE_INT || a.type == VALUE_FLOAT) &&
+                       (b.type == VALUE_INT || b.type == VALUE_FLOAT)) {
+                double af = (a.type == VALUE_FLOAT) ? a.data.float_val : (double)a.data.int_val;
+                double bf = (b.type == VALUE_FLOAT) ? b.data.float_val : (double)b.data.int_val;
+                if (bf == 0.0) {
+                    vm_op_error(vm, LOC, "modulo by zero");
+                    value_free(a); value_free(b);
+                    vm_push(vm, value_null());
+                } else {
+                    value_free(a); value_free(b);
+                    vm_push(vm, value_float(fmod(af, bf)));
+                }
+            } else {
+                vm_op_error(vm, LOC, "'%%' requires numeric operands, got %s and %s",
                          value_type_name(a.type), value_type_name(b.type));
                 value_free(a); value_free(b);
                 vm_push(vm, value_null());
-            } else if (b.data.int_val == 0) {
-                vm_op_error(vm, LOC, "modulo by zero");
-                value_free(a); value_free(b);
-                vm_push(vm, value_null());
-            } else {
-                int64_t r = a.data.int_val % b.data.int_val;
-                value_free(a); value_free(b);
-                vm_push(vm, value_int(r));
             }
             break;
         }
@@ -620,10 +672,47 @@ int vm_execute(VM *vm) {
             break;
         }
 
-        case OP_LESS:          CMP_OP(LOC, a < b,  a < b);  break;
-        case OP_LESS_EQUAL:    CMP_OP(LOC, a <= b, a <= b); break;
-        case OP_GREATER:       CMP_OP(LOC, a > b,  a > b);  break;
-        case OP_GREATER_EQUAL: CMP_OP(LOC, a >= b, a >= b); break;
+        case OP_LESS:
+        case OP_LESS_EQUAL:
+        case OP_GREATER:
+        case OP_GREATER_EQUAL: {
+            Value b = vm_pop(vm); Value a = vm_pop(vm); bool _r;
+            if (a.type == VALUE_STRING && b.type == VALUE_STRING) {
+                const char *as = a.data.string_val ? a.data.string_val : "";
+                const char *bs = b.data.string_val ? b.data.string_val : "";
+                int cmp = strcmp(as, bs);
+                switch (ins.opcode) {
+                    case OP_LESS:          _r = cmp < 0;  break;
+                    case OP_LESS_EQUAL:    _r = cmp <= 0; break;
+                    case OP_GREATER:       _r = cmp > 0;  break;
+                    case OP_GREATER_EQUAL: _r = cmp >= 0; break;
+                    default: _r = false; break;
+                }
+            } else if (a.type == VALUE_INT && b.type == VALUE_INT) {
+                int64_t av = a.data.int_val, bv = b.data.int_val;
+                switch (ins.opcode) {
+                    case OP_LESS:          _r = av < bv;  break;
+                    case OP_LESS_EQUAL:    _r = av <= bv; break;
+                    case OP_GREATER:       _r = av > bv;  break;
+                    case OP_GREATER_EQUAL: _r = av >= bv; break;
+                    default: _r = false; break;
+                }
+            } else if ((a.type == VALUE_INT || a.type == VALUE_FLOAT) &&
+                       (b.type == VALUE_INT || b.type == VALUE_FLOAT)) {
+                double af = (a.type == VALUE_FLOAT) ? a.data.float_val : (double)a.data.int_val;
+                double bf = (b.type == VALUE_FLOAT) ? b.data.float_val : (double)b.data.int_val;
+                switch (ins.opcode) {
+                    case OP_LESS:          _r = af < bf;  break;
+                    case OP_LESS_EQUAL:    _r = af <= bf; break;
+                    case OP_GREATER:       _r = af > bf;  break;
+                    case OP_GREATER_EQUAL: _r = af >= bf; break;
+                    default: _r = false; break;
+                }
+            } else { _r = false; }
+            value_free(a); value_free(b);
+            vm_push(vm, value_bool(_r));
+            break;
+        }
 
         case OP_AND: {
             Value b = vm_pop(vm); Value a = vm_pop(vm);
@@ -935,11 +1024,15 @@ int vm_execute(VM *vm) {
                         : ret_raw;
 
             CallFrame *frame = &vm->frames[--vm->frame_top];
-            uint32_t   ret_ip = frame->return_ip;
+            /* Save frame fields before releasing — vm_release_frame frees
+               the locals array and closure, which could invalidate data
+               we still need (stack_base, return_ip). */
+            uint32_t   ret_ip     = frame->return_ip;
+            uint32_t   stack_base = frame->stack_base;
 
             vm_release_frame(frame);
 
-            while (vm->stack_top > frame->stack_base)
+            while (vm->stack_top > stack_base)
                 vm_pop_free(vm);
 
             vm_push(vm, ret);
@@ -988,10 +1081,12 @@ int vm_execute(VM *vm) {
                 const char *s    = arr_v.data.string_val ? arr_v.data.string_val : "";
                 int64_t     idx  = idx_v.data.int_val;
                 size_t      slen = strlen(s);
+                /* Support negative indexing: -1 = last element */
+                if (idx < 0) idx += (int64_t)slen;
                 if (idx < 0 || (size_t)idx >= slen) {
                     vm_op_error(vm, LOC,
                                 "string index %"PRId64" out of bounds [0, %llu)",
-                                idx, (unsigned long long)slen);
+                                idx_v.data.int_val, (unsigned long long)slen);
                     value_free(idx_v); value_free(arr_v);
                     vm_push(vm, value_null());
                     break;
@@ -1019,10 +1114,12 @@ int vm_execute(VM *vm) {
             {
                 int64_t   idx = idx_v.data.int_val;
                 OclArray *arr = arr_v.data.array_val;
+                /* Support negative indexing: -1 = last element */
+                if (idx < 0) idx += (int64_t)arr->length;
                 if (idx < 0 || (size_t)idx >= arr->length) {
                     vm_op_error(vm, LOC,
                                 "array index %"PRId64" out of bounds [0, %llu)",
-                                idx, (unsigned long long)arr->length);
+                                idx_v.data.int_val, (unsigned long long)arr->length);
                     value_free(idx_v); value_free(arr_v);
                     vm_push(vm, value_null());
                     break;
@@ -1052,8 +1149,10 @@ int vm_execute(VM *vm) {
                 break;
             }
             int64_t idx = idx_v.data.int_val;
+            /* Support negative indexing: -1 = last element */
+            if (idx < 0) idx += (int64_t)arr_v.data.array_val->length;
             if (idx < 0) {
-                vm_op_error(vm, LOC, "array index must be non-negative, got %"PRId64, idx);
+                vm_op_error(vm, LOC, "array index %"PRId64" out of bounds", idx_v.data.int_val);
                 value_free(idx_v); value_free(arr_v); value_free(val);
                 break;
             }
@@ -1098,18 +1197,27 @@ int vm_execute(VM *vm) {
                 vm_logic_error(vm, LOC, "invalid struct type constant %u", ins.operand1);
 
             OclStruct *s = ocl_struct_new(type_name, ins.operand2);
-            for (uint32_t i = 0; i < ins.operand2; i++) {
-                Value value_v = vm_pop(vm);
-                Value name_v = vm_pop(vm);
-                if (name_v.type != VALUE_STRING || !name_v.data.string_val) {
-                    vm_op_error(vm, LOC, "struct field name must be String");
-                    ok = false;
-                } else if (!ocl_struct_set(s, name_v.data.string_val, value_v)) {
-                    vm_op_error(vm, LOC, "failed to set struct field '%s'", name_v.data.string_val);
-                    ok = false;
+            /* Pop fields into a temporary array first, then insert in
+               forward order so the struct fields match the source order. */
+            if (ins.operand2 > 0) {
+                typedef struct { Value name_v; Value value_v; } FieldPair;
+                FieldPair *pairs = ocl_malloc(ins.operand2 * sizeof(FieldPair));
+                for (uint32_t i = ins.operand2; i-- > 0; ) {
+                    pairs[i].value_v = vm_pop(vm);
+                    pairs[i].name_v  = vm_pop(vm);
                 }
-                value_free(value_v);
-                value_free(name_v);
+                for (uint32_t i = 0; i < ins.operand2; i++) {
+                    if (pairs[i].name_v.type != VALUE_STRING || !pairs[i].name_v.data.string_val) {
+                        vm_op_error(vm, LOC, "struct field name must be String");
+                        ok = false;
+                    } else if (!ocl_struct_set(s, pairs[i].name_v.data.string_val, pairs[i].value_v)) {
+                        vm_op_error(vm, LOC, "failed to set struct field '%s'", pairs[i].name_v.data.string_val);
+                        ok = false;
+                    }
+                    value_free(pairs[i].value_v);
+                    value_free(pairs[i].name_v);
+                }
+                ocl_free(pairs);
             }
 
             if (ok)

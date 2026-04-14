@@ -3,8 +3,18 @@
 #include <stdio.h>
 #include <string.h>
 
+#if defined(_WIN32)
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#elif defined(__linux__)
+#include <unistd.h>
+#endif
+
 #define OCL_EXEC_SHEBANG "#!/bin/ocl.elf\n"
 #define OCL_EXEC_MAGIC   "OCLBC2\n"
+#define OCL_SELF_MAGIC   "OCLSELF\n"
 
 Bytecode *bytecode_create(void) {
     Bytecode *bc = ocl_malloc(sizeof(Bytecode));
@@ -271,6 +281,8 @@ void bytecode_dump(Bytecode *bc) {
     printf("\n=== End of Disassembly ===\n");
 }
 
+/* ── Binary I/O helpers ───────────────────────────────────────────── */
+
 static bool write_exact(FILE *f, const void *buf, size_t size) {
     if (!f) return false;
     const unsigned char *p = (const unsigned char *)buf;
@@ -344,12 +356,26 @@ static char *read_string(FILE *f) {
     return s;
 }
 
-bool bytecode_write_executable(Bytecode *bc, const char *path) {
-    if (!bc || !path) return false;
+/* ── Executable path detection ────────────────────────────────────── */
 
-    FILE *f = fopen(path, "wb");
-    if (!f) return false;
+static bool get_exe_path(char *out, size_t out_size) {
+#if defined(_WIN32)
+    DWORD len = GetModuleFileNameA(NULL, out, (DWORD)out_size);
+    return len > 0 && len < (DWORD)out_size;
+#elif defined(__linux__)
+    ssize_t len = readlink("/proc/self/exe", out, out_size - 1);
+    if (len < 0) return false;
+    out[len] = '\0';
+    return true;
+#else
+    (void)out; (void)out_size;
+    return false;
+#endif
+}
 
+/* ── Bytecode payload write (to an already-open FILE*) ────────────── */
+
+static bool bytecode_write_payload(Bytecode *bc, FILE *f) {
     bool ok = write_exact(f, OCL_EXEC_SHEBANG, sizeof(OCL_EXEC_SHEBANG) - 1) &&
               write_exact(f, OCL_EXEC_MAGIC, sizeof(OCL_EXEC_MAGIC) - 1) &&
               write_u32(f, (uint32_t)bc->instruction_count) &&
@@ -413,38 +439,79 @@ bool bytecode_write_executable(Bytecode *bc, const char *path) {
              write_string(f, ins->location.filename ? ins->location.filename : "");
     }
 
+    return ok;
+}
+
+/* ── Write bytecode-only file (for -r compatibility) ──────────────── */
+
+bool bytecode_write_executable(Bytecode *bc, const char *path) {
+    if (!bc || !path) return false;
+    FILE *f = fopen(path, "wb");
+    if (!f) return false;
+    bool ok = bytecode_write_payload(bc, f);
     if (fclose(f) != 0) ok = false;
     return ok;
 }
 
-Bytecode *bytecode_read_executable(const char *path, bool *is_executable) {
-    if (is_executable) *is_executable = false;
-    if (!path) return NULL;
+/* ── Write standalone executable (copies interpreter + appends bytecode) ── */
 
-    FILE *f = fopen(path, "rb");
-    if (!f) return NULL;
+bool bytecode_write_standalone(Bytecode *bc, const char *path) {
+    if (!bc || !path) return false;
+
+    char exe_path[4096];
+    if (!get_exe_path(exe_path, sizeof(exe_path))) return false;
+
+    FILE *src = fopen(exe_path, "rb");
+    if (!src) return false;
+
+    FILE *dst = fopen(path, "wb");
+    if (!dst) { fclose(src); return false; }
+
+    /* Copy the interpreter executable */
+    char buf[8192];
+    size_t n;
+    bool ok = true;
+    while ((n = fread(buf, 1, sizeof(buf), src)) > 0) {
+        if (fwrite(buf, 1, n, dst) != n) { ok = false; break; }
+    }
+    if (ferror(src)) ok = false;
+    fclose(src);
+    if (!ok) { fclose(dst); return false; }
+
+    /* Record offset where the bytecode payload begins */
+    long pos = ftell(dst);
+    if (pos < 0) { fclose(dst); return false; }
+    uint64_t payload_offset = (uint64_t)pos;
+
+    /* Write the bytecode payload */
+    ok = bytecode_write_payload(bc, dst);
+
+    /* Write the self-payload footer: offset + magic */
+    ok = ok && write_exact(dst, &payload_offset, sizeof(payload_offset));
+    ok = ok && write_exact(dst, OCL_SELF_MAGIC, sizeof(OCL_SELF_MAGIC) - 1);
+
+    if (fclose(dst) != 0) ok = false;
+    return ok;
+}
+
+/* ── Bytecode payload read (from an already-open FILE*) ───────────── */
+
+static Bytecode *bytecode_read_payload(FILE *f, bool *is_executable) {
+    if (is_executable) *is_executable = false;
 
     char shebang[sizeof(OCL_EXEC_SHEBANG)];
-    if (!read_exact(f, shebang, sizeof(OCL_EXEC_SHEBANG) - 1)) {
-        fclose(f);
+    if (!read_exact(f, shebang, sizeof(OCL_EXEC_SHEBANG) - 1))
         return NULL;
-    }
     shebang[sizeof(OCL_EXEC_SHEBANG) - 1] = '\0';
-    if (strcmp(shebang, OCL_EXEC_SHEBANG) != 0) {
-        fclose(f);
+    if (strcmp(shebang, OCL_EXEC_SHEBANG) != 0)
         return NULL;
-    }
 
     char magic[sizeof(OCL_EXEC_MAGIC)];
-    if (!read_exact(f, magic, sizeof(OCL_EXEC_MAGIC) - 1)) {
-        fclose(f);
+    if (!read_exact(f, magic, sizeof(OCL_EXEC_MAGIC) - 1))
         return NULL;
-    }
     magic[sizeof(OCL_EXEC_MAGIC) - 1] = '\0';
-    if (strcmp(magic, OCL_EXEC_MAGIC) != 0) {
-        fclose(f);
+    if (strcmp(magic, OCL_EXEC_MAGIC) != 0)
         return NULL;
-    }
 
     if (is_executable) *is_executable = true;
 
@@ -453,10 +520,8 @@ Bytecode *bytecode_read_executable(const char *path, bool *is_executable) {
     uint32_t function_count = 0;
     if (!read_u32(f, &instruction_count) ||
         !read_u32(f, &constant_count) ||
-        !read_u32(f, &function_count)) {
-        fclose(f);
+        !read_u32(f, &function_count))
         return NULL;
-    }
 
     Bytecode *bc = bytecode_create();
     bc->instruction_capacity = bc->instruction_count = instruction_count;
@@ -582,9 +647,52 @@ Bytecode *bytecode_read_executable(const char *path, bool *is_executable) {
         bc->instructions[i].location.filename = filename;
     }
 
-    fclose(f);
     if (ok) return bc;
-
     bytecode_free(bc);
     return NULL;
+}
+
+/* ── Read bytecode-only file ──────────────────────────────────────── */
+
+Bytecode *bytecode_read_executable(const char *path, bool *is_executable) {
+    if (is_executable) *is_executable = false;
+    if (!path) return NULL;
+
+    FILE *f = fopen(path, "rb");
+    if (!f) return NULL;
+
+    Bytecode *bc = bytecode_read_payload(f, is_executable);
+    fclose(f);
+    return bc;
+}
+
+/* ── Read self-embedded payload from current executable ────────────── */
+
+Bytecode *bytecode_read_self_payload(void) {
+    char exe_path[4096];
+    if (!get_exe_path(exe_path, sizeof(exe_path))) return NULL;
+
+    FILE *f = fopen(exe_path, "rb");
+    if (!f) return NULL;
+
+    /* Read footer: 8 bytes offset + 8 bytes magic at end of file */
+    if (fseek(f, -16, SEEK_END) != 0) { fclose(f); return NULL; }
+
+    uint64_t payload_offset;
+    char magic[sizeof(OCL_SELF_MAGIC)];
+    if (!read_exact(f, &payload_offset, sizeof(payload_offset)) ||
+        !read_exact(f, magic, sizeof(OCL_SELF_MAGIC) - 1)) {
+        fclose(f);
+        return NULL;
+    }
+    magic[sizeof(OCL_SELF_MAGIC) - 1] = '\0';
+    if (strcmp(magic, OCL_SELF_MAGIC) != 0) { fclose(f); return NULL; }
+
+    /* Seek to payload and read bytecode */
+    if (fseek(f, (long)payload_offset, SEEK_SET) != 0) { fclose(f); return NULL; }
+
+    bool is_exec = false;
+    Bytecode *bc = bytecode_read_payload(f, &is_exec);
+    fclose(f);
+    return bc;
 }

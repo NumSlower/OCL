@@ -652,56 +652,6 @@ bool type_checker_check(TypeChecker *tc, ProgramNode *program) {
     predeclare_program(tc, program);
     check_program(tc, program);
     return tc->error_count == 0;
-
-    /*
-     * Pass 1: Register all top-level names so that forward references inside
-     * function bodies work correctly.
-     *
-     * For functions we allocate a fresh param_types array here; it becomes
-     * owned by the Symbol and is freed by symbol_table_free().
-     */
-    for (size_t i = 0; i < program->node_count; i++) {
-        ASTNode *n = program->nodes[i];
-        if (n->type == AST_FUNC_DECL) {
-            FuncDeclNode *f = (FuncDeclNode *)n;
-            /* Skip if already registered (e.g. from an Import). */
-            if (symbol_table_has_in_current_scope(tc->symbol_table, f->name)) continue;
-            TypeNode **ptypes = NULL;
-            if (f->param_count > 0) {
-                ptypes = ocl_malloc(f->param_count * sizeof(TypeNode *));
-                for (size_t j = 0; j < f->param_count; j++) ptypes[j] = f->params[j]->type;
-            }
-            symbol_table_insert_func(tc->symbol_table, f->name, f->return_type, ptypes, (int)f->param_count);
-        } else if (n->type == AST_VAR_DECL) {
-            VarDeclNode *v = (VarDeclNode *)n;
-            if (!symbol_table_has_in_current_scope(tc->symbol_table, v->name))
-                symbol_table_insert(tc->symbol_table, v->name, v->type, false, false);
-        } else if (n->type == AST_DECLARE) {
-            DeclareNode *d = (DeclareNode *)n;
-            if (!symbol_table_has_in_current_scope(tc->symbol_table, d->name))
-                symbol_table_insert(tc->symbol_table, d->name, d->type, false, false);
-        }
-    }
-
-    /*
-     * Pass 2: Full type-check.
-     *
-     * For VAR_DECL at the top level we only check the initialiser expression
-     * (the symbol is already in the table from pass-1).  All other nodes are
-     * handled by check_node(), which for AST_FUNC_DECL now only processes the
-     * body — it does NOT re-register the function signature.
-     */
-    for (size_t i = 0; i < program->node_count; i++) {
-        ASTNode *n = program->nodes[i];
-        if (n->type == AST_VAR_DECL) {
-            VarDeclNode *v = (VarDeclNode *)n;
-            if (v->initializer) check_expr(tc, v->initializer);
-        } else {
-            check_node(tc, n);
-        }
-    }
-
-    return tc->error_count == 0;
 }
 
 int type_checker_get_error_count(TypeChecker *tc) { return tc ? tc->error_count : 0; }

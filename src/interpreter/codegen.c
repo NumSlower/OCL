@@ -1035,6 +1035,8 @@ bool codegen_generate(CodeGenerator *g, ProgramNode *program, Bytecode *output) 
     if (main_idx >= 0) {
         SourceLocation entry = {1, 1, "entry"};
         bytecode_emit(output, OP_CALL, (uint32_t)main_idx, 0, entry);
+        /* Pop the return value from main() — keep the stack clean before HALT. */
+        bytecode_emit(output, OP_POP, 0, 0, entry);
     }
 
     SourceLocation halt_loc = {1, 1, "end"};
