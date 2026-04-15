@@ -22,9 +22,8 @@ Run source files:
 Compile and run an OCL executable:
 
 ```bash
-./build/ocl -e hello path/to/program.ocl
-./build/ocl -r hello.elf
-./build/ocl -r hello.elf -- arg1 arg2
+./build/ocl -e hello path/to/program.ocl      # produces hello.elf (Linux) or hello.exe (Windows)
+./build/ocl -r hello.elf -- arg1 arg2          # run compiled executable
 ```
 
 Build a NumOS ELF executable:
@@ -197,6 +196,10 @@ Notes:
 - Use `bitLogicalShiftRight(x, n)` when you need zero fill right shift behavior.
 - Postfix `x++` and `x--` are parsed, but they behave like rewritten assignment expressions, not C style value returning postfix operators.
 - `condition ? whenTrue : whenFalse` is right associative.
+- `%` supports both `Int` and `Float` operands. Float modulo uses `fmod`.
+- `*` supports string repetition: `"ha" * 3` produces `"hahaha"`. The integer may appear on either side.
+- `<`, `<=`, `>`, `>=` support lexicographic string comparison.
+- Array and string indexing supports negative indices: `-1` is the last element, `-2` is second to last, etc.
 
 Precedence, high to low:
 
@@ -248,6 +251,16 @@ for (Let i:Int = 0; i < 10; i = i + 1) {
 }
 ```
 
+Do-While:
+
+```ocl
+do {
+    count++;
+} while (count < 10);
+```
+
+The body always executes at least once.
+
 Loop control:
 
 ```ocl
@@ -259,7 +272,6 @@ Notes:
 
 - Braces are required for blocks.
 - `for` loop declarations in the initializer must include an initializer value.
-- There is no `do while` loop in the current parser.
 
 ## Functions
 
@@ -486,7 +498,8 @@ Examples:
 ```bash
 ./build/ocl Testfiles/echo.ocl -- "Hello world!"
 ./build/ocl -e echo Testfiles/echo.ocl
-./build/ocl -r echo.elf -- "Hello world!"
+./build/ocl -r echo.elf -- "Hello world!"      # Linux
+./build/ocl -r echo.exe -- "Hello world!"      # Windows
 ```
 
 `print` writes a newline. `printf` does not.
@@ -502,7 +515,6 @@ printf("value=%d": x);
 
 ## Known Limits
 
-- Functions are not first class values.
 - Nested functions are not supported.
 - The VM call stack limit is 4096 frames.
 - The type checker is skipped only when you pass `--no-typecheck`.
