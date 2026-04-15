@@ -51,8 +51,37 @@ typedef enum {
     TYPE_UNKNOWN
 } BuiltinType;
 
+typedef enum {
+    INTEGER_KIND_NONE,
+    INTEGER_KIND_LITERAL,
+    INTEGER_KIND_GENERIC_INT,
+    INTEGER_KIND_ICHAR,
+    INTEGER_KIND_SHORT,
+    INTEGER_KIND_INT,
+    INTEGER_KIND_LONG,
+    INTEGER_KIND_INT128,
+    INTEGER_KIND_IPTR,
+    INTEGER_KIND_ISZ,
+    INTEGER_KIND_CHAR,
+    INTEGER_KIND_USHORT,
+    INTEGER_KIND_UINT,
+    INTEGER_KIND_ULONG,
+    INTEGER_KIND_UINT128,
+    INTEGER_KIND_UPTR,
+    INTEGER_KIND_USZ,
+} IntegerKind;
+
+typedef struct {
+    IntegerKind kind;
+    const char *name;
+    bool        is_signed;
+    uint16_t    bits;
+    bool        is_host_dependent;
+} IntegerTypeInfo;
+
 typedef struct TypeNode {
     BuiltinType       type;
+    IntegerKind       integer_kind;
     struct TypeNode  *element_type;
     char             *struct_name;
     struct TypeNode **param_types;
@@ -280,6 +309,10 @@ ExprNode  *ast_clone_expr(const ExprNode *expr);
 
 TypeNode  *ast_create_type(BuiltinType type);
 TypeNode  *ast_create_type_named(BuiltinType type, const char *struct_name);
+TypeNode  *ast_create_integer_type(IntegerKind kind);
+const IntegerTypeInfo *ast_integer_type_info(IntegerKind kind);
+bool       ast_type_is_integer(const TypeNode *type);
+const char *ast_type_name(const TypeNode *type);
 ParamNode *ast_create_param(char *name, TypeNode *type, SourceLocation loc);
 
 void       ast_free(ASTNode *node);

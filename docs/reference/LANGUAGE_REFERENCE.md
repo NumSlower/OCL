@@ -54,13 +54,34 @@ Built in types:
 
 | Type | Accepted names | Notes |
 | --- | --- | --- |
-| `Int` | `Int`, `int`, `int32`, `int64` | Runtime integers are 64 bit |
+| `Int` | `Int` | Default signed integer |
+| `ichar` | `ichar` | Signed 8 bit integer |
+| `short` | `short` | Signed 16 bit integer |
+| `int` | `int`, `int32` | Signed 32 bit integer |
+| `long` | `long`, `int64` | Signed 64 bit integer |
+| `int128` | `int128` | Signed 128 bit integer name |
+| `iptr` | `iptr` | Signed pointer sized integer |
+| `isz` | `isz` | Signed size sized integer |
+| `char` | `char` | Unsigned 8 bit integer |
+| `ushort` | `ushort` | Unsigned 16 bit integer |
+| `uint` | `uint` | Unsigned 32 bit integer |
+| `ulong` | `ulong` | Unsigned 64 bit integer |
+| `uint128` | `uint128` | Unsigned 128 bit integer name |
+| `uptr` | `uptr` | Unsigned pointer sized integer |
+| `usz` | `usz` | Unsigned size sized integer |
 | `Float` | `Float`, `float` | Double precision |
 | `String` | `String`, `string` | Heap allocated string |
 | `Bool` | `Bool`, `bool` | `true` or `false` |
-| `Char` | `Char`, `char` | Single byte character |
+| `Char` | `Char` | Single byte character |
 | `Array` | `Array`, `array` | Dynamic array |
 | `void` | `void`, `Void` | Function return type |
+
+Notes:
+
+- Lower case integer names use the raw integer family.
+- `Char` stays the character type for character literals and text work.
+- `iptr`, `uptr`, `isz`, and `usz` follow the host pointer and size width.
+- The current VM still lowers integer values through one integer runtime lane.
 
 User defined struct types are also supported:
 
@@ -191,6 +212,7 @@ Increment and decrement:
 Notes:
 
 - `Int` bitwise operations use 64 bit two's complement values.
+- Raw integer names share the same operator surface as `Int`.
 - `&&` and `||` short circuit.
 - `>>` is an arithmetic right shift on `Int`.
 - Use `bitLogicalShiftRight(x, n)` when you need zero fill right shift behavior.

@@ -3,6 +3,42 @@
 
 #include <string.h>
 
+static TypeNode *ast_clone_type(const TypeNode *type);
+static const IntegerTypeInfo *integer_type_info_impl(IntegerKind kind) {
+    static bool initialised = false;
+    static IntegerTypeInfo table[] = {
+        { INTEGER_KIND_NONE,        NULL,     true,  0, false },
+        { INTEGER_KIND_LITERAL,     "<int>",  true,  0, false },
+        { INTEGER_KIND_GENERIC_INT, "Int",    true, 64, false },
+        { INTEGER_KIND_ICHAR,       "ichar",  true,  8, false },
+        { INTEGER_KIND_SHORT,       "short",  true, 16, false },
+        { INTEGER_KIND_INT,         "int",    true, 32, false },
+        { INTEGER_KIND_LONG,        "long",   true, 64, false },
+        { INTEGER_KIND_INT128,      "int128", true, 128, false },
+        { INTEGER_KIND_IPTR,        "iptr",   true,  0, true  },
+        { INTEGER_KIND_ISZ,         "isz",    true,  0, true  },
+        { INTEGER_KIND_CHAR,        "char",   false, 8, false },
+        { INTEGER_KIND_USHORT,      "ushort", false, 16, false },
+        { INTEGER_KIND_UINT,        "uint",   false, 32, false },
+        { INTEGER_KIND_ULONG,       "ulong",  false, 64, false },
+        { INTEGER_KIND_UINT128,     "uint128",false,128, false },
+        { INTEGER_KIND_UPTR,        "uptr",   false, 0, true  },
+        { INTEGER_KIND_USZ,         "usz",    false, 0, true  },
+    };
+
+    if (!initialised) {
+        table[INTEGER_KIND_IPTR].bits = (uint16_t)(sizeof(intptr_t) * 8u);
+        table[INTEGER_KIND_ISZ].bits = (uint16_t)(sizeof(ptrdiff_t) * 8u);
+        table[INTEGER_KIND_UPTR].bits = (uint16_t)(sizeof(uintptr_t) * 8u);
+        table[INTEGER_KIND_USZ].bits = (uint16_t)(sizeof(size_t) * 8u);
+        initialised = true;
+    }
+
+    if ((size_t)kind >= (sizeof(table) / sizeof(table[0])))
+        return &table[INTEGER_KIND_NONE];
+    return &table[(size_t)kind];
+}
+
 static ASTNode *ast_clone_node(const ASTNode *node);
 ExprNode *ast_clone_expr(const ExprNode *expr);
 
@@ -23,6 +59,7 @@ static TypeNode *ast_clone_type(const TypeNode *type) {
     if (!type) return NULL;
 
     TypeNode *copy = ast_create_type_named(type->type, type->struct_name);
+    copy->integer_kind = type->integer_kind;
     copy->element_type = ast_clone_type(type->element_type);
     copy->param_count = type->param_count;
     if (type->param_count > 0) {
@@ -391,6 +428,7 @@ ExprNode *ast_clone_expr(const ExprNode *expr) {
 TypeNode *ast_create_type_named(BuiltinType type, const char *struct_name) {
     TypeNode *t = ocl_malloc(sizeof(TypeNode));
     t->type = type;
+    t->integer_kind = (type == TYPE_INT) ? INTEGER_KIND_GENERIC_INT : INTEGER_KIND_NONE;
     t->element_type = NULL;
     t->struct_name = struct_name ? ocl_strdup(struct_name) : NULL;
     t->param_types = NULL;
@@ -401,6 +439,47 @@ TypeNode *ast_create_type_named(BuiltinType type, const char *struct_name) {
 
 TypeNode *ast_create_type(BuiltinType type) {
     return ast_create_type_named(type, NULL);
+}
+
+TypeNode *ast_create_integer_type(IntegerKind kind) {
+    TypeNode *type = ast_create_type(TYPE_INT);
+    type->integer_kind = kind;
+    return type;
+}
+
+const IntegerTypeInfo *ast_integer_type_info(IntegerKind kind) {
+    return integer_type_info_impl(kind);
+}
+
+bool ast_type_is_integer(const TypeNode *type) {
+    return type && type->type == TYPE_INT;
+}
+
+const char *ast_type_name(const TypeNode *type) {
+    const IntegerTypeInfo *info;
+
+    if (!type)
+        return "Unknown";
+
+    if (ast_type_is_integer(type)) {
+        info = ast_integer_type_info(type->integer_kind);
+        return info && info->name ? info->name : "Int";
+    }
+
+    switch (type->type) {
+        case TYPE_FLOAT:    return "Float";
+        case TYPE_STRING:   return "String";
+        case TYPE_BOOL:     return "Bool";
+        case TYPE_CHAR:     return "Char";
+        case TYPE_ARRAY:    return "Array";
+        case TYPE_STRUCT:   return type->struct_name ? type->struct_name : "Struct";
+        case TYPE_FUNCTION: return "Func";
+        case TYPE_VOID:     return "void";
+        case TYPE_UNKNOWN:  return "Unknown";
+        case TYPE_INT:      return "Int";
+    }
+
+    return "Unknown";
 }
 
 ParamNode *ast_create_param(char *name, TypeNode *type, SourceLocation loc) {

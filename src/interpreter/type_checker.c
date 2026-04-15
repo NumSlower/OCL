@@ -128,12 +128,26 @@ static bool accepts_argc(int param_count, size_t argc) {
     return param_count == (int)argc;
 }
 
+static TypeNode *integer_literal_type(void) {
+    static TypeNode literal = {
+        TYPE_INT,
+        INTEGER_KIND_LITERAL,
+        NULL,
+        NULL,
+        NULL,
+        0,
+        NULL
+    };
+    return &literal;
+}
+
 static TypeNode *builtin_type(BuiltinType bt) {
     static TypeNode types[TYPE_UNKNOWN + 1];
     static bool initialised = false;
     if (!initialised) {
         for (int i = 0; i <= (int)TYPE_UNKNOWN; i++) {
             types[i].type         = (BuiltinType)i;
+            types[i].integer_kind = (i == TYPE_INT) ? INTEGER_KIND_GENERIC_INT : INTEGER_KIND_NONE;
             types[i].element_type = NULL;
             types[i].struct_name  = NULL;
             types[i].param_types  = NULL;
@@ -176,10 +190,116 @@ static void tc_error(TypeChecker *tc, SourceLocation loc, const char *fmt, ...) 
     tc->error_count++;
 }
 
+static bool type_matches(TypeNode *expected, TypeNode *actual);
+
+static bool type_is_integer(const TypeNode *type) {
+    return ast_type_is_integer(type);
+}
+
+static bool type_is_integer_literal(const TypeNode *type) {
+    return type_is_integer(type) && type->integer_kind == INTEGER_KIND_LITERAL;
+}
+
+static bool type_is_numeric(const TypeNode *type) {
+    return type && (type_is_integer(type) || type->type == TYPE_FLOAT);
+}
+
+static int integer_rank(const TypeNode *type) {
+    if (!type_is_integer(type))
+        return -1;
+
+    switch (type->integer_kind) {
+        case INTEGER_KIND_LITERAL:     return 0;
+        case INTEGER_KIND_ICHAR:
+        case INTEGER_KIND_CHAR:        return 1;
+        case INTEGER_KIND_SHORT:
+        case INTEGER_KIND_USHORT:      return 2;
+        case INTEGER_KIND_INT:
+        case INTEGER_KIND_UINT:        return 3;
+        case INTEGER_KIND_GENERIC_INT:
+        case INTEGER_KIND_LONG:
+        case INTEGER_KIND_ULONG:
+        case INTEGER_KIND_IPTR:
+        case INTEGER_KIND_ISZ:
+        case INTEGER_KIND_UPTR:
+        case INTEGER_KIND_USZ:         return 4;
+        case INTEGER_KIND_INT128:
+        case INTEGER_KIND_UINT128:     return 5;
+        case INTEGER_KIND_NONE:        return -1;
+    }
+
+    return -1;
+}
+
+static TypeNode *promote_integer_types(TypeNode *left, TypeNode *right) {
+    if (type_is_integer_literal(left) && type_is_integer(right))
+        return right;
+    if (type_is_integer(left) && type_is_integer_literal(right))
+        return left;
+    if (type_is_integer_literal(left) && type_is_integer_literal(right))
+        return builtin_type(TYPE_INT);
+    if (!type_is_integer(left) || !type_is_integer(right))
+        return builtin_type(TYPE_INT);
+    return integer_rank(left) >= integer_rank(right) ? left : right;
+}
+
+static bool integer_literal_fits(TypeNode *expected, int64_t value) {
+    const IntegerTypeInfo *info;
+
+    if (!type_is_integer(expected))
+        return false;
+    if (expected->integer_kind == INTEGER_KIND_LITERAL)
+        return true;
+
+    info = ast_integer_type_info(expected->integer_kind);
+    if (!info)
+        return false;
+
+    if (info->is_signed) {
+        int64_t min_value;
+        int64_t max_value;
+
+        if (info->bits == 0 || info->bits >= 64)
+            return true;
+
+        min_value = -(1LL << (info->bits - 1));
+        max_value = (1LL << (info->bits - 1)) - 1;
+        return value >= min_value && value <= max_value;
+    }
+
+    if (value < 0)
+        return false;
+    if (info->bits == 0 || info->bits >= 63)
+        return true;
+    return (uint64_t)value <= ((1ULL << info->bits) - 1ULL);
+}
+
+static bool type_accepts_expr(TypeNode *expected, ExprNode *expr, TypeNode *actual) {
+    LiteralNode *literal;
+
+    if (!expected || !actual)
+        return true;
+    if (expr && expr->base.type == AST_LITERAL && type_is_integer(expected)) {
+        literal = (LiteralNode *)expr;
+        if (literal->value.type == VALUE_INT)
+            return integer_literal_fits(expected, literal->value.data.int_val);
+        if (literal->value.type == VALUE_CHAR)
+            return integer_literal_fits(expected, (unsigned char)literal->value.data.char_val);
+    }
+    if (type_matches(expected, actual))
+        return true;
+    if (!expr || expr->base.type != AST_LITERAL || !type_is_integer(expected))
+        return false;
+
+    literal = (LiteralNode *)expr;
+    return false;
+}
+
 static bool type_matches(TypeNode *expected, TypeNode *actual) {
     if (!expected || !actual) return true;
     if (expected->type == TYPE_VOID) return true;
     if (expected->type == TYPE_UNKNOWN || actual->type == TYPE_UNKNOWN) return true;
+    if (type_is_integer(expected) && type_is_integer(actual)) return true;
     if (expected->type != actual->type) return false;
     if (expected->type == TYPE_FUNCTION) {
         if (expected->param_count != actual->param_count)
@@ -204,11 +324,10 @@ static TypeNode *merge_conditional_types(TypeChecker *tc, TypeNode *left,
     if (left->type == TYPE_UNKNOWN) return right;
     if (right->type == TYPE_UNKNOWN) return left;
 
-    if ((left->type == TYPE_INT || left->type == TYPE_FLOAT) &&
-        (right->type == TYPE_INT || right->type == TYPE_FLOAT)) {
+    if (type_is_numeric(left) && type_is_numeric(right)) {
         if (left->type == TYPE_FLOAT || right->type == TYPE_FLOAT)
             return builtin_type(TYPE_FLOAT);
-        return builtin_type(TYPE_INT);
+        return promote_integer_types(left, right);
     }
 
     if (left->type == right->type) {
@@ -274,8 +393,12 @@ static void register_struct_decl(TypeChecker *tc, StructDeclNode *decl) {
     sym->fields = decl->fields;
     sym->field_count = decl->field_count;
     sym->type.type = TYPE_STRUCT;
+    sym->type.integer_kind = INTEGER_KIND_NONE;
     sym->type.element_type = NULL;
     sym->type.struct_name = ocl_strdup(decl->name);
+    sym->type.param_types = NULL;
+    sym->type.param_count = 0;
+    sym->type.return_type = NULL;
 }
 
 static void predeclare_program(TypeChecker *tc, ProgramNode *program) {
@@ -351,6 +474,8 @@ static TypeNode *check_expr(TypeChecker *tc, ExprNode *expr) {
                 case VALUE_STRUCT: bt = TYPE_STRUCT; break;
                 default:           bt = TYPE_UNKNOWN; break;
             }
+            if (lit->value.type == VALUE_INT)
+                return integer_literal_type();
             return builtin_type(bt);
         }
         case AST_IDENTIFIER: {
@@ -369,15 +494,17 @@ static TypeNode *check_expr(TypeChecker *tc, ExprNode *expr) {
                 if (b->left && b->left->base.type == AST_IDENTIFIER) {
                     IdentifierNode *id = (IdentifierNode *)b->left;
                     Symbol *sym = symbol_table_lookup(tc->symbol_table, id->name);
-                    if (sym && sym->type && !type_matches(sym->type, rt))
-                        tc_error(tc, b->base.location, "Cannot assign %s to '%s'",
-                                 rt->struct_name ? rt->struct_name : "value", id->name);
+                    if (sym && sym->type && !type_accepts_expr(sym->type, b->right, rt))
+                        tc_error(tc, b->base.location, "Cannot assign %s to '%s' of type %s",
+                                 ast_type_name(rt), id->name, ast_type_name(sym->type));
+                    return sym && sym->type ? sym->type : rt;
                 } else if (b->left && b->left->base.type == AST_FIELD_ACCESS) {
-                    if (!type_matches(lt, rt)) {
+                    if (!type_accepts_expr(lt, b->right, rt)) {
                         FieldAccessNode *fa = (FieldAccessNode *)b->left;
-                        tc_error(tc, b->base.location, "Cannot assign incompatible value to field '%s'",
-                                 fa->field_name);
+                        tc_error(tc, b->base.location, "Cannot assign %s to field '%s' of type %s",
+                                 ast_type_name(rt), fa->field_name, ast_type_name(lt));
                     }
+                    return lt;
                 }
                 return rt;
             }
@@ -389,15 +516,17 @@ static TypeNode *check_expr(TypeChecker *tc, ExprNode *expr) {
             if (!strcmp(b->operator,"&") || !strcmp(b->operator,"|") ||
                 !strcmp(b->operator,"^") || !strcmp(b->operator,"<<") ||
                 !strcmp(b->operator,">>"))
-                return builtin_type(TYPE_INT);
+                return promote_integer_types(lt, rt);
             if (lt->type == TYPE_FLOAT || rt->type == TYPE_FLOAT) return builtin_type(TYPE_FLOAT);
             if (lt->type == TYPE_STRING && !strcmp(b->operator, "+")) return builtin_type(TYPE_STRING);
+            if (type_is_integer(lt) && type_is_integer(rt))
+                return promote_integer_types(lt, rt);
             return lt;
         }
         case AST_UNARY_OP: {
             UnaryOpNode *u = (UnaryOpNode *)expr;
             if (!strcmp(u->operator, "!")) return builtin_type(TYPE_BOOL);
-            if (!strcmp(u->operator, "~")) return builtin_type(TYPE_INT);
+            if (!strcmp(u->operator, "~")) return check_expr(tc, u->operand);
             return check_expr(tc, u->operand);
         }
         case AST_TERNARY: {
@@ -431,9 +560,11 @@ static TypeNode *check_expr(TypeChecker *tc, ExprNode *expr) {
             for (size_t i = 0; i < c->argument_count; i++) {
                 TypeNode *arg_type = check_expr(tc, c->arguments[i]);
                 if (i < callee_type->param_count &&
-                    !type_matches(callee_type->param_types[i], arg_type)) {
-                    tc_error(tc, c->base.location, "Argument %llu does not match the function parameter type",
-                             (unsigned long long)(i + 1));
+                    !type_accepts_expr(callee_type->param_types[i], c->arguments[i], arg_type)) {
+                    tc_error(tc, c->base.location, "Argument %llu expects %s, got %s",
+                             (unsigned long long)(i + 1),
+                             ast_type_name(callee_type->param_types[i]),
+                             ast_type_name(arg_type));
                 }
             }
             return callee_type->return_type ? callee_type->return_type : builtin_type(TYPE_VOID);
@@ -466,9 +597,9 @@ static TypeNode *check_expr(TypeChecker *tc, ExprNode *expr) {
                              sl->struct_name, sl->field_names[i]);
                     continue;
                 }
-                if (!type_matches(field->type, value_type))
-                    tc_error(tc, sl->base.location, "Field '%s' expects a different type",
-                             sl->field_names[i]);
+                if (!type_accepts_expr(field->type, sl->field_values[i], value_type))
+                    tc_error(tc, sl->base.location, "Field '%s' expects %s, got %s",
+                             sl->field_names[i], ast_type_name(field->type), ast_type_name(value_type));
             }
             return &sym->type;
         }
@@ -544,13 +675,14 @@ static void check_node(TypeChecker *tc, ASTNode *node) {
             TypeNode *decl_type = v->type ? v->type : builtin_type(TYPE_UNKNOWN);
             if (decl_type->type == TYPE_UNKNOWN && init_type) {
                 decl_type->type = init_type->type;
+                decl_type->integer_kind = init_type->integer_kind;
                 if (init_type->struct_name) {
                     ocl_free(decl_type->struct_name);
                     decl_type->struct_name = ocl_strdup(init_type->struct_name);
                 }
-            } else if (init_type && !type_matches(decl_type, init_type)) {
-                tc_error(tc, v->base.location, "Initializer for '%s' does not match its declared type",
-                         v->name);
+            } else if (init_type && !type_accepts_expr(decl_type, v->initializer, init_type)) {
+                tc_error(tc, v->base.location, "Initializer for '%s' expects %s, got %s",
+                         v->name, ast_type_name(decl_type), ast_type_name(init_type));
             }
             symbol_table_insert(tc->symbol_table, v->name, decl_type, false, false);
             break;
@@ -636,8 +768,9 @@ static void check_node(TypeChecker *tc, ASTNode *node) {
             ReturnNode *r = (ReturnNode *)node;
             TypeNode *value_type = check_expr(tc, r->value);
             if (tc->current_function_return_type &&
-                !type_matches(tc->current_function_return_type, value_type))
-                tc_error(tc, r->base.location, "Return value does not match the function return type");
+                !type_accepts_expr(tc->current_function_return_type, r->value, value_type))
+                tc_error(tc, r->base.location, "Return value expects %s, got %s",
+                         ast_type_name(tc->current_function_return_type), ast_type_name(value_type));
             break;
         }
         case AST_BREAK: case AST_CONTINUE: break;

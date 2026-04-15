@@ -381,12 +381,6 @@ static bool token_is_func_type_name(const Token *token) {
            strcmp(token->lexeme, "Func") == 0;
 }
 
-/*
- * parse_type — parse a type name from the token stream.
- * bit_width suffixes (int32, int64) are consumed but ignored — all integers
- * are 64-bit at runtime.  Array brackets ([]) are consumed but ignored since
- * the type system does not track element types yet.
- */
 static TypeNode *parse_type(Parser *p) {
     Token *t = cur_tok(p);
     if (token_is_func_type_name(t)) {
@@ -410,28 +404,43 @@ static TypeNode *parse_type(Parser *p) {
         error_add(p->errors, ERRK_SYNTAX, ERROR_PARSER, t->location, "Expected type name");
         return ast_create_type(TYPE_UNKNOWN);
     }
-    char *name = dup_lexeme(t); p->current++;
-    BuiltinType bt = TYPE_STRUCT;
-    if      (!strcmp(name,"int")   ||!strcmp(name,"Int"))    bt = TYPE_INT;
-    else if (!strcmp(name,"float") ||!strcmp(name,"Float"))  bt = TYPE_FLOAT;
-    else if (!strcmp(name,"string")||!strcmp(name,"String")) bt = TYPE_STRING;
-    else if (!strcmp(name,"bool")  ||!strcmp(name,"Bool"))   bt = TYPE_BOOL;
-    else if (!strcmp(name,"char")  ||!strcmp(name,"Char"))   bt = TYPE_CHAR;
-    else if (!strcmp(name,"void")  ||!strcmp(name,"Void"))   bt = TYPE_VOID;
-    else if (!strcmp(name,"array") ||!strcmp(name,"Array"))  bt = TYPE_ARRAY;
+    char *name = dup_lexeme(t);
+    TypeNode *tn = NULL;
 
-    /* Consume optional bit-width suffix (int32 / int64) — ignored at runtime. */
-    if (bt == TYPE_INT && check(p, TOKEN_INT)) {
-        int64_t v = cur_tok(p)->value.int_value;
-        if (v == 32 || v == 64) p->current++;
-    }
+    p->current++;
 
-    TypeNode *tn = (bt == TYPE_STRUCT)
-        ? ast_create_type_named(TYPE_STRUCT, name)
-        : ast_create_type(bt);
+    if (!strcmp(name, "Int"))               tn = ast_create_integer_type(INTEGER_KIND_GENERIC_INT);
+    else if (!strcmp(name, "ichar"))        tn = ast_create_integer_type(INTEGER_KIND_ICHAR);
+    else if (!strcmp(name, "short"))        tn = ast_create_integer_type(INTEGER_KIND_SHORT);
+    else if (!strcmp(name, "int") ||
+             !strcmp(name, "int32"))        tn = ast_create_integer_type(INTEGER_KIND_INT);
+    else if (!strcmp(name, "long") ||
+             !strcmp(name, "int64"))        tn = ast_create_integer_type(INTEGER_KIND_LONG);
+    else if (!strcmp(name, "int128"))       tn = ast_create_integer_type(INTEGER_KIND_INT128);
+    else if (!strcmp(name, "iptr"))         tn = ast_create_integer_type(INTEGER_KIND_IPTR);
+    else if (!strcmp(name, "isz"))          tn = ast_create_integer_type(INTEGER_KIND_ISZ);
+    else if (!strcmp(name, "char"))         tn = ast_create_integer_type(INTEGER_KIND_CHAR);
+    else if (!strcmp(name, "ushort"))       tn = ast_create_integer_type(INTEGER_KIND_USHORT);
+    else if (!strcmp(name, "uint"))         tn = ast_create_integer_type(INTEGER_KIND_UINT);
+    else if (!strcmp(name, "ulong"))        tn = ast_create_integer_type(INTEGER_KIND_ULONG);
+    else if (!strcmp(name, "uint128"))      tn = ast_create_integer_type(INTEGER_KIND_UINT128);
+    else if (!strcmp(name, "uptr"))         tn = ast_create_integer_type(INTEGER_KIND_UPTR);
+    else if (!strcmp(name, "usz"))          tn = ast_create_integer_type(INTEGER_KIND_USZ);
+    else if (!strcmp(name, "float") ||
+             !strcmp(name, "Float"))        tn = ast_create_type(TYPE_FLOAT);
+    else if (!strcmp(name, "string") ||
+             !strcmp(name, "String"))       tn = ast_create_type(TYPE_STRING);
+    else if (!strcmp(name, "bool") ||
+             !strcmp(name, "Bool"))         tn = ast_create_type(TYPE_BOOL);
+    else if (!strcmp(name, "Char"))         tn = ast_create_type(TYPE_CHAR);
+    else if (!strcmp(name, "void") ||
+             !strcmp(name, "Void"))         tn = ast_create_type(TYPE_VOID);
+    else if (!strcmp(name, "array") ||
+             !strcmp(name, "Array"))        tn = ast_create_type(TYPE_ARRAY);
+    else                                    tn = ast_create_type_named(TYPE_STRUCT, name);
+
     ocl_free(name);
 
-    /* Consume optional [] — array type annotations are parsed but not tracked. */
     if (match(p, TOKEN_LBRACKET)) {
         consume(p, TOKEN_RBRACKET, "Expected ']'");
     }
