@@ -78,6 +78,8 @@ static void host_output_pop_quiet(void) {
     if (g_host_quiet_depth > 0) g_host_quiet_depth--;
 }
 
+static void terminal_runtime_diag(const char *builtin_name, const char *fmt, ...);
+
 #define REQUIRE_ARGS(vm, args, argc, needed, name) \
     do { \
         if ((argc) < (needed)) { \
@@ -137,6 +139,45 @@ static char *host_read_file(const char *path, ErrorCollector *errors) {
 
     fclose(f);
     return buf;
+}
+
+static bool host_write_text_file(const char *builtin_name, const char *path,
+                                 const char *content, const char *mode) {
+    const char *text = content ? content : "";
+    size_t text_len = strlen(text);
+    FILE *file = NULL;
+    bool ok = false;
+
+    if (!path || !path[0]) {
+        terminal_runtime_diag(builtin_name, "path must not be empty");
+        return false;
+    }
+
+    file = fopen(path, mode);
+    if (!file) {
+        terminal_runtime_diag(builtin_name, "cannot open '%s': %s",
+                              path, strerror(errno));
+        return false;
+    }
+
+    if (text_len > 0 && fwrite(text, 1, text_len, file) != text_len) {
+        terminal_runtime_diag(builtin_name, "failed to write '%s'", path);
+        goto cleanup;
+    }
+
+    if (fclose(file) != 0) {
+        file = NULL;
+        terminal_runtime_diag(builtin_name, "failed to close '%s': %s",
+                              path, strerror(errno));
+        return false;
+    }
+    file = NULL;
+    ok = true;
+
+cleanup:
+    if (file)
+        fclose(file);
+    return ok;
 }
 
 static bool host_collect_lex_errors(Token *tokens, size_t token_count,
@@ -1171,6 +1212,74 @@ static void builtin_readline(VM *vm, int argc) {
    Math
    ══════════════════════════════════════════════════════════════════ */
 
+static void builtin_read_file(VM *vm, int argc) {
+    Value *args = pop_args(vm, argc);
+    char *path = NULL;
+    char *content = NULL;
+
+    REQUIRE_ARGS(vm, args, argc, 1, "readFile");
+
+    path = dup_runtime_string(args[0]);
+    free_args(args, argc);
+
+    if (!path || !path[0]) {
+        terminal_runtime_diag("readFile", "path must not be empty");
+        ocl_free(path);
+        vm_push(vm, value_null());
+        return;
+    }
+
+    content = host_read_file(path, NULL);
+    if (!content) {
+        terminal_runtime_diag("readFile", "cannot read '%s': %s",
+                              path, strerror(errno));
+        ocl_free(path);
+        vm_push(vm, value_null());
+        return;
+    }
+
+    ocl_free(path);
+    vm_push(vm, value_string(content));
+}
+
+static void builtin_write_file(VM *vm, int argc) {
+    Value *args = pop_args(vm, argc);
+    char *path = NULL;
+    char *content = NULL;
+    bool ok = false;
+
+    REQUIRE_ARGS(vm, args, argc, 2, "writeFile");
+
+    path = dup_runtime_string(args[0]);
+    content = dup_runtime_string(args[1]);
+    free_args(args, argc);
+
+    ok = host_write_text_file("writeFile", path, content, "wb");
+
+    ocl_free(path);
+    ocl_free(content);
+    vm_push(vm, value_bool(ok));
+}
+
+static void builtin_append_file(VM *vm, int argc) {
+    Value *args = pop_args(vm, argc);
+    char *path = NULL;
+    char *content = NULL;
+    bool ok = false;
+
+    REQUIRE_ARGS(vm, args, argc, 2, "appendFile");
+
+    path = dup_runtime_string(args[0]);
+    content = dup_runtime_string(args[1]);
+    free_args(args, argc);
+
+    ok = host_write_text_file("appendFile", path, content, "ab");
+
+    ocl_free(path);
+    ocl_free(content);
+    vm_push(vm, value_bool(ok));
+}
+
 static void builtin_abs(VM *vm, int argc) {
     Value *args = pop_args(vm, argc);
     REQUIRE_ARGS(vm, args, argc, 1, "abs");
@@ -2041,6 +2150,9 @@ static const StdlibEntry STDLIB_TABLE[] = {
     { BUILTIN_PRINTF,      "printf",      builtin_printf,      OCL_VARIADIC_ARGS(1), TYPE_VOID    },
     { BUILTIN_INPUT,       "input",       builtin_input,       OCL_VARIADIC_ARGS(0), TYPE_STRING  },
     { BUILTIN_READLINE,    "readLine",    builtin_readline,    0,                    TYPE_STRING  },
+    { BUILTIN_READFILE,    "readFile",    builtin_read_file,   1,                    TYPE_STRING  },
+    { BUILTIN_WRITEFILE,   "writeFile",   builtin_write_file,  2,                    TYPE_BOOL    },
+    { BUILTIN_APPENDFILE,  "appendFile",  builtin_append_file, 2,                    TYPE_BOOL    },
     { BUILTIN_ABS,         "abs",         builtin_abs,         1,                    TYPE_UNKNOWN },
     { BUILTIN_SQRT,        "sqrt",        builtin_sqrt,        1,                    TYPE_FLOAT   },
     { BUILTIN_POW,         "pow",         builtin_pow,         2,                    TYPE_FLOAT   },

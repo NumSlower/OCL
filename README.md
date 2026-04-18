@@ -62,6 +62,7 @@ Run source code:
 ./build/ocl --time path/to/program.ocl
 ./build/ocl --dump-tokens path/to/program.ocl
 ./build/ocl --dump-bytecode path/to/program.ocl
+./build/ocl --check path/to/program.ocl
 ./build/ocl --no-typecheck path/to/program.ocl
 ```
 
@@ -161,7 +162,7 @@ For the next milestone scope, see `docs/NEXT_RELEASE_PLAN.md`.
 
 Current built in areas:
 
-- I/O, `print`, `printf`, `input`, `readLine`
+- I/O, `print`, `printf`, `input`, `readLine`, `readFile`, `writeFile`, `appendFile`
 - Math, `abs`, `sqrt`, `pow`, `sin`, `cos`, `tan`, `floor`, `ceil`, `round`, `max`, `min`
 - Strings, `strLen`, `substr`, `toUpperCase`, `toLowerCase`, `strContains`, `strIndexOf`, `strReplace`, `strTrim`, `strSplit`
 - Conversion and inspection, `toInt`, `toFloat`, `toString`, `toBool`, `typeOf`, `isNull`, `isInt`, `isFloat`, `isString`, `isBool`

@@ -33,6 +33,7 @@ typedef struct {
     bool        watch;
     bool        dump_tokens;
     bool        dump_bytecode;
+    bool        check_only;
     bool        skip_typecheck;
     bool        show_time;
     const char *emit_exec;
@@ -66,6 +67,7 @@ static void print_usage(const char *prog) {
         "Options:\n"
         "  --dump-tokens    Print lexer tokens and exit\n"
         "  --dump-bytecode  Print bytecode disassembly and exit\n"
+        "  --check          Run through parsing and type checking, then exit\n"
         "  --no-typecheck   Skip the type checker\n"
         "  --watch          Re-run when the source or imported files change\n"
         "  --time           Report execution time\n"
@@ -337,13 +339,21 @@ static int run_source_file_once(const Options *opts, WatchSet *watch_paths) {
         }
     }
 
-    if (watch_paths) {
-        watch_set_free(watch_paths);
-        collect_watch_paths(program, watch_paths);
-    }
+        if (watch_paths) {
+            watch_set_free(watch_paths);
+            collect_watch_paths(program, watch_paths);
+        }
 
-    Bytecode *bytecode = bytecode_create();
-    CodeGenerator *gen = codegen_create(errors);
+        if (opts->check_only) {
+            ast_free((ASTNode *)program);
+            tokens_free(tokens, token_count);
+            ocl_free(source);
+            error_collector_free(errors);
+            return 0;
+        }
+
+        Bytecode *bytecode = bytecode_create();
+        CodeGenerator *gen = codegen_create(errors);
     bool cg_ok = codegen_generate(gen, program, bytecode);
     codegen_free(gen);
     ast_free((ASTNode *)program);
@@ -451,6 +461,7 @@ static bool parse_options(int argc, char *argv[], Options *out) {
         }
         if (!strcmp(argv[i], "--dump-tokens"))        out->dump_tokens   = true;
         else if (!strcmp(argv[i], "--dump-bytecode")) out->dump_bytecode = true;
+        else if (!strcmp(argv[i], "--check"))         out->check_only    = true;
         else if (!strcmp(argv[i], "--no-typecheck"))  out->skip_typecheck = true;
         else if (!strcmp(argv[i], "--watch"))         out->watch         = true;
         else if (!strcmp(argv[i], "--time"))          out->show_time     = true;
@@ -565,6 +576,18 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "ocl: use either -e or --emit-elf, not both\n");
         return 1;
     }
+    if (opts.check_only && opts.skip_typecheck) {
+        fprintf(stderr, "ocl: --check cannot be combined with --no-typecheck\n");
+        return 1;
+    }
+    if (opts.check_only && opts.dump_tokens) {
+        fprintf(stderr, "ocl: use either --check or --dump-tokens\n");
+        return 1;
+    }
+    if (opts.check_only && (opts.dump_bytecode || opts.run_exec || opts.emit_exec || opts.emit_elf)) {
+        fprintf(stderr, "ocl: --check only works when type checking source files\n");
+        return 1;
+    }
     if (opts.watch && (opts.run_exec || opts.emit_exec || opts.emit_elf)) {
         fprintf(stderr, "ocl: --watch only works when running source files\n");
         return 1;
@@ -604,6 +627,15 @@ int main(int argc, char *argv[]) {
         if (opts.dump_tokens) {
             error_add(errors, ERRK_OPERATION, ERROR_RUNTIME, LOC_NONE,
                       "--dump-tokens is not supported for compiled executables");
+            error_print_all(errors);
+            error_collector_reset(errors);
+            exit_code = 1;
+            bytecode_free(loaded_bytecode);
+            goto cleanup;
+        }
+        if (opts.check_only) {
+            error_add(errors, ERRK_OPERATION, ERROR_RUNTIME, LOC_NONE,
+                      "--check is not supported for compiled executables");
             error_print_all(errors);
             error_collector_reset(errors);
             exit_code = 1;
@@ -767,6 +799,11 @@ int main(int argc, char *argv[]) {
         }
 
         /* ── Stage 4: Code generation ─────────────────────────── */
+        if (opts.check_only) {
+            ast_free((ASTNode *)program);
+            goto cleanup;
+        }
+
         Bytecode      *bytecode = bytecode_create();
         CodeGenerator *gen      = codegen_create(errors);
         bool           cg_ok   = codegen_generate(gen, program, bytecode);

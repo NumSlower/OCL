@@ -16,6 +16,7 @@ Run source files:
 ./build/ocl --time path/to/program.ocl
 ./build/ocl --dump-tokens path/to/program.ocl
 ./build/ocl --dump-bytecode path/to/program.ocl
+./build/ocl --check path/to/program.ocl
 ./build/ocl --no-typecheck path/to/program.ocl
 ```
 
@@ -412,6 +413,9 @@ I/O:
 - `printf(...)`
 - `input(prompt?)`
 - `readLine()`
+- `readFile(path)`
+- `writeFile(path, content)`
+- `appendFile(path, content)`
 
 Math:
 

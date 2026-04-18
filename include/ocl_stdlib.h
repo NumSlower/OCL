@@ -10,6 +10,9 @@ struct VM; typedef struct VM VM;
 #define BUILTIN_PRINTF      2
 #define BUILTIN_INPUT       3
 #define BUILTIN_READLINE    4
+#define BUILTIN_READFILE    5
+#define BUILTIN_WRITEFILE   6
+#define BUILTIN_APPENDFILE  7
 #define BUILTIN_ABS         10
 #define BUILTIN_SQRT        11
 #define BUILTIN_POW         12

@@ -1,6 +1,7 @@
 #include "codegen.h"
 #include "common.h"
 #include "ocl_stdlib.h"
+#include <math.h>
 #include <string.h>
 #include <stdio.h>
 
@@ -232,6 +233,377 @@ static void emit_expr(CodeGenerator *g, ExprNode *expr);
 static uint32_t emit_function_body(CodeGenerator *g, const char *function_name,
                                    ParamNode **params, size_t param_count,
                                    BlockNode *body, SourceLocation function_loc);
+static bool fold_values_equal(Value left, Value right) {
+    if (left.type == right.type) {
+        switch (left.type) {
+            case VALUE_INT:    return left.data.int_val == right.data.int_val;
+            case VALUE_FLOAT:  return left.data.float_val == right.data.float_val;
+            case VALUE_BOOL:   return left.data.bool_val == right.data.bool_val;
+            case VALUE_CHAR:   return left.data.char_val == right.data.char_val;
+            case VALUE_STRING: {
+                const char *left_text = left.data.string_val ? left.data.string_val : "";
+                const char *right_text = right.data.string_val ? right.data.string_val : "";
+                return strcmp(left_text, right_text) == 0;
+            }
+            case VALUE_NULL:   return true;
+            default:           return false;
+        }
+    }
+
+    if ((left.type == VALUE_INT || left.type == VALUE_FLOAT) &&
+        (right.type == VALUE_INT || right.type == VALUE_FLOAT)) {
+        double left_number = (left.type == VALUE_FLOAT) ? left.data.float_val : (double)left.data.int_val;
+        double right_number = (right.type == VALUE_FLOAT) ? right.data.float_val : (double)right.data.int_val;
+        return left_number == right_number;
+    }
+
+    return false;
+}
+
+static bool fold_string_repeat(Value left, Value right, Value *out) {
+    const char *source = NULL;
+    int64_t count = 0;
+    size_t source_len = 0;
+    size_t total_len = 0;
+    char *result = NULL;
+
+    if (left.type == VALUE_STRING && right.type == VALUE_INT) {
+        source = left.data.string_val ? left.data.string_val : "";
+        count = right.data.int_val;
+    } else if (left.type == VALUE_INT && right.type == VALUE_STRING) {
+        source = right.data.string_val ? right.data.string_val : "";
+        count = left.data.int_val;
+    } else {
+        return false;
+    }
+
+    if (count <= 0) {
+        *out = value_string(ocl_strdup(""));
+        return true;
+    }
+
+    source_len = strlen(source);
+    total_len = source_len * (size_t)count;
+    result = ocl_malloc(total_len + 1);
+    for (int64_t i = 0; i < count; i++)
+        memcpy(result + ((size_t)i * source_len), source, source_len);
+    result[total_len] = '\0';
+    *out = value_string(result);
+    return true;
+}
+
+static bool fold_binary_value(const char *op, Value left, Value right, Value *out) {
+    if (!strcmp(op, "+")) {
+        if (left.type == VALUE_STRING && right.type == VALUE_STRING) {
+            const char *left_text = left.data.string_val ? left.data.string_val : "";
+            const char *right_text = right.data.string_val ? right.data.string_val : "";
+            size_t left_len = strlen(left_text);
+            size_t right_len = strlen(right_text);
+            char *result = ocl_malloc(left_len + right_len + 1);
+            memcpy(result, left_text, left_len);
+            memcpy(result + left_len, right_text, right_len + 1);
+            *out = value_string(result);
+            return true;
+        }
+        if (left.type == VALUE_STRING && right.type == VALUE_CHAR) {
+            const char *left_text = left.data.string_val ? left.data.string_val : "";
+            size_t left_len = strlen(left_text);
+            char *result = ocl_malloc(left_len + 2);
+            memcpy(result, left_text, left_len);
+            result[left_len] = right.data.char_val;
+            result[left_len + 1] = '\0';
+            *out = value_string(result);
+            return true;
+        }
+        if (left.type == VALUE_CHAR && right.type == VALUE_STRING) {
+            const char *right_text = right.data.string_val ? right.data.string_val : "";
+            size_t right_len = strlen(right_text);
+            char *result = ocl_malloc(right_len + 2);
+            result[0] = left.data.char_val;
+            memcpy(result + 1, right_text, right_len + 1);
+            *out = value_string(result);
+            return true;
+        }
+        if (left.type == VALUE_INT && right.type == VALUE_INT) {
+            *out = value_int(left.data.int_val + right.data.int_val);
+            return true;
+        }
+        if ((left.type == VALUE_INT || left.type == VALUE_FLOAT) &&
+            (right.type == VALUE_INT || right.type == VALUE_FLOAT)) {
+            double left_number = (left.type == VALUE_FLOAT) ? left.data.float_val : (double)left.data.int_val;
+            double right_number = (right.type == VALUE_FLOAT) ? right.data.float_val : (double)right.data.int_val;
+            *out = value_float(left_number + right_number);
+            return true;
+        }
+        return false;
+    }
+
+    if (!strcmp(op, "*")) {
+        if (fold_string_repeat(left, right, out))
+            return true;
+        if (left.type == VALUE_INT && right.type == VALUE_INT) {
+            *out = value_int(left.data.int_val * right.data.int_val);
+            return true;
+        }
+        if ((left.type == VALUE_INT || left.type == VALUE_FLOAT) &&
+            (right.type == VALUE_INT || right.type == VALUE_FLOAT)) {
+            double left_number = (left.type == VALUE_FLOAT) ? left.data.float_val : (double)left.data.int_val;
+            double right_number = (right.type == VALUE_FLOAT) ? right.data.float_val : (double)right.data.int_val;
+            *out = value_float(left_number * right_number);
+            return true;
+        }
+        return false;
+    }
+
+    if (!strcmp(op, "-")) {
+        if (left.type == VALUE_INT && right.type == VALUE_INT) {
+            *out = value_int(left.data.int_val - right.data.int_val);
+            return true;
+        }
+        if ((left.type == VALUE_INT || left.type == VALUE_FLOAT) &&
+            (right.type == VALUE_INT || right.type == VALUE_FLOAT)) {
+            double left_number = (left.type == VALUE_FLOAT) ? left.data.float_val : (double)left.data.int_val;
+            double right_number = (right.type == VALUE_FLOAT) ? right.data.float_val : (double)right.data.int_val;
+            *out = value_float(left_number - right_number);
+            return true;
+        }
+        return false;
+    }
+
+    if (!strcmp(op, "/")) {
+        bool div_by_zero = (right.type == VALUE_FLOAT) ? (right.data.float_val == 0.0)
+                                                       : (right.type == VALUE_INT && right.data.int_val == 0);
+        if (div_by_zero)
+            return false;
+        if (left.type == VALUE_INT && right.type == VALUE_INT) {
+            *out = value_int(left.data.int_val / right.data.int_val);
+            return true;
+        }
+        if ((left.type == VALUE_INT || left.type == VALUE_FLOAT) &&
+            (right.type == VALUE_INT || right.type == VALUE_FLOAT)) {
+            double left_number = (left.type == VALUE_FLOAT) ? left.data.float_val : (double)left.data.int_val;
+            double right_number = (right.type == VALUE_FLOAT) ? right.data.float_val : (double)right.data.int_val;
+            *out = value_float(left_number / right_number);
+            return true;
+        }
+        return false;
+    }
+
+    if (!strcmp(op, "%")) {
+        if (left.type == VALUE_INT && right.type == VALUE_INT) {
+            if (right.data.int_val == 0)
+                return false;
+            *out = value_int(left.data.int_val % right.data.int_val);
+            return true;
+        }
+        if ((left.type == VALUE_INT || left.type == VALUE_FLOAT) &&
+            (right.type == VALUE_INT || right.type == VALUE_FLOAT)) {
+            double left_number = (left.type == VALUE_FLOAT) ? left.data.float_val : (double)left.data.int_val;
+            double right_number = (right.type == VALUE_FLOAT) ? right.data.float_val : (double)right.data.int_val;
+            if (right_number == 0.0)
+                return false;
+            *out = value_float(fmod(left_number, right_number));
+            return true;
+        }
+        return false;
+    }
+
+    if (!strcmp(op, "==")) {
+        *out = value_bool(fold_values_equal(left, right));
+        return true;
+    }
+
+    if (!strcmp(op, "!=")) {
+        *out = value_bool(!fold_values_equal(left, right));
+        return true;
+    }
+
+    if (!strcmp(op, "<") || !strcmp(op, "<=") ||
+        !strcmp(op, ">") || !strcmp(op, ">=")) {
+        bool result = false;
+
+        if (left.type == VALUE_STRING && right.type == VALUE_STRING) {
+            const char *left_text = left.data.string_val ? left.data.string_val : "";
+            const char *right_text = right.data.string_val ? right.data.string_val : "";
+            int compare = strcmp(left_text, right_text);
+            if (!strcmp(op, "<")) result = compare < 0;
+            else if (!strcmp(op, "<=")) result = compare <= 0;
+            else if (!strcmp(op, ">")) result = compare > 0;
+            else result = compare >= 0;
+            *out = value_bool(result);
+            return true;
+        }
+
+        if ((left.type == VALUE_INT || left.type == VALUE_FLOAT) &&
+            (right.type == VALUE_INT || right.type == VALUE_FLOAT)) {
+            double left_number = (left.type == VALUE_FLOAT) ? left.data.float_val : (double)left.data.int_val;
+            double right_number = (right.type == VALUE_FLOAT) ? right.data.float_val : (double)right.data.int_val;
+            if (!strcmp(op, "<")) result = left_number < right_number;
+            else if (!strcmp(op, "<=")) result = left_number <= right_number;
+            else if (!strcmp(op, ">")) result = left_number > right_number;
+            else result = left_number >= right_number;
+            *out = value_bool(result);
+            return true;
+        }
+
+        return false;
+    }
+
+    if (!strcmp(op, "&") || !strcmp(op, "|") || !strcmp(op, "^") ||
+        !strcmp(op, "<<") || !strcmp(op, ">>")) {
+        if (left.type != VALUE_INT || right.type != VALUE_INT)
+            return false;
+        if (!strcmp(op, "&")) *out = value_int(left.data.int_val & right.data.int_val);
+        else if (!strcmp(op, "|")) *out = value_int(left.data.int_val | right.data.int_val);
+        else if (!strcmp(op, "^")) *out = value_int(left.data.int_val ^ right.data.int_val);
+        else if (!strcmp(op, "<<")) *out = value_int(left.data.int_val << right.data.int_val);
+        else *out = value_int(left.data.int_val >> right.data.int_val);
+        return true;
+    }
+
+    return false;
+}
+
+static bool fold_unary_value(const char *op, Value operand, Value *out) {
+    if (!strcmp(op, "-")) {
+        if (operand.type == VALUE_INT) {
+            *out = value_int(-operand.data.int_val);
+            return true;
+        }
+        if (operand.type == VALUE_FLOAT) {
+            *out = value_float(-operand.data.float_val);
+            return true;
+        }
+        return false;
+    }
+
+    if (!strcmp(op, "!")) {
+        *out = value_bool(!value_is_truthy(operand));
+        return true;
+    }
+
+    if (!strcmp(op, "~")) {
+        if (operand.type != VALUE_INT)
+            return false;
+        *out = value_int(~operand.data.int_val);
+        return true;
+    }
+
+    return false;
+}
+
+static bool try_fold_expr(const ExprNode *expr, Value *out) {
+    if (!expr || !out)
+        return false;
+
+    switch (expr->base.type) {
+        case AST_LITERAL: {
+            const LiteralNode *literal = (const LiteralNode *)expr;
+            if (literal->value.type == VALUE_ARRAY ||
+                literal->value.type == VALUE_STRUCT ||
+                literal->value.type == VALUE_FUNCTION)
+                return false;
+            *out = value_own_copy(literal->value);
+            return true;
+        }
+
+        case AST_UNARY_OP: {
+            const UnaryOpNode *unary = (const UnaryOpNode *)expr;
+            Value operand;
+            bool ok;
+
+            if (!try_fold_expr(unary->operand, &operand))
+                return false;
+            ok = fold_unary_value(unary->operator, operand, out);
+            value_free(operand);
+            return ok;
+        }
+
+        case AST_BIN_OP: {
+            const BinOpNode *binary = (const BinOpNode *)expr;
+            Value left;
+            Value right;
+            bool ok = false;
+
+            if (!strcmp(binary->operator, "="))
+                return false;
+
+            if (!strcmp(binary->operator, "&&")) {
+                if (!try_fold_expr(binary->left, &left))
+                    return false;
+                if (!value_is_truthy(left)) {
+                    *out = value_bool(false);
+                    value_free(left);
+                    return true;
+                }
+                value_free(left);
+                if (!try_fold_expr(binary->right, &right))
+                    return false;
+                *out = value_bool(value_is_truthy(right));
+                value_free(right);
+                return true;
+            }
+
+            if (!strcmp(binary->operator, "||")) {
+                if (!try_fold_expr(binary->left, &left))
+                    return false;
+                if (value_is_truthy(left)) {
+                    *out = value_bool(true);
+                    value_free(left);
+                    return true;
+                }
+                value_free(left);
+                if (!try_fold_expr(binary->right, &right))
+                    return false;
+                *out = value_bool(value_is_truthy(right));
+                value_free(right);
+                return true;
+            }
+
+            if (!strcmp(binary->operator, "??")) {
+                if (!try_fold_expr(binary->left, &left))
+                    return false;
+                if (left.type != VALUE_NULL) {
+                    *out = value_own_copy(left);
+                    value_free(left);
+                    return true;
+                }
+                value_free(left);
+                return try_fold_expr(binary->right, out);
+            }
+
+            if (!try_fold_expr(binary->left, &left))
+                return false;
+            if (!try_fold_expr(binary->right, &right)) {
+                value_free(left);
+                return false;
+            }
+
+            ok = fold_binary_value(binary->operator, left, right, out);
+            value_free(left);
+            value_free(right);
+            return ok;
+        }
+
+        case AST_TERNARY: {
+            const TernaryNode *ternary = (const TernaryNode *)expr;
+            Value condition;
+
+            if (!try_fold_expr(ternary->condition, &condition))
+                return false;
+            if (value_is_truthy(condition)) {
+                value_free(condition);
+                return try_fold_expr(ternary->true_expr, out);
+            }
+            value_free(condition);
+            return try_fold_expr(ternary->false_expr, out);
+        }
+
+        default:
+            return false;
+    }
+}
+
 static bool has_emitted_module(CodeGenerator *g, const char *path) {
     if (!g || !path) return false;
     for (size_t i = 0; i < g->emitted_module_count; i++)
@@ -347,6 +719,14 @@ static uint32_t emit_function_body(CodeGenerator *g, const char *function_name,
 static void emit_expr(CodeGenerator *g, ExprNode *expr) {
     if (!expr) return;
     Bytecode *bc = g->bytecode;
+    Value folded;
+
+    if (try_fold_expr(expr, &folded)) {
+        uint32_t ci = bytecode_add_constant(bc, folded);
+        bytecode_emit(bc, OP_PUSH_CONST, ci, 0, expr->base.location);
+        value_free(folded);
+        return;
+    }
 
     switch (expr->base.type) {
 
