@@ -1,0 +1,8 @@
+/# Version 3. Terminal module showcase. #/
+
+Import <showcase_support>
+Import <showcase_terminal_section>
+
+func Int main() {
+    return showcaseTerminal();
+}

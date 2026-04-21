@@ -1,6 +1,6 @@
 # OCL Interpreter
 
-OCL is a bytecode compiled scripting language written in C11.
+OCL is a bytecode compiled scripting language with a C11 front end and a Rust VM execution engine.
 
 The toolchain reads `.ocl` source code through five stages:
 
@@ -24,6 +24,7 @@ The current build also supports:
 Requirements:
 
 - A C11 compiler such as GCC or Clang
+- A Rust toolchain with `rustc`
 - `make`
 - `cmake`, for the native cross platform build path
 
@@ -48,6 +49,7 @@ cmake --build out/build --config Release
 Notes:
 
 - `make` builds a debug binary.
+- Host builds compile the VM core from `src/vm/vm.rs`.
 - Sanitizers are enabled on Unix like hosts and disabled on Windows.
 - The main output is `build/ocl` or `build/ocl.exe`.
 - `cmake` works on Windows, macOS, and Linux or Unix hosts.
@@ -88,6 +90,7 @@ Notes:
 - `-e NAME` writes `NAME.elf` in the current directory.
 - `-r FILE` runs a compiled OCL executable.
 - `--emit-elf PATH` builds a NumOS ELF executable from source.
+- `--emit-elf` still embeds the legacy C VM snapshot from `src/vm/vm_legacy.c`.
 - `--` starts the user argument list for `Import <terminal>`.
 - `--dump-tokens` is only valid for source input.
 
@@ -97,18 +100,29 @@ Sample `.ocl` programs in this workspace live under `Testfiles/`.
 
 Examples:
 
-- `Testfiles/main.ocl`
-- `Testfiles/echo.ocl`
 - `Testfiles/showcase.ocl`
-- `Testfiles/random.ocl`
-- `Testfiles/Algorithm/01_sorting_algorithms.ocl`
+- `Testfiles/showcase_v1_core.ocl`
+- `Testfiles/showcase_v2_stdlib.ocl`
+- `Testfiles/showcase_v3_terminal.ocl`
+- `Testfiles/showcase_v4_interactive.ocl`
+- `Testfiles/showcase_v5_exit.ocl`
 
 Argument example:
 
 ```bash
-./build/ocl Testfiles/echo.ocl -- "Hello world!"
-./build/ocl -e echo Testfiles/echo.ocl
-./build/ocl -r echo.elf -- "Hello world!"
+./build/ocl Testfiles/showcase.ocl -- alpha beta
+./build/ocl Testfiles/showcase_v3_terminal.ocl -- alpha beta
+./build/ocl Testfiles/showcase_v4_interactive.ocl
+```
+
+Bootstrap example:
+
+```ocl
+Import <bootstrap>
+
+func Int main() {
+    return bootstrap("./build/ocl", "compiler.ocl", "compiler-next", []);
+}
 ```
 
 ## Language Summary
@@ -170,7 +184,7 @@ Current built in areas:
 - Utilities, `exit`, `assert`, `timeNow`, `random`
 - Arrays, `arrayNew`, `arrayPush`, `arrayPop`, `arrayGet`, `arraySet`, `arrayLen`
 
-## Standard Module
+## Standard Modules
 
 Import the stable terminal API with:
 
@@ -198,6 +212,37 @@ Notes:
 - `capture` and `run` are the portable first choice.
 - Shell helpers are convenience wrappers around the host shell.
 
+Import the bootstrap helpers with:
+
+```ocl
+Import <bootstrap>
+```
+
+Public functions:
+
+- `compiledExtension()`
+- `compiledArtifact(name)`
+- `check(executable, source)`
+- `captureCheck(executable, source)`
+- `dumpTokens(executable, source)`
+- `dumpBytecode(executable, source)`
+- `build(executable, source, outputName)`
+- `captureBuild(executable, source, outputName)`
+- `emitElf(executable, source, outputPath)`
+- `runSource(executable, source, programArgs)`
+- `captureSource(executable, source, programArgs)`
+- `runCompiled(compiled, programArgs)`
+- `captureCompiled(compiled, programArgs)`
+- `bootstrap(executable, source, outputName, programArgs)`
+- `captureBootstrap(executable, source, outputName, programArgs)`
+
+Notes:
+
+- The bootstrap module lives in `stdlib_headers/bootstrap.ocl`.
+- It uses `Import <terminal>` plus the existing array, string, and file helpers.
+- `compiledArtifact(name)` adds `.exe` on Windows and `.elf` on other hosts when needed.
+- `bootstrap(...)` runs `-e`, then launches the compiled artifact directly.
+
 ## Project Layout
 
 ```text
@@ -216,6 +261,9 @@ Notes:
 |   |-- interpreter/
 |   |-- stdlib/
 |   `-- vm/
+|       |-- vm.c
+|       |-- vm.rs
+|       `-- vm_legacy.c
 `-- Testfiles/
 ```
 

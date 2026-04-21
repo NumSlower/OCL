@@ -1,0 +1,15 @@
+/# Full automated showcase. #/
+
+Import <showcase_support>
+Import <showcase_core_section>
+Import <showcase_stdlib_section>
+Import <showcase_terminal_section>
+
+func Int main() {
+    print(headline("full showcase"));
+    showcaseCore();
+    showcaseStdlib();
+    showcaseTerminal();
+    print("showcase complete");
+    return 0;
+}

@@ -1,0 +1,13 @@
+/# Version 4. Interactive input showcase. #/
+
+Import <showcase_support>
+
+func Int main() {
+    print(headline("interactive"));
+    Let name:String = input("name: ");
+    print("hello, " + name);
+    print("type another line:");
+    Let second:String = readLine();
+    print("echo=" + second);
+    return 0;
+}

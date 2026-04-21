@@ -3,6 +3,7 @@
 ## Requirements
 
 - A C11 compiler such as GCC or Clang
+- A Rust toolchain with `rustc`
 - `make`
 - `cmake`, for the native cross platform build path
 - Git, if you want to clone the repository
@@ -48,6 +49,7 @@ Build output:
 - Unix like hosts, `build/ocl`
 - Windows, `build/ocl.exe`
 - CMake builds place the executable under your chosen build directory
+- Host builds compile the VM core from `src/vm/vm.rs`
 
 ## Run Source Files
 
@@ -86,6 +88,8 @@ make elf
 make elf FILE=Testfiles/main.ocl OUT=build/main.elf
 ```
 
+The NumOS ELF path still uses the legacy C VM snapshot in `src/vm/vm_legacy.c`.
+
 ## Tests
 
 The Makefile includes:
@@ -109,6 +113,11 @@ C compiler errors:
 
 - Check `gcc --version` or `clang --version`
 - Use a compiler with C11 support
+
+Rust toolchain errors:
+
+- Check `rustc --version`
+- Install Rust before running `make` or the CMake build
 
 Runtime path errors:
 

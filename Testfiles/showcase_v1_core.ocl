@@ -1,0 +1,8 @@
+/# Version 1. Core language showcase. #/
+
+Import <showcase_support>
+Import <showcase_core_section>
+
+func Int main() {
+    return showcaseCore();
+}

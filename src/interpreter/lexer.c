@@ -234,6 +234,7 @@ static Token read_identifier(Lexer *l) {
     else if (!strcmp(identifier, "Import")) t = TOKEN_IMPORT;
     else if (!strcmp(identifier, "declare")) t = TOKEN_DECLARE;
     else if (!strcmp(identifier, "struct")) t = TOKEN_STRUCT;
+    else if (!strcmp(identifier, "extern")) t = TOKEN_EXTERN;
     else if (!strcmp(identifier, "true")) t = TOKEN_TRUE;
     else if (!strcmp(identifier, "false")) t = TOKEN_FALSE;
     else if (!strcmp(identifier, "null")) t = TOKEN_NULL;

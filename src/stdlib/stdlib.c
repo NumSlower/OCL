@@ -1958,6 +1958,410 @@ static void builtin_bit_xnor(VM *vm, int argc) {
     vm_push(vm, value_int(~(a ^ b)));
 }
 
+static bool ffi_require_address(Value v, const char *name, int position, uintptr_t *out) {
+    if (v.type == VALUE_NULL) {
+        if (out) *out = (uintptr_t)0;
+        return true;
+    }
+    if (v.type != VALUE_INT) {
+        if (!host_output_quiet())
+            fprintf(stderr, "ocl: %s: argument %d must be an address Int, got %s\n",
+                    name, position, value_type_label(v));
+        return false;
+    }
+    if (out) *out = (uintptr_t)(uint64_t)v.data.int_val;
+    return true;
+}
+
+static void ffi_read_bytes(void *out, size_t size, uintptr_t address) {
+    memcpy(out, (const void *)address, size);
+}
+
+static void ffi_write_bytes(uintptr_t address, const void *src, size_t size) {
+    memcpy((void *)address, src, size);
+}
+
+static void builtin_ffi_read_u8(VM *vm, int argc) {
+    Value *args = pop_args(vm, argc);
+    uintptr_t address = 0;
+    uint8_t value = 0;
+
+    REQUIRE_ARGS(vm, args, argc, 1, "__ffiReadU8");
+    if (!ffi_require_address(args[0], "__ffiReadU8", 1, &address)) {
+        free_args(args, argc);
+        vm_push(vm, value_null());
+        return;
+    }
+    ffi_read_bytes(&value, sizeof(value), address);
+    free_args(args, argc);
+    vm_push(vm, value_int((int64_t)value));
+}
+
+static void builtin_ffi_read_u16(VM *vm, int argc) {
+    Value *args = pop_args(vm, argc);
+    uintptr_t address = 0;
+    uint16_t value = 0;
+
+    REQUIRE_ARGS(vm, args, argc, 1, "__ffiReadU16");
+    if (!ffi_require_address(args[0], "__ffiReadU16", 1, &address)) {
+        free_args(args, argc);
+        vm_push(vm, value_null());
+        return;
+    }
+    ffi_read_bytes(&value, sizeof(value), address);
+    free_args(args, argc);
+    vm_push(vm, value_int((int64_t)value));
+}
+
+static void builtin_ffi_read_u32(VM *vm, int argc) {
+    Value *args = pop_args(vm, argc);
+    uintptr_t address = 0;
+    uint32_t value = 0;
+
+    REQUIRE_ARGS(vm, args, argc, 1, "__ffiReadU32");
+    if (!ffi_require_address(args[0], "__ffiReadU32", 1, &address)) {
+        free_args(args, argc);
+        vm_push(vm, value_null());
+        return;
+    }
+    ffi_read_bytes(&value, sizeof(value), address);
+    free_args(args, argc);
+    vm_push(vm, value_int((int64_t)value));
+}
+
+static void builtin_ffi_read_u64(VM *vm, int argc) {
+    Value *args = pop_args(vm, argc);
+    uintptr_t address = 0;
+    uint64_t value = 0;
+
+    REQUIRE_ARGS(vm, args, argc, 1, "__ffiReadU64");
+    if (!ffi_require_address(args[0], "__ffiReadU64", 1, &address)) {
+        free_args(args, argc);
+        vm_push(vm, value_null());
+        return;
+    }
+    ffi_read_bytes(&value, sizeof(value), address);
+    free_args(args, argc);
+    vm_push(vm, value_int((int64_t)value));
+}
+
+static void builtin_ffi_read_i8(VM *vm, int argc) {
+    Value *args = pop_args(vm, argc);
+    uintptr_t address = 0;
+    int8_t value = 0;
+
+    REQUIRE_ARGS(vm, args, argc, 1, "__ffiReadI8");
+    if (!ffi_require_address(args[0], "__ffiReadI8", 1, &address)) {
+        free_args(args, argc);
+        vm_push(vm, value_null());
+        return;
+    }
+    ffi_read_bytes(&value, sizeof(value), address);
+    free_args(args, argc);
+    vm_push(vm, value_int((int64_t)value));
+}
+
+static void builtin_ffi_read_i16(VM *vm, int argc) {
+    Value *args = pop_args(vm, argc);
+    uintptr_t address = 0;
+    int16_t value = 0;
+
+    REQUIRE_ARGS(vm, args, argc, 1, "__ffiReadI16");
+    if (!ffi_require_address(args[0], "__ffiReadI16", 1, &address)) {
+        free_args(args, argc);
+        vm_push(vm, value_null());
+        return;
+    }
+    ffi_read_bytes(&value, sizeof(value), address);
+    free_args(args, argc);
+    vm_push(vm, value_int((int64_t)value));
+}
+
+static void builtin_ffi_read_i32(VM *vm, int argc) {
+    Value *args = pop_args(vm, argc);
+    uintptr_t address = 0;
+    int32_t value = 0;
+
+    REQUIRE_ARGS(vm, args, argc, 1, "__ffiReadI32");
+    if (!ffi_require_address(args[0], "__ffiReadI32", 1, &address)) {
+        free_args(args, argc);
+        vm_push(vm, value_null());
+        return;
+    }
+    ffi_read_bytes(&value, sizeof(value), address);
+    free_args(args, argc);
+    vm_push(vm, value_int((int64_t)value));
+}
+
+static void builtin_ffi_read_i64(VM *vm, int argc) {
+    Value *args = pop_args(vm, argc);
+    uintptr_t address = 0;
+    int64_t value = 0;
+
+    REQUIRE_ARGS(vm, args, argc, 1, "__ffiReadI64");
+    if (!ffi_require_address(args[0], "__ffiReadI64", 1, &address)) {
+        free_args(args, argc);
+        vm_push(vm, value_null());
+        return;
+    }
+    ffi_read_bytes(&value, sizeof(value), address);
+    free_args(args, argc);
+    vm_push(vm, value_int(value));
+}
+
+static void builtin_ffi_read_f32(VM *vm, int argc) {
+    Value *args = pop_args(vm, argc);
+    uintptr_t address = 0;
+    float value = 0.0f;
+
+    REQUIRE_ARGS(vm, args, argc, 1, "__ffiReadF32");
+    if (!ffi_require_address(args[0], "__ffiReadF32", 1, &address)) {
+        free_args(args, argc);
+        vm_push(vm, value_null());
+        return;
+    }
+    ffi_read_bytes(&value, sizeof(value), address);
+    free_args(args, argc);
+    vm_push(vm, value_float((double)value));
+}
+
+static void builtin_ffi_read_f64(VM *vm, int argc) {
+    Value *args = pop_args(vm, argc);
+    uintptr_t address = 0;
+    double value = 0.0;
+
+    REQUIRE_ARGS(vm, args, argc, 1, "__ffiReadF64");
+    if (!ffi_require_address(args[0], "__ffiReadF64", 1, &address)) {
+        free_args(args, argc);
+        vm_push(vm, value_null());
+        return;
+    }
+    ffi_read_bytes(&value, sizeof(value), address);
+    free_args(args, argc);
+    vm_push(vm, value_float(value));
+}
+
+static void builtin_ffi_read_ptr(VM *vm, int argc) {
+    Value *args = pop_args(vm, argc);
+    uintptr_t address = 0;
+    uintptr_t value = 0;
+
+    REQUIRE_ARGS(vm, args, argc, 1, "__ffiReadPtr");
+    if (!ffi_require_address(args[0], "__ffiReadPtr", 1, &address)) {
+        free_args(args, argc);
+        vm_push(vm, value_null());
+        return;
+    }
+    ffi_read_bytes(&value, sizeof(value), address);
+    free_args(args, argc);
+    vm_push(vm, value_int((int64_t)value));
+}
+
+static void builtin_ffi_write_u8(VM *vm, int argc) {
+    Value *args = pop_args(vm, argc);
+    uintptr_t address = 0;
+    uint8_t value = 0;
+
+    REQUIRE_ARGS(vm, args, argc, 2, "__ffiWriteU8");
+    if (!ffi_require_address(args[0], "__ffiWriteU8", 1, &address)) {
+        free_args(args, argc);
+        vm_push(vm, value_null());
+        return;
+    }
+    value = (uint8_t)to_int64(args[1]);
+    ffi_write_bytes(address, &value, sizeof(value));
+    free_args(args, argc);
+    vm_push(vm, value_null());
+}
+
+static void builtin_ffi_write_u16(VM *vm, int argc) {
+    Value *args = pop_args(vm, argc);
+    uintptr_t address = 0;
+    uint16_t value = 0;
+
+    REQUIRE_ARGS(vm, args, argc, 2, "__ffiWriteU16");
+    if (!ffi_require_address(args[0], "__ffiWriteU16", 1, &address)) {
+        free_args(args, argc);
+        vm_push(vm, value_null());
+        return;
+    }
+    value = (uint16_t)to_int64(args[1]);
+    ffi_write_bytes(address, &value, sizeof(value));
+    free_args(args, argc);
+    vm_push(vm, value_null());
+}
+
+static void builtin_ffi_write_u32(VM *vm, int argc) {
+    Value *args = pop_args(vm, argc);
+    uintptr_t address = 0;
+    uint32_t value = 0;
+
+    REQUIRE_ARGS(vm, args, argc, 2, "__ffiWriteU32");
+    if (!ffi_require_address(args[0], "__ffiWriteU32", 1, &address)) {
+        free_args(args, argc);
+        vm_push(vm, value_null());
+        return;
+    }
+    value = (uint32_t)to_int64(args[1]);
+    ffi_write_bytes(address, &value, sizeof(value));
+    free_args(args, argc);
+    vm_push(vm, value_null());
+}
+
+static void builtin_ffi_write_u64(VM *vm, int argc) {
+    Value *args = pop_args(vm, argc);
+    uintptr_t address = 0;
+    uint64_t value = 0;
+
+    REQUIRE_ARGS(vm, args, argc, 2, "__ffiWriteU64");
+    if (!ffi_require_address(args[0], "__ffiWriteU64", 1, &address)) {
+        free_args(args, argc);
+        vm_push(vm, value_null());
+        return;
+    }
+    value = (uint64_t)to_int64(args[1]);
+    ffi_write_bytes(address, &value, sizeof(value));
+    free_args(args, argc);
+    vm_push(vm, value_null());
+}
+
+static void builtin_ffi_write_i8(VM *vm, int argc) {
+    Value *args = pop_args(vm, argc);
+    uintptr_t address = 0;
+    int8_t value = 0;
+
+    REQUIRE_ARGS(vm, args, argc, 2, "__ffiWriteI8");
+    if (!ffi_require_address(args[0], "__ffiWriteI8", 1, &address)) {
+        free_args(args, argc);
+        vm_push(vm, value_null());
+        return;
+    }
+    value = (int8_t)to_int64(args[1]);
+    ffi_write_bytes(address, &value, sizeof(value));
+    free_args(args, argc);
+    vm_push(vm, value_null());
+}
+
+static void builtin_ffi_write_i16(VM *vm, int argc) {
+    Value *args = pop_args(vm, argc);
+    uintptr_t address = 0;
+    int16_t value = 0;
+
+    REQUIRE_ARGS(vm, args, argc, 2, "__ffiWriteI16");
+    if (!ffi_require_address(args[0], "__ffiWriteI16", 1, &address)) {
+        free_args(args, argc);
+        vm_push(vm, value_null());
+        return;
+    }
+    value = (int16_t)to_int64(args[1]);
+    ffi_write_bytes(address, &value, sizeof(value));
+    free_args(args, argc);
+    vm_push(vm, value_null());
+}
+
+static void builtin_ffi_write_i32(VM *vm, int argc) {
+    Value *args = pop_args(vm, argc);
+    uintptr_t address = 0;
+    int32_t value = 0;
+
+    REQUIRE_ARGS(vm, args, argc, 2, "__ffiWriteI32");
+    if (!ffi_require_address(args[0], "__ffiWriteI32", 1, &address)) {
+        free_args(args, argc);
+        vm_push(vm, value_null());
+        return;
+    }
+    value = (int32_t)to_int64(args[1]);
+    ffi_write_bytes(address, &value, sizeof(value));
+    free_args(args, argc);
+    vm_push(vm, value_null());
+}
+
+static void builtin_ffi_write_i64(VM *vm, int argc) {
+    Value *args = pop_args(vm, argc);
+    uintptr_t address = 0;
+    int64_t value = 0;
+
+    REQUIRE_ARGS(vm, args, argc, 2, "__ffiWriteI64");
+    if (!ffi_require_address(args[0], "__ffiWriteI64", 1, &address)) {
+        free_args(args, argc);
+        vm_push(vm, value_null());
+        return;
+    }
+    value = to_int64(args[1]);
+    ffi_write_bytes(address, &value, sizeof(value));
+    free_args(args, argc);
+    vm_push(vm, value_null());
+}
+
+static void builtin_ffi_write_f32(VM *vm, int argc) {
+    Value *args = pop_args(vm, argc);
+    uintptr_t address = 0;
+    float value = 0.0f;
+
+    REQUIRE_ARGS(vm, args, argc, 2, "__ffiWriteF32");
+    if (!ffi_require_address(args[0], "__ffiWriteF32", 1, &address)) {
+        free_args(args, argc);
+        vm_push(vm, value_null());
+        return;
+    }
+    value = (float)to_double(args[1]);
+    ffi_write_bytes(address, &value, sizeof(value));
+    free_args(args, argc);
+    vm_push(vm, value_null());
+}
+
+static void builtin_ffi_write_f64(VM *vm, int argc) {
+    Value *args = pop_args(vm, argc);
+    uintptr_t address = 0;
+    double value = 0.0;
+
+    REQUIRE_ARGS(vm, args, argc, 2, "__ffiWriteF64");
+    if (!ffi_require_address(args[0], "__ffiWriteF64", 1, &address)) {
+        free_args(args, argc);
+        vm_push(vm, value_null());
+        return;
+    }
+    value = to_double(args[1]);
+    ffi_write_bytes(address, &value, sizeof(value));
+    free_args(args, argc);
+    vm_push(vm, value_null());
+}
+
+static void builtin_ffi_write_ptr(VM *vm, int argc) {
+    Value *args = pop_args(vm, argc);
+    uintptr_t address = 0;
+    uintptr_t value = 0;
+
+    REQUIRE_ARGS(vm, args, argc, 2, "__ffiWritePtr");
+    if (!ffi_require_address(args[0], "__ffiWritePtr", 1, &address) ||
+        !ffi_require_address(args[1], "__ffiWritePtr", 2, &value)) {
+        free_args(args, argc);
+        vm_push(vm, value_null());
+        return;
+    }
+    ffi_write_bytes(address, &value, sizeof(value));
+    free_args(args, argc);
+    vm_push(vm, value_null());
+}
+
+static void builtin_ffi_cstring(VM *vm, int argc) {
+    Value *args = pop_args(vm, argc);
+    uintptr_t address = 0;
+
+    REQUIRE_ARGS(vm, args, argc, 1, "__ffiCString");
+    if (!ffi_require_address(args[0], "__ffiCString", 1, &address)) {
+        free_args(args, argc);
+        vm_push(vm, value_null());
+        return;
+    }
+    free_args(args, argc);
+    if (address == 0) {
+        vm_push(vm, value_string(ocl_strdup("")));
+        return;
+    }
+    vm_push(vm, value_string(ocl_strdup((const char *)address)));
+}
+
 static void builtin_array_new(VM *vm, int argc) {
     Value *args = pop_args(vm, argc);
     int64_t sz  = (argc >= 1) ? to_int64(args[0]) : 0;
@@ -2215,6 +2619,29 @@ static const StdlibEntry STDLIB_TABLE[] = {
     { BUILTIN_TERMINAL_SHELL,         "__terminalShell",        builtin_terminal_shell,         1, TYPE_INT    },
     { BUILTIN_TERMINAL_SHELL_CAPTURE, "__terminalShellCapture", builtin_terminal_shell_capture, 1, TYPE_ARRAY  },
     { BUILTIN_TERMINAL_OS,            "__terminalOs",           builtin_terminal_os,            0, TYPE_STRING },
+    { BUILTIN_FFI_READ_U8,            "__ffiReadU8",            builtin_ffi_read_u8,            1, TYPE_INT    },
+    { BUILTIN_FFI_READ_U16,           "__ffiReadU16",           builtin_ffi_read_u16,           1, TYPE_INT    },
+    { BUILTIN_FFI_READ_U32,           "__ffiReadU32",           builtin_ffi_read_u32,           1, TYPE_INT    },
+    { BUILTIN_FFI_READ_U64,           "__ffiReadU64",           builtin_ffi_read_u64,           1, TYPE_INT    },
+    { BUILTIN_FFI_READ_I8,            "__ffiReadI8",            builtin_ffi_read_i8,            1, TYPE_INT    },
+    { BUILTIN_FFI_READ_I16,           "__ffiReadI16",           builtin_ffi_read_i16,           1, TYPE_INT    },
+    { BUILTIN_FFI_READ_I32,           "__ffiReadI32",           builtin_ffi_read_i32,           1, TYPE_INT    },
+    { BUILTIN_FFI_READ_I64,           "__ffiReadI64",           builtin_ffi_read_i64,           1, TYPE_INT    },
+    { BUILTIN_FFI_READ_F32,           "__ffiReadF32",           builtin_ffi_read_f32,           1, TYPE_FLOAT  },
+    { BUILTIN_FFI_READ_F64,           "__ffiReadF64",           builtin_ffi_read_f64,           1, TYPE_FLOAT  },
+    { BUILTIN_FFI_READ_PTR,           "__ffiReadPtr",           builtin_ffi_read_ptr,           1, TYPE_INT    },
+    { BUILTIN_FFI_WRITE_U8,           "__ffiWriteU8",           builtin_ffi_write_u8,           2, TYPE_VOID   },
+    { BUILTIN_FFI_WRITE_U16,          "__ffiWriteU16",          builtin_ffi_write_u16,          2, TYPE_VOID   },
+    { BUILTIN_FFI_WRITE_U32,          "__ffiWriteU32",          builtin_ffi_write_u32,          2, TYPE_VOID   },
+    { BUILTIN_FFI_WRITE_U64,          "__ffiWriteU64",          builtin_ffi_write_u64,          2, TYPE_VOID   },
+    { BUILTIN_FFI_WRITE_I8,           "__ffiWriteI8",           builtin_ffi_write_i8,           2, TYPE_VOID   },
+    { BUILTIN_FFI_WRITE_I16,          "__ffiWriteI16",          builtin_ffi_write_i16,          2, TYPE_VOID   },
+    { BUILTIN_FFI_WRITE_I32,          "__ffiWriteI32",          builtin_ffi_write_i32,          2, TYPE_VOID   },
+    { BUILTIN_FFI_WRITE_I64,          "__ffiWriteI64",          builtin_ffi_write_i64,          2, TYPE_VOID   },
+    { BUILTIN_FFI_WRITE_F32,          "__ffiWriteF32",          builtin_ffi_write_f32,          2, TYPE_VOID   },
+    { BUILTIN_FFI_WRITE_F64,          "__ffiWriteF64",          builtin_ffi_write_f64,          2, TYPE_VOID   },
+    { BUILTIN_FFI_WRITE_PTR,          "__ffiWritePtr",          builtin_ffi_write_ptr,          2, TYPE_VOID   },
+    { BUILTIN_FFI_CSTRING,            "__ffiCString",           builtin_ffi_cstring,            1, TYPE_STRING },
 };
 
 static const size_t STDLIB_TABLE_SIZE =

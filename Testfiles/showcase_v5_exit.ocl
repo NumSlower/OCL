@@ -1,0 +1,10 @@
+/# Version 5. Exit showcase. #/
+
+Import <showcase_support>
+
+func Int main() {
+    print(headline("exit"));
+    print("about to exit with code 7");
+    exit(7);
+    return 0;
+}

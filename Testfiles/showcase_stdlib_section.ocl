@@ -1,0 +1,92 @@
+/# Standard library feature tour. #/
+
+func Int showcaseStdlib() {
+    print(headline("stdlib"));
+
+    assert(writeFile("build/showcase_io.txt", "  hello\n"), "writeFile failed");
+    assert(appendFile("build/showcase_io.txt", "world  \n"), "appendFile failed");
+
+    Let fileText:String = readFile("build/showcase_io.txt");
+    Let cleaned:String = strReplace(strTrim(fileText), "\n", "|");
+
+    printf("printf value=%d flag=%b word=%s\n", 7, true, "ok");
+    printf("printf colon=%d %s\n": 9, "alt");
+    print(strFormat("format score=%d active=%b name=%s", 99, true, "Ada"));
+    print("file=" + cleaned);
+
+    print(
+        strFormat(
+            "math abs=%d sqrt=%f pow=%f sin=%f cos=%f tan=%f",
+            abs(-42),
+            sqrt(81),
+            pow(2, 5),
+            sin(0),
+            cos(0),
+            tan(0)
+        )
+    );
+    print(
+        strFormat(
+            "round floor=%f ceil=%f round=%f max=%d min=%d",
+            floor(3.9),
+            ceil(3.1),
+            round(3.6),
+            max(10, 4),
+            min(10, 4)
+        )
+    );
+
+    Let source:String = "  hello,world  ";
+    Let parts:Array = strSplit(strTrim(source), ",");
+    print("strLen=" + toString(strLen(source)) + ", substr=" + substr("feature", 1, 4) + ", tail=" + substr("feature", 3));
+    print("upper=" + toUpperCase("mix") + ", lower=" + toLowerCase("MIX"));
+    print("contains=" + boolText(strContains(source, "world")) + ", index=" + toString(strIndexOf(source, "world")));
+    print("replace=" + strReplace("one two one", "one", "1") + ", trim=" + strTrim(source));
+    print("split len=" + toString(arrayLen(parts)) + ", first part=" + arrayGet(parts, 0));
+
+    Let asInt:Int = toInt("42");
+    Let asFloat:Float = toFloat("3.5");
+    Let asString:String = toString(123);
+    Let asBool:Bool = toBool("hello");
+    print("convert=" + toString(asInt) + ", " + toString(asFloat) + ", " + asString + ", " + boolText(asBool));
+    print(
+        "inspect="
+        + typeOf(asFloat)
+        + ", int="
+        + boolText(isInt(asInt))
+        + ", float="
+        + boolText(isFloat(asFloat))
+        + ", string="
+        + boolText(isString(asString))
+        + ", bool="
+        + boolText(isBool(asBool))
+    );
+
+    Let started:Int = timeNow();
+    Let randomFloat:Float = random();
+    Let randomSmall:Int = random(10);
+    Let randomRange:Int = random(3, 7);
+    assert(randomFloat >= 0 && randomFloat < 1, "random() range");
+    assert(randomSmall >= 0 && randomSmall < 10, "random(10) range");
+    assert(randomRange >= 3 && randomRange <= 7, "random(3, 7) range");
+
+    Let mutable:Array = arrayNew(2);
+    arraySet(mutable, 0, "alpha");
+    arraySet(mutable, 1, "beta");
+    arrayPush(mutable, "gamma");
+    Let popped:String = arrayPop(mutable);
+    print("array len=" + toString(arrayLen(mutable)) + ", first=" + arrayGet(mutable, 0) + ", popped=" + popped);
+
+    int bits = 10;
+    print("bit lsr=" + toString(bitLogicalShiftRight(-8, 1)) + ", rol=" + toString(bitRotateLeft(bits, 1)) + ", ror=" + toString(bitRotateRight(bits, 1)));
+    print("bit pop=" + toString(bitPopcount(bits)) + ", clz=" + toString(bitCountLeadingZeros(bits)) + ", ctz=" + toString(bitCountTrailingZeros(bits)));
+    print("bit test=" + boolText(bitTest(bits, 1)) + ", set=" + toString(bitSet(bits, 0)) + ", clear=" + toString(bitClear(bits, 1)) + ", toggle=" + toString(bitToggle(bits, 3)));
+    print("bit nand=" + toString(bitNand(12, 10)) + ", nor=" + toString(bitNor(12, 10)) + ", xnor=" + toString(bitXnor(12, 10)));
+
+    Let files:Array = listFiles("stdlib_headers");
+    Let measured:Float = measureFile("Testfiles/showcase_measure_target.ocl");
+    print("files=" + toString(arrayLen(files)) + ", first file=" + toString(arrayGet(files, 0)));
+    print("measure ms=" + toString(measured) + ", timeNow delta=" + toString(timeNow() - started));
+
+    return 0;
+}

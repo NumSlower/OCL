@@ -33,6 +33,8 @@ Build a NumOS ELF executable:
 ./build/ocl --emit-elf path/to/program.elf path/to/program.ocl
 ```
 
+Host builds run through the Rust VM engine. `--emit-elf` still packages the legacy C VM snapshot.
+
 If a top level `main()` function exists, the VM calls it after global initialization.
 
 ## Comments

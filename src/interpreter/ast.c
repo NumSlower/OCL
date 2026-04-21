@@ -93,6 +93,25 @@ static ASTNode *ast_clone_node(const ASTNode *node) {
         }
         case AST_BLOCK:
             return (ASTNode *)ast_clone_block((const BlockNode *)node);
+        case AST_FUNC_DECL: {
+            const FuncDeclNode *f = (const FuncDeclNode *)node;
+            ParamNode **params = NULL;
+            if (f->param_count > 0)
+                params = ocl_malloc(f->param_count * sizeof(ParamNode *));
+            for (size_t i = 0; i < f->param_count; i++) {
+                params[i] = ast_create_param(ocl_strdup(f->params[i]->name),
+                                             ast_clone_type(f->params[i]->type),
+                                             f->params[i]->location);
+            }
+            return ast_create_func_decl(f->base.location,
+                                        ocl_strdup(f->name),
+                                        ast_clone_type(f->return_type),
+                                        params,
+                                        f->param_count,
+                                        ast_clone_block(f->body),
+                                        f->is_extern,
+                                        f->extern_library ? ocl_strdup(f->extern_library) : NULL);
+        }
         case AST_RETURN: {
             const ReturnNode *r = (const ReturnNode *)node;
             return ast_create_return(r->base.location, ast_clone_expr(r->value));
@@ -160,7 +179,8 @@ ASTNode *ast_create_struct_decl(SourceLocation loc, char *name, ParamNode **fiel
 }
 
 ASTNode *ast_create_func_decl(SourceLocation loc, char *name, TypeNode *ret,
-                              ParamNode **params, size_t n, BlockNode *body) {
+                              ParamNode **params, size_t n, BlockNode *body,
+                              bool is_extern, char *extern_library) {
     FuncDeclNode *fd = ocl_malloc(sizeof(FuncDeclNode));
     fd->base.type = AST_FUNC_DECL;
     fd->base.location = loc;
@@ -169,6 +189,8 @@ ASTNode *ast_create_func_decl(SourceLocation loc, char *name, TypeNode *ret,
     fd->params = params;
     fd->param_count = n;
     fd->body = body;
+    fd->is_extern = is_extern;
+    fd->extern_library = extern_library;
     return (ASTNode *)fd;
 }
 
@@ -536,6 +558,7 @@ void ast_free(ASTNode *node) {
             }
             ocl_free(f->params);
             ast_free((ASTNode *)f->body);
+            ocl_free(f->extern_library);
             break;
         }
         case AST_BLOCK: {

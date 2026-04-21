@@ -1,4 +1,5 @@
 #include "type_checker.h"
+#include "bytecode.h"
 #include "common.h"
 #include "ocl_stdlib.h"
 #include <string.h>
@@ -401,6 +402,60 @@ static void register_struct_decl(TypeChecker *tc, StructDeclNode *decl) {
     sym->type.return_type = NULL;
 }
 
+static bool extern_type_allowed(const TypeNode *type, bool is_return) {
+    if (!type) return false;
+    if (type_is_integer(type)) return true;
+
+    switch (type->type) {
+        case TYPE_FLOAT:
+        case TYPE_BOOL:
+        case TYPE_CHAR:
+            return true;
+        case TYPE_STRING:
+            return !is_return;
+        case TYPE_VOID:
+            return is_return;
+        default:
+            return false;
+    }
+}
+
+static void validate_extern_function(TypeChecker *tc, FuncDeclNode *decl) {
+    if (!tc || !decl || !decl->is_extern)
+        return;
+
+    if (!decl->extern_library || !decl->extern_library[0]) {
+        tc_error(tc, decl->base.location, "Extern function '%s' must declare a library name", decl->name);
+    }
+
+    if (decl->body) {
+        tc_error(tc, decl->base.location, "Extern function '%s' cannot declare a body", decl->name);
+    }
+
+    if (decl->param_count > OCL_NATIVE_MAX_ARGS) {
+        tc_error(tc, decl->base.location,
+                 "Extern function '%s' supports at most %d parameters in v1",
+                 decl->name, OCL_NATIVE_MAX_ARGS);
+    }
+
+    if (!extern_type_allowed(decl->return_type, true)) {
+        tc_error(tc, decl->base.location,
+                 "Extern function '%s' return type '%s' is not supported",
+                 decl->name, ast_type_name(decl->return_type));
+    }
+
+    for (size_t i = 0; i < decl->param_count; i++) {
+        ParamNode *param = decl->params[i];
+        if (!param || !param->type)
+            continue;
+        if (!extern_type_allowed(param->type, false)) {
+            tc_error(tc, param->location,
+                     "Extern function '%s' parameter '%s' uses unsupported type '%s'",
+                     decl->name, param->name, ast_type_name(param->type));
+        }
+    }
+}
+
 static void predeclare_program(TypeChecker *tc, ProgramNode *program) {
     if (!tc || !program) return;
 
@@ -700,6 +755,10 @@ static void check_node(TypeChecker *tc, ASTNode *node) {
              * recurse into the body — we do NOT re-register the function itself.
              */
             FuncDeclNode *f = (FuncDeclNode *)node;
+            if (f->is_extern) {
+                validate_extern_function(tc, f);
+                break;
+            }
             symbol_table_enter_scope(tc->symbol_table);
             TypeNode *saved_ret = tc->current_function_return_type;
             tc->current_function_return_type = f->return_type;

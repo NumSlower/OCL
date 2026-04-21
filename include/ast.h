@@ -144,6 +144,8 @@ struct FuncDeclNode {
     ParamNode **params;
     size_t     param_count;
     BlockNode *body;
+    bool       is_extern;
+    char      *extern_library;
 };
 
 struct BlockNode {
@@ -286,7 +288,8 @@ struct ProgramNode {
 ASTNode   *ast_create_var_decl(SourceLocation loc, char *name, TypeNode *type, ExprNode *initializer);
 ASTNode   *ast_create_struct_decl(SourceLocation loc, char *name, ParamNode **fields, size_t field_count);
 ASTNode   *ast_create_func_decl(SourceLocation loc, char *name, TypeNode *return_type,
-                                ParamNode **params, size_t param_count, BlockNode *body);
+                                ParamNode **params, size_t param_count, BlockNode *body,
+                                bool is_extern, char *extern_library);
 BlockNode *ast_create_block(SourceLocation loc);
 void       ast_add_statement(BlockNode *block, ASTNode *stmt);
 ASTNode   *ast_create_if_stmt(SourceLocation loc, ExprNode *cond,

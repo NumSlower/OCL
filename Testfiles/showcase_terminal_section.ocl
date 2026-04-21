@@ -1,0 +1,41 @@
+/# Terminal module feature tour. #/
+
+Import <terminal>
+
+func String directProgram() {
+    if (hostIsWindows(os())) {
+        return "cmd";
+    }
+    return "sh";
+}
+
+func Array directArgs() {
+    if (hostIsWindows(os())) {
+        return ["/c", "echo direct-process"];
+    }
+    return ["-c", "echo direct-process"];
+}
+
+func Int showcaseTerminal() {
+    print(headline("terminal"));
+    print("os=" + os());
+    print("argCount=" + toString(argCount()) + ", args len=" + toString(arrayLen(args())));
+
+    if (argCount() > 0) {
+        print("arg0=" + arg(0));
+    }
+
+    Let direct:Array = capture(directProgram(), directArgs());
+    Let shell:Array = captureShell("echo shell-process");
+
+    print("capture status=" + toString(status(direct)) + ", output=" + strTrim(output(direct)));
+    print("captureShell status=" + toString(status(shell)) + ", output=" + strTrim(output(shell)));
+
+    Let runCode:Int = run(directProgram(), directArgs());
+    print("run status=" + toString(runCode));
+
+    Let runShellCode:Int = runShell("echo shell-process");
+    print("runShell status=" + toString(runShellCode));
+
+    return 0;
+}

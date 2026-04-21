@@ -1,0 +1,8 @@
+/# Version 2. Standard library showcase. #/
+
+Import <showcase_support>
+Import <showcase_stdlib_section>
+
+func Int main() {
+    return showcaseStdlib();
+}

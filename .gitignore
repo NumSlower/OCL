@@ -3,6 +3,9 @@
 /out
 *.py
 *.ocl
+!stdlib_headers/*.ocl
+!/Testfiles/
+!/Testfiles/*.ocl
 *.elf
 *.exe
 *.o

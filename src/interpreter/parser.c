@@ -361,6 +361,8 @@ static ExprNode *parse_embedded_expression(Parser *parent, const char *source, S
 static ExprNode *parse_interpolated_string(Parser *p, const Token *token);
 static ExprNode *make_to_string_call(SourceLocation loc, ExprNode *expr);
 static bool is_anon_func_start(Parser *p);
+static void skip_brace_block(Parser *p);
+static ASTNode *parse_top_level_function_decl(Parser *p);
 
 static bool looks_like_typed_name(Parser *p) {
     return check(p, TOKEN_IDENTIFIER) && peek_tok(p, 1)->type == TOKEN_IDENTIFIER;
@@ -536,6 +538,83 @@ static ExprNode *parse_interpolated_string(Parser *p, const Token *token) {
 
 static bool is_anon_func_start(Parser *p) {
     return check(p, TOKEN_FUNC) && peek_tok(p, 1)->type == TOKEN_LPAREN;
+}
+
+static void skip_unsupported_extern_decl(Parser *p) {
+    if (!match(p, TOKEN_EXTERN))
+        return;
+
+    while (!at_end(p)) {
+        if (check(p, TOKEN_LBRACE)) {
+            skip_brace_block(p);
+            break;
+        }
+        if (check(p, TOKEN_SEMICOLON)) {
+            p->current++;
+            break;
+        }
+        p->current++;
+    }
+}
+
+static ASTNode *parse_top_level_function_decl(Parser *p) {
+    bool is_extern = false;
+    char *extern_library = NULL;
+    SourceLocation loc;
+    TypeNode *ret = NULL;
+    ParamNode **params = NULL;
+    size_t param_count = 0;
+    BlockNode *body = NULL;
+
+    if (match(p, TOKEN_EXTERN)) {
+        Token lib_tok;
+
+        is_extern = true;
+        lib_tok = consume(p, TOKEN_STRING, "Expected library string after extern");
+        extern_library = ocl_strdup(lib_tok.value.string_value ? lib_tok.value.string_value : "");
+        consume(p, TOKEN_FUNC, "Expected 'func' after extern library");
+        loc = lib_tok.location;
+    } else {
+        Token func_tok = consume(p, TOKEN_FUNC, "Expected 'func'");
+        loc = func_tok.location;
+    }
+
+    ret = ast_create_type(TYPE_VOID);
+    if (token_is_func_type_name(cur_tok(p)) ||
+        !(check(p, TOKEN_IDENTIFIER) && peek_tok(p, 1)->type == TOKEN_LPAREN)) {
+        ocl_free(ret);
+        ret = parse_type(p);
+    }
+
+    Token name_tok = consume(p, TOKEN_IDENTIFIER, "Expected function name");
+    char *fname = dup_lexeme(&name_tok);
+    consume(p, TOKEN_LPAREN, "Expected '(' after function name");
+
+    if (!check(p, TOKEN_RPAREN)) {
+        do {
+            Token pname_tok = consume(p, TOKEN_IDENTIFIER, "Expected parameter name");
+            char *pname = dup_lexeme(&pname_tok);
+            consume(p, TOKEN_COLON, "Expected ':' after parameter name");
+            TypeNode *ptype = parse_type(p);
+            params = ocl_realloc(params, (param_count + 1) * sizeof(ParamNode *));
+            params[param_count++] = ast_create_param(pname, ptype, pname_tok.location);
+        } while (match(p, TOKEN_COMMA));
+    }
+    consume(p, TOKEN_RPAREN, "Expected ')'");
+
+    if (is_extern) {
+        if (check(p, TOKEN_LBRACE)) {
+            error_add(p->errors, ERRK_SYNTAX, ERROR_PARSER, cur_tok(p)->location,
+                      "Extern functions must end with ';' and cannot have a body");
+            skip_brace_block(p);
+        } else {
+            consume_semicolon(p, "Expected ';' after extern function declaration");
+        }
+        return ast_create_func_decl(loc, fname, ret, params, param_count, NULL, true, extern_library);
+    }
+
+    body = parse_block(p);
+    return ast_create_func_decl(loc, fname, ret, params, param_count, body, false, NULL);
 }
 
 static ExprNode *parse_expression(Parser *p) { return parse_assignment(p); }
@@ -1094,6 +1173,12 @@ static ASTNode *parse_statement(Parser *p) {
         skip_unsupported_function_decl(p);
         return NULL;
     }
+    if (check(p, TOKEN_EXTERN)) {
+        error_add(p->errors, ERRK_SYNTAX, ERROR_PARSER, loc,
+                  "Extern functions are only supported at top level");
+        skip_unsupported_extern_decl(p);
+        return NULL;
+    }
 
     /* Import <name.ext> */
     if (match(p, TOKEN_IMPORT)) {
@@ -1398,35 +1483,8 @@ ProgramNode *parser_parse(Parser *p) {
     while (!at_end(p)) {
 
         /* Function declaration */
-        if (check(p, TOKEN_FUNC) && !is_anon_func_start(p)) {
-            p->current++;
-            SourceLocation loc = prev_tok(p)->location;
-
-            TypeNode *ret = ast_create_type(TYPE_VOID);
-            if (token_is_func_type_name(cur_tok(p)) ||
-                !(check(p, TOKEN_IDENTIFIER) && peek_tok(p, 1)->type == TOKEN_LPAREN)) {
-                ocl_free(ret);
-                ret = parse_type(p);
-            }
-
-            Token name_tok = consume(p, TOKEN_IDENTIFIER, "Expected function name");
-            char *fname = dup_lexeme(&name_tok);
-            consume(p, TOKEN_LPAREN, "Expected '(' after function name");
-
-            ParamNode **params = NULL; size_t param_count = 0;
-            if (!check(p, TOKEN_RPAREN)) {
-                do {
-                    Token pname_tok = consume(p, TOKEN_IDENTIFIER, "Expected parameter name");
-                    char *pname = dup_lexeme(&pname_tok);
-                    consume(p, TOKEN_COLON, "Expected ':' after parameter name");
-                    TypeNode *ptype = parse_type(p);
-                    params = ocl_realloc(params, (param_count + 1) * sizeof(ParamNode *));
-                    params[param_count++] = ast_create_param(pname, ptype, pname_tok.location);
-                } while (match(p, TOKEN_COMMA));
-            }
-            consume(p, TOKEN_RPAREN, "Expected ')'");
-            BlockNode *body = parse_block(p);
-            ASTNode *fn = ast_create_func_decl(loc, fname, ret, params, param_count, body);
+        if ((check(p, TOKEN_FUNC) && !is_anon_func_start(p)) || check(p, TOKEN_EXTERN)) {
+            ASTNode *fn = parse_top_level_function_decl(p);
             program_add_node(prog, fn);
             continue;
         }

@@ -1,0 +1,9 @@
+/# Small target for measureFile. #/
+
+func Int main() {
+    int total = 0;
+    for (int i = 0; i < 200; i++) {
+        total += i;
+    }
+    return total;
+}

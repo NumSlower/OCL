@@ -22,6 +22,7 @@ endif
 
 # â”€â”€ Toolchain â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 CC           ?= gcc
+RUSTC        ?= rustc
 VERSION      := beta 1.7.0
 ifeq ($(DETECTED_OS),WINDOWS)
 NUMOS_CC     ?= gcc
@@ -40,11 +41,14 @@ INC_DIR   := include
 BUILD_DIR := build
 TARGET    := $(BUILD_DIR)/ocl$(if $(filter WINDOWS,$(DETECTED_OS)),.exe,)
 TEST_DIR  := Testfiles/ReferenceSuite
+RUST_VM_SRC := $(SRC_DIR)/vm/vm.rs
+RUST_VM_LIB := $(BUILD_DIR)/vm_rust.a
 
 # â”€â”€ Recursive source discovery without shell find â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 # This avoids the Windows/PowerShell + sh.exe path issue and works on Unix too.
 rwildcard = $(foreach d,$(wildcard $1*),$(call rwildcard,$d/,$2)$(filter $(subst *,%,$2),$d))
 SRCS := $(call rwildcard,$(SRC_DIR)/,*.c)
+SRCS := $(filter-out $(SRC_DIR)/vm/vm_legacy.c,$(SRCS))
 OBJS := $(patsubst $(SRC_DIR)/%.c,$(BUILD_DIR)/%.o,$(SRCS))
 TESTS := $(call rwildcard,$(TEST_DIR)/,*.ocl)
 
@@ -74,10 +78,21 @@ CFLAGS_COMMON := \
 CFLAGS_DEBUG   := $(CFLAGS_COMMON) -g3 -O0 -DDEBUG $(SANITIZE_FLAGS)
 CFLAGS_RELEASE := $(CFLAGS_COMMON) -O2 -DNDEBUG
 
+RUSTFLAGS_COMMON := \
+    --crate-name ocl_vm_rust \
+    --crate-type staticlib \
+    --edition=2021 \
+    -C panic=abort
+
+RUSTFLAGS_DEBUG   := $(RUSTFLAGS_COMMON) -C debuginfo=2
+RUSTFLAGS_RELEASE := $(RUSTFLAGS_COMMON) -C opt-level=2
+
 # â”€â”€ Linker flags â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 LDFLAGS :=
 ifeq ($(DETECTED_OS),WINDOWS)
   LDFLAGS += -lws2_32 -lbcrypt
+else
+  LDFLAGS += -lm
 endif
 
 LDFLAGS_DEBUG := $(LDFLAGS) $(if $(filter WINDOWS,$(DETECTED_OS)),,$(SANITIZE_FLAGS))
@@ -85,17 +100,20 @@ LDFLAGS_DEBUG := $(LDFLAGS) $(if $(filter WINDOWS,$(DETECTED_OS)),,$(SANITIZE_FL
 # Defaults
 CFLAGS ?= $(CFLAGS_DEBUG)
 LFLAGS ?= $(LDFLAGS_DEBUG)
+RFLAGS ?= $(RUSTFLAGS_DEBUG)
 
 # â”€â”€ Default target â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 .PHONY: all
 all: CFLAGS := $(CFLAGS_DEBUG)
 all: LFLAGS := $(LDFLAGS_DEBUG)
+all: RFLAGS := $(RUSTFLAGS_DEBUG)
 all: $(TARGET)
 
 # â”€â”€ Valgrind build â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 .PHONY: valgrind
 valgrind: CFLAGS := $(CFLAGS_COMMON) -g -O0
 valgrind: LFLAGS := $(LDFLAGS)
+valgrind: RFLAGS := $(RUSTFLAGS_DEBUG)
 valgrind: clean $(TARGET)
 	@echo "Valgrind build complete: $(TARGET)"
 
@@ -103,6 +121,7 @@ valgrind: clean $(TARGET)
 .PHONY: release
 release: CFLAGS := $(CFLAGS_RELEASE)
 release: LFLAGS := $(LDFLAGS)
+release: RFLAGS := $(RUSTFLAGS_RELEASE)
 release: clean $(TARGET)
 	@echo "Release build complete: $(TARGET)"
 
@@ -110,6 +129,7 @@ release: clean $(TARGET)
 .PHONY: debug
 debug: CFLAGS := $(CFLAGS_DEBUG)
 debug: LFLAGS := $(LDFLAGS_DEBUG)
+debug: RFLAGS := $(RUSTFLAGS_DEBUG)
 debug: clean $(TARGET)
 	@echo "Debug build complete: $(TARGET)"
 
@@ -122,10 +142,14 @@ else
 endif
 
 # â”€â”€ Link â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-$(TARGET): $(BUILD_DIR) $(OBJS)
+$(TARGET): $(BUILD_DIR) $(RUST_VM_LIB) $(OBJS)
 	@echo "  LINK  $@"
-	@$(CC) $(OBJS) -o $@ $(LFLAGS)
+	@$(CC) $(OBJS) $(RUST_VM_LIB) -o $@ $(LFLAGS)
 	@echo "Built $(TARGET) v$(VERSION)"
+
+$(RUST_VM_LIB): $(BUILD_DIR) $(RUST_VM_SRC)
+	@echo "  RUST  $<"
+	@$(RUSTC) $(RFLAGS) -o $@ $<
 
 # â”€â”€ Compile â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 $(BUILD_DIR)/%.o: $(SRC_DIR)/%.c
@@ -222,3 +246,4 @@ help:
 	@echo ""
 	@echo "  Detected OS: $(DETECTED_OS)"
 	@echo "  Sanitizers:  $(if $(SANITIZE_FLAGS),$(SANITIZE_FLAGS),disabled)"
+	@echo "  Rust tool:   $(RUSTC)"

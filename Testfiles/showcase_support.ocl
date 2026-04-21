@@ -1,0 +1,45 @@
+/# Shared helpers for showcase programs. #/
+
+struct Point {
+    x:Int;
+    y:Int;
+}
+
+struct Person {
+    name:String;
+    age:Int;
+    active:Bool;
+}
+
+func String headline(name:String) {
+    return "== " + toUpperCase(name) + " ==";
+}
+
+func String boolText(value:Bool) {
+    if (value) {
+        return "true";
+    }
+    return "false";
+}
+
+func Bool hostIsWindows(name:String) {
+    return strContains(toLowerCase(name), "windows");
+}
+
+func Person makePerson(name:String, age:Int, active:Bool) {
+    return Person{ name: name, age: age, active: active };
+}
+
+func Int factorial(n:Int) {
+    if (n <= 1) {
+        return 1;
+    }
+    return n * factorial(n - 1);
+}
+
+func Int chooseScore(base:Int, boosted:Bool) {
+    if (boosted) {
+        return base + 10;
+    }
+    return base;
+}

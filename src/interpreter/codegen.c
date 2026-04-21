@@ -611,6 +611,25 @@ static bool has_emitted_module(CodeGenerator *g, const char *path) {
     return false;
 }
 
+static NativeTypeTag native_tag_from_type(const TypeNode *type) {
+    if (!type) return NATIVE_TYPE_VOID;
+    if (type_is_integer(type)) {
+        if (type->integer_kind == INTEGER_KIND_IPTR ||
+            type->integer_kind == INTEGER_KIND_UPTR)
+            return NATIVE_TYPE_POINTER;
+        return NATIVE_TYPE_INT;
+    }
+
+    switch (type->type) {
+        case TYPE_FLOAT:  return NATIVE_TYPE_FLOAT;
+        case TYPE_BOOL:   return NATIVE_TYPE_BOOL;
+        case TYPE_CHAR:   return NATIVE_TYPE_CHAR;
+        case TYPE_STRING: return NATIVE_TYPE_STRING;
+        case TYPE_VOID:   return NATIVE_TYPE_VOID;
+        default:          return NATIVE_TYPE_VOID;
+    }
+}
+
 static void mark_emitted_module(CodeGenerator *g, const char *path) {
     if (!g || !path || has_emitted_module(g, path)) return;
     if (g->emitted_module_count >= g->emitted_module_capacity) {
@@ -637,7 +656,20 @@ static void predeclare_program(CodeGenerator *g, ProgramNode *program) {
             if (lookup_global(g, d->name) < 0) add_global(g, d->name);
         } else if (n->type == AST_FUNC_DECL) {
             FuncDeclNode *f = (FuncDeclNode *)n;
-            bytecode_add_function(g->bytecode, f->name, OCL_FUNC_UNRESOLVED, (int)f->param_count);
+            if (f->is_extern) {
+                NativeTypeTag param_tags[OCL_NATIVE_MAX_ARGS];
+                size_t tag_count = f->param_count < OCL_NATIVE_MAX_ARGS ? f->param_count : OCL_NATIVE_MAX_ARGS;
+                for (size_t j = 0; j < tag_count; j++)
+                    param_tags[j] = native_tag_from_type(f->params[j]->type);
+                bytecode_add_native_function(g->bytecode,
+                                             f->name,
+                                             f->extern_library,
+                                             native_tag_from_type(f->return_type),
+                                             param_tags,
+                                             (int)f->param_count);
+            } else {
+                bytecode_add_function(g->bytecode, f->name, OCL_FUNC_UNRESOLVED, (int)f->param_count);
+            }
         }
     }
 }
@@ -1102,6 +1134,8 @@ static void emit_node(CodeGenerator *g, ASTNode *node) {
 
     case AST_FUNC_DECL: {
         FuncDeclNode *f = (FuncDeclNode *)node;
+        if (f->is_extern)
+            break;
         emit_function_body(g, f->name, f->params, f->param_count, f->body, f->base.location);
         break;
     }

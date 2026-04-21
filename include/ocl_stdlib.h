@@ -76,6 +76,29 @@ struct VM; typedef struct VM VM;
 #define BUILTIN_TERMINAL_SHELL         93
 #define BUILTIN_TERMINAL_SHELL_CAPTURE 94
 #define BUILTIN_TERMINAL_OS            95
+#define BUILTIN_FFI_READ_U8            96
+#define BUILTIN_FFI_READ_U16           97
+#define BUILTIN_FFI_READ_U32           98
+#define BUILTIN_FFI_READ_U64           99
+#define BUILTIN_FFI_READ_I8            100
+#define BUILTIN_FFI_READ_I16           101
+#define BUILTIN_FFI_READ_I32           102
+#define BUILTIN_FFI_READ_I64           103
+#define BUILTIN_FFI_READ_F32           104
+#define BUILTIN_FFI_READ_F64           105
+#define BUILTIN_FFI_READ_PTR           106
+#define BUILTIN_FFI_WRITE_U8           107
+#define BUILTIN_FFI_WRITE_U16          108
+#define BUILTIN_FFI_WRITE_U32          109
+#define BUILTIN_FFI_WRITE_U64          110
+#define BUILTIN_FFI_WRITE_I8           111
+#define BUILTIN_FFI_WRITE_I16          112
+#define BUILTIN_FFI_WRITE_I32          113
+#define BUILTIN_FFI_WRITE_I64          114
+#define BUILTIN_FFI_WRITE_F32          115
+#define BUILTIN_FFI_WRITE_F64          116
+#define BUILTIN_FFI_WRITE_PTR          117
+#define BUILTIN_FFI_CSTRING            118
 
 typedef struct {
     int id;

@@ -1,0 +1,93 @@
+/# Core language feature tour. #/
+
+declare later:Int;
+
+func Int classifyNumber(value:Int) {
+    if (value > 0) {
+        return 1;
+    } else if (value < 0) {
+        return -1;
+    }
+    return 0;
+}
+
+func Int showcaseCore() {
+    print(headline("core"));
+
+    Let count:Int = 42;
+    int counter = 3;
+    ichar small = 7;
+    ushort flags = 12;
+    Float ratio = 7.5;
+    String label = "OCL";
+    Bool ready = true;
+    Char letter = 'Z';
+    String pending;
+    Let values:Array = [1, 2, 3];
+    Let matrix:Array = [[1, 2], [3, 4]];
+    Let point:Point = Point{ x: 3, y: 4 };
+    Let user:Person = makePerson("Ada", 36, true);
+
+    later = count + counter;
+
+    int ops = 8;
+    ++ops;
+    ops++;
+    ops += 5;
+    ops -= 2;
+    ops *= 2;
+    ops /= 3;
+    ops %= 5;
+    ops <<= 2;
+    ops >>= 1;
+    ops &= 6;
+    ops |= 1;
+    ops ^= 3;
+
+    values[0] = 99;
+    values[1] = values[0] + values[-1];
+    point.y = 9;
+
+    Let logic:Bool = ready && !false || false;
+    Let grade:String = chooseScore(82, true) > 90 ? "A" : "B";
+    Float floatMod = 7.5 % 2.0;
+    String laugh = "ha" * 3;
+    Bool lexicographic = "ada" < "grace";
+
+    int loopSum = 0;
+    for (Let i:Int = 0; i < 6; i++) {
+        if (i == 2) {
+            continue;
+        }
+        if (i == 5) {
+            break;
+        }
+        loopSum += i;
+    }
+
+    int countdown = 3;
+    while (countdown > 0) {
+        countdown--;
+    }
+
+    int once = 0;
+    do {
+        once++;
+    } while (once < 2);
+
+    print("pending is null=" + boolText(isNull(pending)));
+    print("count=" + toString(count) + ", counter=" + toString(counter) + ", later=" + toString(later));
+    print("small=" + toString(small) + ", flags=" + toString(flags) + ", ratio=" + toString(ratio));
+    print("label=" + label + ", letter=" + toString(letter));
+    print("types=" + typeOf(count) + ", " + typeOf(ratio) + ", " + typeOf(label));
+    print("logic=" + boolText(logic) + ", grade=" + grade + ", class=" + toString(classifyNumber(-4)));
+    print("ops=" + toString(ops) + ", floatMod=" + toString(floatMod) + ", laugh=" + laugh);
+    print("lexicographic=" + boolText(lexicographic) + ", factorial=" + toString(factorial(5)));
+    print("array first=" + toString(values[0]) + ", last=" + toString(values[-1]) + ", matrix=" + toString(matrix[0][1]));
+    printf("negative string index=%c\n", "demo"[-1]);
+    print("point=" + toString(point.x) + "," + toString(point.y));
+    print("user=" + user.name + ", active=" + boolText(user.active));
+    print("loopSum=" + toString(loopSum) + ", countdown=" + toString(countdown) + ", once=" + toString(once));
+
+    return 0;
+}

@@ -16,6 +16,7 @@ typedef enum {
     TOKEN_IMPORT,
     TOKEN_DECLARE,
     TOKEN_STRUCT,
+    TOKEN_EXTERN,
     TOKEN_TRUE,
     TOKEN_FALSE,
     TOKEN_NULL,

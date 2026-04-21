@@ -9,12 +9,74 @@
 #endif
 #include <windows.h>
 #elif defined(__linux__)
+#include <dlfcn.h>
 #include <unistd.h>
 #endif
 
 #define OCL_EXEC_SHEBANG "#!/bin/ocl.elf\n"
-#define OCL_EXEC_MAGIC   "OCLBC2\n"
+#define OCL_EXEC_MAGIC   "OCLBC3\n"
 #define OCL_SELF_MAGIC   "OCLSELF\n"
+
+static void bytecode_release_native_cache(FuncEntry *entry) {
+    if (!entry || !entry->native_handle)
+        return;
+#if defined(_WIN32)
+    FreeLibrary((HMODULE)entry->native_handle);
+#elif defined(__linux__)
+    dlclose(entry->native_handle);
+#endif
+    entry->native_handle = NULL;
+    entry->native_address = NULL;
+}
+
+static void func_entry_init(FuncEntry *entry) {
+    if (!entry) return;
+    memset(entry, 0, sizeof(*entry));
+    entry->kind = OCL_FUNC_KIND_BYTECODE;
+    entry->return_tag = NATIVE_TYPE_VOID;
+    for (size_t i = 0; i < OCL_NATIVE_MAX_ARGS; i++)
+        entry->param_tags[i] = NATIVE_TYPE_INT;
+}
+
+static void func_entry_free(FuncEntry *entry) {
+    if (!entry) return;
+    ocl_free(entry->name);
+    for (size_t i = 0; i < entry->local_name_count; i++)
+        ocl_free(entry->local_names[i]);
+    ocl_free(entry->local_names);
+    for (size_t i = 0; i < entry->capture_count; i++)
+        ocl_free(entry->captures[i].name);
+    ocl_free(entry->captures);
+    ocl_free(entry->library_name);
+    ocl_free(entry->symbol_name);
+    bytecode_release_native_cache(entry);
+}
+
+static const char *native_type_name(NativeTypeTag tag) {
+    switch (tag) {
+        case NATIVE_TYPE_VOID:    return "void";
+        case NATIVE_TYPE_INT:     return "int";
+        case NATIVE_TYPE_FLOAT:   return "float";
+        case NATIVE_TYPE_BOOL:    return "bool";
+        case NATIVE_TYPE_CHAR:    return "char";
+        case NATIVE_TYPE_STRING:  return "string";
+        case NATIVE_TYPE_POINTER: return "pointer";
+        default:                  return "unknown";
+    }
+}
+
+static const char *function_kind_name(OclFunctionKind kind) {
+    switch (kind) {
+        case OCL_FUNC_KIND_BYTECODE: return "bytecode";
+        case OCL_FUNC_KIND_BUILTIN:  return "builtin";
+        case OCL_FUNC_KIND_NATIVE:   return "native";
+        default:                     return "unknown";
+    }
+}
+
+static bool function_name_is_hidden_ffi(const char *name) {
+    return name && strncmp(name, "__ffi", 5) == 0;
+}
 
 Bytecode *bytecode_create(void) {
     Bytecode *bc = ocl_malloc(sizeof(Bytecode));
@@ -31,15 +93,8 @@ void bytecode_free(Bytecode *bc) {
     ocl_free(bc->instructions);
     for (size_t i = 0; i < bc->constant_count; i++) value_free(bc->constants[i]);
     ocl_free(bc->constants);
-    for (size_t i = 0; i < bc->function_count; i++) {
-        ocl_free(bc->functions[i].name);
-        for (size_t j = 0; j < bc->functions[i].local_name_count; j++)
-            ocl_free(bc->functions[i].local_names[j]);
-        ocl_free(bc->functions[i].local_names);
-        for (size_t j = 0; j < bc->functions[i].capture_count; j++)
-            ocl_free(bc->functions[i].captures[j].name);
-        ocl_free(bc->functions[i].captures);
-    }
+    for (size_t i = 0; i < bc->function_count; i++)
+        func_entry_free(&bc->functions[i]);
     ocl_free(bc->functions);
     ocl_free(bc);
 }
@@ -81,6 +136,10 @@ uint32_t bytecode_add_function(Bytecode *bc, const char *name, uint32_t start_ip
         if (!strcmp(bc->functions[i].name, name)) {
             if (start_ip != 0xFFFFFFFF) bc->functions[i].start_ip = start_ip;
             bc->functions[i].param_count = param_count;
+            if (start_ip == OCL_FUNC_BUILTIN)
+                bc->functions[i].kind = OCL_FUNC_KIND_BUILTIN;
+            else if (bc->functions[i].kind != OCL_FUNC_KIND_NATIVE)
+                bc->functions[i].kind = OCL_FUNC_KIND_BYTECODE;
             return (uint32_t)i;
         }
     }
@@ -89,15 +148,34 @@ uint32_t bytecode_add_function(Bytecode *bc, const char *name, uint32_t start_ip
         bc->functions = ocl_realloc(bc->functions, bc->function_capacity * sizeof(FuncEntry));
     }
     FuncEntry *fe = &bc->functions[bc->function_count];
+    func_entry_init(fe);
     fe->name = ocl_strdup(name);
     fe->start_ip = start_ip;
     fe->param_count = param_count;
-    fe->local_count = 0;
-    fe->local_names = NULL;
-    fe->local_name_count = 0;
-    fe->captures = NULL;
-    fe->capture_count = 0;
+    if (start_ip == OCL_FUNC_BUILTIN)
+        fe->kind = OCL_FUNC_KIND_BUILTIN;
     return (uint32_t)bc->function_count++;
+}
+
+uint32_t bytecode_add_native_function(Bytecode *bc, const char *name, const char *library_name,
+                                      NativeTypeTag return_tag, const NativeTypeTag *param_tags,
+                                      int param_count) {
+    uint32_t index = bytecode_add_function(bc, name, OCL_FUNC_NATIVE, param_count);
+    FuncEntry *entry = &bc->functions[index];
+
+    bytecode_release_native_cache(entry);
+    ocl_free(entry->library_name);
+    ocl_free(entry->symbol_name);
+    entry->kind = OCL_FUNC_KIND_NATIVE;
+    entry->start_ip = OCL_FUNC_NATIVE;
+    entry->return_tag = return_tag;
+    entry->library_name = library_name ? ocl_strdup(library_name) : NULL;
+    entry->symbol_name = name ? ocl_strdup(name) : NULL;
+    for (size_t i = 0; i < OCL_NATIVE_MAX_ARGS; i++)
+        entry->param_tags[i] = NATIVE_TYPE_INT;
+    for (int i = 0; param_tags && i < param_count && i < OCL_NATIVE_MAX_ARGS; i++)
+        entry->param_tags[i] = param_tags[i];
+    return index;
 }
 
 int bytecode_find_function(Bytecode *bc, const char *name) {
@@ -185,12 +263,29 @@ void bytecode_dump(Bytecode *bc) {
         printf("--- Functions ---\n");
         for (size_t i = 0; i < bc->function_count; i++) {
             FuncEntry *fe = &bc->functions[i];
-            printf("  [%4llu] %-24s  start_ip=%-6u  params=%d  locals=%d\n",
+            printf("  [%4llu] %-24s  kind=%-8s  start_ip=%-10u  params=%d  locals=%d",
                    (unsigned long long)i,
                    fe->name ? fe->name : "?",
+                   function_kind_name(fe->kind),
                    fe->start_ip,
                    fe->param_count,
                    fe->local_count);
+            if (fe->kind == OCL_FUNC_KIND_NATIVE) {
+                printf("  lib=%s  ret=%s  args=",
+                       fe->library_name ? fe->library_name : "?",
+                       native_type_name(fe->return_tag));
+                if (fe->param_count <= 0) {
+                    printf("()");
+                } else {
+                    putchar('(');
+                    for (int j = 0; j < fe->param_count && j < OCL_NATIVE_MAX_ARGS; j++) {
+                        if (j > 0) printf(", ");
+                        printf("%s", native_type_name(fe->param_tags[j]));
+                    }
+                    putchar(')');
+                }
+            }
+            putchar('\n');
         }
         printf("\n");
     }
@@ -279,6 +374,26 @@ void bytecode_dump(Bytecode *bc) {
         putchar('\n');
     }
     printf("\n=== End of Disassembly ===\n");
+}
+
+const char *bytecode_host_runtime_reason(Bytecode *bc) {
+    if (!bc) return NULL;
+
+    for (size_t i = 0; i < bc->function_count; i++) {
+        if (bc->functions[i].kind == OCL_FUNC_KIND_NATIVE)
+            return "native extern functions require the host runtime";
+    }
+
+    for (size_t i = 0; i < bc->instruction_count; i++) {
+        Instruction *ins = &bc->instructions[i];
+        if ((ins->opcode == OP_CALL || ins->opcode == OP_MAKE_FUNCTION) &&
+            ins->operand1 < (uint32_t)bc->function_count &&
+            function_name_is_hidden_ffi(bc->functions[ins->operand1].name)) {
+            return "ffi memory helpers require the host runtime";
+        }
+    }
+
+    return NULL;
 }
 
 /* ── Binary I/O helpers ───────────────────────────────────────────── */
@@ -419,7 +534,13 @@ static bool bytecode_write_payload(Bytecode *bc, FILE *f) {
              write_i32(f, fe->param_count) &&
              write_i32(f, fe->local_count) &&
              write_u32(f, (uint32_t)fe->local_name_count) &&
-             write_u32(f, (uint32_t)fe->capture_count);
+             write_u32(f, (uint32_t)fe->capture_count) &&
+             write_u32(f, (uint32_t)fe->kind) &&
+             write_u32(f, (uint32_t)fe->return_tag) &&
+             write_string(f, fe->library_name ? fe->library_name : "") &&
+             write_string(f, fe->symbol_name ? fe->symbol_name : "");
+        for (size_t j = 0; ok && j < OCL_NATIVE_MAX_ARGS; j++)
+            ok = write_u32(f, (uint32_t)fe->param_tags[j]);
         for (size_t j = 0; ok && j < fe->local_name_count; j++)
             ok = write_string(f, fe->local_names[j] ? fe->local_names[j] : "");
         for (size_t j = 0; ok && j < fe->capture_count; j++) {
@@ -587,25 +708,50 @@ static Bytecode *bytecode_read_payload(FILE *f, bool *is_executable) {
 
     for (size_t i = 0; ok && i < function_count; i++) {
         char *name = read_string(f);
+        char *library_name = NULL;
+        char *symbol_name = NULL;
         int32_t param_count = 0;
         int32_t local_count = 0;
         uint32_t start_ip = 0;
         uint32_t local_name_count = 0;
         uint32_t capture_count = 0;
+        uint32_t kind = 0;
+        uint32_t return_tag = 0;
         ok = name != NULL &&
              read_u32(f, &start_ip) &&
              read_i32(f, &param_count) &&
              read_i32(f, &local_count) &&
              read_u32(f, &local_name_count) &&
-             read_u32(f, &capture_count);
+             read_u32(f, &capture_count) &&
+             read_u32(f, &kind) &&
+             read_u32(f, &return_tag);
         if (!ok) {
             ocl_free(name);
+            break;
+        }
+        func_entry_init(&bc->functions[i]);
+        library_name = read_string(f);
+        symbol_name = read_string(f);
+        ok = library_name != NULL && symbol_name != NULL;
+        for (size_t j = 0; ok && j < OCL_NATIVE_MAX_ARGS; j++) {
+            uint32_t tag = 0;
+            ok = read_u32(f, &tag);
+            bc->functions[i].param_tags[j] = (NativeTypeTag)tag;
+        }
+        if (!ok) {
+            ocl_free(name);
+            ocl_free(library_name);
+            ocl_free(symbol_name);
             break;
         }
         bc->functions[i].name = name;
         bc->functions[i].start_ip = start_ip;
         bc->functions[i].param_count = param_count;
         bc->functions[i].local_count = local_count;
+        bc->functions[i].kind = (OclFunctionKind)kind;
+        bc->functions[i].return_tag = (NativeTypeTag)return_tag;
+        bc->functions[i].library_name = library_name;
+        bc->functions[i].symbol_name = symbol_name;
         bc->functions[i].local_name_count = local_name_count;
         bc->functions[i].local_names = local_name_count > 0
             ? ocl_malloc((size_t)local_name_count * sizeof(char *))

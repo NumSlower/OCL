@@ -401,7 +401,7 @@ static bool run_compiler(const char *source_path, const char *output_path,
         !build_path(stdlib_src, sizeof(stdlib_src), "%s/src/stdlib/stdlib.c", project_root) ||
         !build_path(bytecode_src, sizeof(bytecode_src), "%s/src/vm/bytecode.c", project_root) ||
         !build_path(vm_runtime_src, sizeof(vm_runtime_src), "%s/src/vm/runtime.c", project_root) ||
-        !build_path(vm_src, sizeof(vm_src), "%s/src/vm/vm.c", project_root)) {
+        !build_path(vm_src, sizeof(vm_src), "%s/src/vm/vm_legacy.c", project_root)) {
         error_add(errors, ERRK_OPERATION, ERROR_CODEGEN, LOC_NONE,
                   "project paths are too long for NumOS ELF emission");
         return false;
@@ -561,9 +561,16 @@ bool elf_emit_binary(Bytecode *bytecode, const char *output_path,
               "NumOS ELF output is only supported on Linux hosts");
     return false;
 #else
+    const char *host_reason = bytecode_host_runtime_reason(bytecode);
     if (!bytecode || !output_path || !*output_path) {
         error_add(errors, ERRK_OPERATION, ERROR_CODEGEN, LOC_NONE,
                   "missing bytecode or output path for ELF emission");
+        return false;
+    }
+    if (host_reason) {
+        error_add(errors, ERRK_OPERATION, ERROR_CODEGEN, LOC_NONE,
+                  "%s. NumOS ELF output does not support host native access in v1",
+                  host_reason);
         return false;
     }
 
