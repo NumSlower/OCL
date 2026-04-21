@@ -4,8 +4,7 @@
 *.py
 *.ocl
 !stdlib_headers/*.ocl
-!/Testfiles/
-!/Testfiles/*.ocl
+/Testfiles/
 *.elf
 *.exe
 *.o
