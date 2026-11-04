@@ -1,0 +1,39 @@
+# Build artifacts
+build/
+*.o
+*.obj
+*.exe
+*.out
+*.dll
+*.so
+*.dylib
+ocl
+ocl.exe
+
+# Local generated files
+*.log
+*.tmp
+*.tmp.*
+*.cache
+*.result
+
+# IDE / editor files
+.vscode/
+.idea/
+.claude/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# OS-specific metadata
+Desktop.ini
+
+# Test / local runtime output if created during dev
+output/
+coverage/
+
+# Keep source and test fixtures tracked
+!Testfiles/**/*.ocl
+!Testfiles/**/*.expected

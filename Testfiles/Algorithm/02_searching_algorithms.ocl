@@ -1,0 +1,182 @@
+/#
+  OCL Algorithm Tests — Searching Algorithms
+  Tests: Linear Search, Binary Search (iterative + recursive),
+         Count occurrences, Find min/max, Find all indices
+#/
+
+func void printResult(label:String, idx:Int) {
+    if (idx >= 0) {
+        printf("%s: found at index %d\n": label, idx);
+    } else {
+        printf("%s: not found\n": label);
+    }
+}
+
+/# ── Linear Search ── O(n) ── #/
+func int linearSearch(arr:Array, target:Int) {
+    Let i:Int = 0;
+    while (i < arrayLen(arr)) {
+        if (toInt(arrayGet(arr, i)) == target) { return i; }
+        i++;
+    }
+    return -1;
+}
+
+/# ── Binary Search (iterative) ── O(log n), requires sorted array ── #/
+func int binarySearch(arr:Array, target:Int) {
+    Let low:Int  = 0;
+    Let high:Int = arrayLen(arr) - 1;
+    while (low <= high) {
+        Let mid:Int = low + (high - low) / 2;
+        Let val:Int = toInt(arrayGet(arr, mid));
+        if (val == target)     { return mid; }
+        else if (val < target) { low  = mid + 1; }
+        else                   { high = mid - 1; }
+    }
+    return -1;
+}
+
+/# ── Binary Search (recursive) ── #/
+func int binarySearchRec(arr:Array, target:Int, low:Int, high:Int) {
+    if (low > high) { return -1; }
+    Let mid:Int = low + (high - low) / 2;
+    Let val:Int = toInt(arrayGet(arr, mid));
+    if (val == target)     { return mid; }
+    else if (val < target) { return binarySearchRec(arr, target, mid + 1, high); }
+    else                   { return binarySearchRec(arr, target, low, mid - 1);  }
+}
+
+/# ── Count occurrences ── #/
+func int countOccurrences(arr:Array, target:Int) {
+    Let count:Int = 0;
+    Let i:Int = 0;
+    while (i < arrayLen(arr)) {
+        if (toInt(arrayGet(arr, i)) == target) { count++; }
+        i++;
+    }
+    return count;
+}
+
+/# ── Find minimum value ── #/
+func int findMin(arr:Array) {
+    if (arrayLen(arr) == 0) { return -1; }
+    Let minVal:Int = toInt(arrayGet(arr, 0));
+    Let i:Int = 1;
+    while (i < arrayLen(arr)) {
+        if (toInt(arrayGet(arr, i)) < minVal) { minVal = toInt(arrayGet(arr, i)); }
+        i++;
+    }
+    return minVal;
+}
+
+/# ── Find maximum value ── #/
+func int findMax(arr:Array) {
+    if (arrayLen(arr) == 0) { return -1; }
+    Let maxVal:Int = toInt(arrayGet(arr, 0));
+    Let i:Int = 1;
+    while (i < arrayLen(arr)) {
+        if (toInt(arrayGet(arr, i)) > maxVal) { maxVal = toInt(arrayGet(arr, i)); }
+        i++;
+    }
+    return maxVal;
+}
+
+/# ── Collect all indices of a value into dst array ── #/
+func void findAllIndices(arr:Array, target:Int, dst:Array) {
+    Let i:Int = 0;
+    while (i < arrayLen(arr)) {
+        if (toInt(arrayGet(arr, i)) == target) { arrayPush(dst, i); }
+        i++;
+    }
+}
+
+/# ── Linear search in string array ── #/
+func int linearSearchStr(arr:Array, target:String) {
+    Let i:Int = 0;
+    while (i < arrayLen(arr)) {
+        if (arrayGet(arr, i) == target) { return i; }
+        i++;
+    }
+    return -1;
+}
+
+func void main() {
+    print("=== Searching Algorithm Tests ===");
+    print("");
+
+    /# --- Linear Search --- #/
+    print("--- Linear Search ---");
+    Let arr:Array = [10, 23, 45, 70, 11, 15, 3, 42];
+    printResult("Search 70", linearSearch(arr, 70));
+    printResult("Search 42", linearSearch(arr, 42));
+    printResult("Search 10", linearSearch(arr, 10));
+    printResult("Search 99", linearSearch(arr, 99));
+    print("");
+
+    /# --- Binary Search Iterative --- #/
+    print("--- Binary Search (iterative) ---");
+    Let sorted:Array = [2, 5, 8, 12, 16, 23, 38, 56, 72, 91];
+    printResult("Search 23",  binarySearch(sorted, 23));
+    printResult("Search 2",   binarySearch(sorted, 2));
+    printResult("Search 91",  binarySearch(sorted, 91));
+    printResult("Search 100", binarySearch(sorted, 100));
+    printResult("Search 1",   binarySearch(sorted, 1));
+    print("");
+
+    /# --- Binary Search Recursive --- #/
+    print("--- Binary Search (recursive) ---");
+    Let hi:Int = arrayLen(sorted) - 1;
+    printResult("Recursive 56",  binarySearchRec(sorted, 56,  0, hi));
+    printResult("Recursive 16",  binarySearchRec(sorted, 16,  0, hi));
+    printResult("Recursive 999", binarySearchRec(sorted, 999, 0, hi));
+    print("");
+
+    /# --- Count Occurrences --- #/
+    print("--- Count Occurrences ---");
+    Let dups:Array = [3, 1, 4, 1, 5, 9, 2, 6, 5, 3, 5];
+    printf("Count of 5: %d\n": countOccurrences(dups, 5));
+    printf("Count of 1: %d\n": countOccurrences(dups, 1));
+    printf("Count of 3: %d\n": countOccurrences(dups, 3));
+    printf("Count of 7: %d\n": countOccurrences(dups, 7));
+    print("");
+
+    /# --- Min and Max --- #/
+    print("--- Min / Max ---");
+    Let nums:Array = [42, 7, 99, 1, 55, 23, 88, 14];
+    printf("Min: %d\n": findMin(nums));
+    printf("Max: %d\n": findMax(nums));
+    print("");
+
+    /# --- Find All Indices --- #/
+    print("--- Find All Indices of 5 in [3,1,4,1,5,9,2,6,5,3,5] ---");
+    Let indices:Array = [];
+    findAllIndices(dups, 5, indices);
+    Let i:Int = 0;
+    while (i < arrayLen(indices)) {
+        printf("%d ": toInt(arrayGet(indices, i)));
+        i++;
+    }
+    print("");
+    print("");
+
+    /# --- String Search --- #/
+    print("--- String Search ---");
+    Let fruits:Array = ["apple", "banana", "cherry", "date", "elderberry"];
+    printResult("Search banana",    linearSearchStr(fruits, "banana"));
+    printResult("Search cherry",    linearSearchStr(fruits, "cherry"));
+    printResult("Search mango",     linearSearchStr(fruits, "mango"));
+    printResult("Search apple",     linearSearchStr(fruits, "apple"));
+    print("");
+
+    /# --- Edge Cases --- #/
+    print("--- Edge Cases ---");
+    Let single:Array = [42];
+    printResult("Single: found",     binarySearch(single, 42));
+    printResult("Single: not found", binarySearch(single, 7));
+    Let empty:Array = [];
+    printf("Min of empty: %d\n": findMin(empty));
+    printf("Linear in empty: %d\n": linearSearch(empty, 5));
+    print("");
+
+    print("All search tests complete.");
+}

@@ -1,0 +1,306 @@
+/#
+  OCL Algorithm Tests — Recursion & Dynamic Programming
+  Tests: Tower of Hanoi, Binomial Coefficient, Coin Change (greedy + DP),
+         Longest Increasing Subsequence, 0/1 Knapsack, Edit Distance,
+         Recursive digit sum
+  Note: all functions return int/bool/string — no Array return types used.
+#/
+
+/# ═══════════════════════════════════
+   TOWER OF HANOI
+   ═══════════════════════════════════ #/
+
+func void hanoi(n:Int, from:String, to:String, aux:String) {
+    if (n == 1) {
+        printf("Move disk 1: %s -> %s\n":  from, to);
+        return;
+    }
+    hanoi(n - 1, from, aux, to);
+    printf("Move disk %d: %s -> %s\n":  n, from, to);
+    hanoi(n - 1, aux, to, from);
+}
+
+func int hanoiMoves(n:Int) {
+    if (n <= 0) { return 0; }
+    if (n == 1) { return 1; }
+    return 2 * hanoiMoves(n - 1) + 1;
+}
+
+/# ═══════════════════════════════════
+   BINOMIAL COEFFICIENT  C(n, k)
+   Space-optimised 1D DP
+   ═══════════════════════════════════ #/
+
+func int binomialCoeff(n:Int, k:Int) {
+    if (k == 0 || k == n) { return 1; }
+    if (k > n)            { return 0; }
+    Let row:Array = arrayNew(k + 1);
+    arraySet(row, 0, 1);
+    Let i:Int = 1;
+    while (i <= n) {
+        Let j:Int = min(i, k);
+        while (j >= 1) {
+            arraySet(row, j, toInt(arrayGet(row, j)) + toInt(arrayGet(row, j - 1)));
+            j = j - 1;
+        }
+        i++;
+    }
+    return toInt(arrayGet(row, k));
+}
+
+/# ═══════════════════════════════════
+   COIN CHANGE — greedy (standard denominations, descending order)
+   ═══════════════════════════════════ #/
+
+func int coinChangeGreedy(amount:Int, coins:Array) {
+    Let remaining:Int = amount;
+    Let count:Int = 0;
+    Let i:Int = 0;
+    while (i < arrayLen(coins) && remaining > 0) {
+        Let coin:Int = toInt(arrayGet(coins, i));
+        Let use:Int  = remaining / coin;
+        count     = count + use;
+        remaining = remaining - use * coin;
+        i++;
+    }
+    if (remaining != 0) { return -1; }
+    return count;
+}
+
+/# ── DP coin change — minimum coins for arbitrary denominations ── #/
+func int coinChangeDP(amount:Int, coins:Array) {
+    Let INF:Int  = amount + 1;
+    Let dp:Array = arrayNew(amount + 1);
+    Let i:Int = 0;
+    while (i <= amount) { arraySet(dp, i, INF); i++; }
+    arraySet(dp, 0, 0);
+
+    i = 1;
+    while (i <= amount) {
+        Let j:Int = 0;
+        while (j < arrayLen(coins)) {
+            Let coin:Int = toInt(arrayGet(coins, j));
+            if (coin <= i) {
+                Let candidate:Int = toInt(arrayGet(dp, i - coin)) + 1;
+                if (candidate < toInt(arrayGet(dp, i))) {
+                    arraySet(dp, i, candidate);
+                }
+            }
+            j++;
+        }
+        i++;
+    }
+    Let result:Int = toInt(arrayGet(dp, amount));
+    if (result == INF) { return -1; }
+    return result;
+}
+
+/# ═══════════════════════════════════
+   LONGEST INCREASING SUBSEQUENCE  O(n^2) DP
+   ═══════════════════════════════════ #/
+
+func int lisLength(arr:Array) {
+    Let n:Int = arrayLen(arr);
+    if (n == 0) { return 0; }
+    Let dp:Array = arrayNew(n);
+    Let i:Int = 0;
+    while (i < n) { arraySet(dp, i, 1); i++; }
+
+    i = 1;
+    while (i < n) {
+        Let j:Int = 0;
+        while (j < i) {
+            if (toInt(arrayGet(arr, j)) < toInt(arrayGet(arr, i))) {
+                Let candidate:Int = toInt(arrayGet(dp, j)) + 1;
+                if (candidate > toInt(arrayGet(dp, i))) {
+                    arraySet(dp, i, candidate);
+                }
+            }
+            j++;
+        }
+        i++;
+    }
+
+    Let best:Int = 0;
+    i = 0;
+    while (i < n) {
+        if (toInt(arrayGet(dp, i)) > best) { best = toInt(arrayGet(dp, i)); }
+        i++;
+    }
+    return best;
+}
+
+/# ═══════════════════════════════════
+   0/1 KNAPSACK  (iterative DP)
+   ═══════════════════════════════════ #/
+
+func int knapsack(values:Array, weights:Array, W:Int) {
+    Let n:Int    = arrayLen(values);
+    Let dp:Array = arrayNew(W + 1);
+    Let i:Int = 0;
+    while (i <= W) { arraySet(dp, i, 0); i++; }
+
+    i = 0;
+    while (i < n) {
+        Let wt:Int  = toInt(arrayGet(weights, i));
+        Let val:Int = toInt(arrayGet(values,  i));
+        Let w:Int   = W;
+        while (w >= wt) {
+            Let candidate:Int = toInt(arrayGet(dp, w - wt)) + val;
+            if (candidate > toInt(arrayGet(dp, w))) {
+                arraySet(dp, w, candidate);
+            }
+            w = w - 1;
+        }
+        i++;
+    }
+    return toInt(arrayGet(dp, W));
+}
+
+/# ═══════════════════════════════════
+   EDIT DISTANCE  (Levenshtein, iterative)
+   Flat (m+1)*(n+1) DP array, row-major
+   ═══════════════════════════════════ #/
+
+func int editDistance(a:String, b:String) {
+    Let m:Int = strLen(a);
+    Let n:Int = strLen(b);
+    Let dp:Array = arrayNew((m + 1) * (n + 1));
+
+    Let i:Int = 0;
+    while (i <= m) { arraySet(dp, i * (n + 1), i); i++; }
+    Let j:Int = 0;
+    while (j <= n) { arraySet(dp, j, j); j++; }
+
+    i = 1;
+    while (i <= m) {
+        j = 1;
+        while (j <= n) {
+            Let idx:Int = i * (n + 1) + j;
+            if (a[i - 1] == b[j - 1]) {
+                arraySet(dp, idx, toInt(arrayGet(dp, (i - 1) * (n + 1) + (j - 1))));
+            } else {
+                Let del:Int  = toInt(arrayGet(dp, (i - 1) * (n + 1) + j));
+                Let ins:Int  = toInt(arrayGet(dp,  i      * (n + 1) + (j - 1)));
+                Let rep:Int  = toInt(arrayGet(dp, (i - 1) * (n + 1) + (j - 1)));
+                arraySet(dp, idx, min(del, min(ins, rep)) + 1);
+            }
+            j++;
+        }
+        i++;
+    }
+    return toInt(arrayGet(dp, m * (n + 1) + n));
+}
+
+/# ═══════════════════════════════════
+   RECURSIVE DIGIT SUM
+   ═══════════════════════════════════ #/
+
+func int sumDigitsRec(n:Int) {
+    if (n < 0)  { return sumDigitsRec(-n); }
+    if (n < 10) { return n; }
+    return (n % 10) + sumDigitsRec(n / 10);
+}
+
+/# ═══════════════════════════════════
+   POWER SET COUNT  (2^n, iterative)
+   ═══════════════════════════════════ #/
+
+func int powerSetCount(n:Int) {
+    Let result:Int = 1;
+    Let i:Int = 0;
+    while (i < n) { result = result * 2; i++; }
+    return result;
+}
+
+func void main() {
+    print("=== Recursion & DP Tests ===");
+    print("");
+
+    /# --- Tower of Hanoi --- #/
+    print("--- Tower of Hanoi (n=3) ---");
+    hanoi(3, "A", "C", "B");
+    printf("Moves n=1:  %d\n":  hanoiMoves(1));
+    printf("Moves n=3:  %d\n":  hanoiMoves(3));
+    printf("Moves n=5:  %d\n":  hanoiMoves(5));
+    printf("Moves n=10: %d\n":  hanoiMoves(10));
+    print("");
+
+    /# --- Power Set --- #/
+    print("--- Power Set Count (2^n) ---");
+    printf("2^0  = %d\n":  powerSetCount(0));
+    printf("2^3  = %d\n":  powerSetCount(3));
+    printf("2^5  = %d\n":  powerSetCount(5));
+    printf("2^10 = %d\n":  powerSetCount(10));
+    print("");
+
+    /# --- Binomial Coefficients --- #/
+    print("--- Binomial Coefficients C(n,k) ---");
+    printf("C(5,2)  = %d  (expected 10)\n":   binomialCoeff(5, 2));
+    printf("C(6,3)  = %d  (expected 20)\n":   binomialCoeff(6, 3));
+    printf("C(10,5) = %d  (expected 252)\n":  binomialCoeff(10, 5));
+    printf("C(0,0)  = %d  (expected 1)\n":    binomialCoeff(0, 0));
+    printf("C(7,0)  = %d  (expected 1)\n":    binomialCoeff(7, 0));
+    printf("C(7,7)  = %d  (expected 1)\n":    binomialCoeff(7, 7));
+    print("");
+
+    /# --- Coin Change Greedy --- #/
+    print("--- Coin Change (greedy) ---");
+    Let coins_std:Array = [25, 10, 5, 1];
+    printf("41 cents: %d coins\n":  coinChangeGreedy(41, coins_std));
+    printf("30 cents: %d coins\n":  coinChangeGreedy(30, coins_std));
+    printf("11 cents: %d coins\n":  coinChangeGreedy(11, coins_std));
+    print("");
+
+    /# --- Coin Change DP --- #/
+    print("--- Coin Change (DP) ---");
+    Let coins1:Array = [1, 5, 6, 9];
+    printf("amount=11, [1,5,6,9]:  %d  (expected 2)\n":  coinChangeDP(11, coins1));
+    Let coins2:Array = [1, 2, 5];
+    printf("amount=11, [1,2,5]:    %d  (expected 3)\n":  coinChangeDP(11, coins2));
+    printf("amount=0,  [1,2,5]:    %d  (expected 0)\n":  coinChangeDP(0,  coins2));
+    print("");
+
+    /# --- LIS --- #/
+    print("--- Longest Increasing Subsequence ---");
+    Let lis1:Array = [10, 9, 2, 5, 3, 7, 101, 18];
+    printf("[10,9,2,5,3,7,101,18] = %d  (expected 4)\n":  lisLength(lis1));
+    Let lis2:Array = [1, 2, 3, 4, 5];
+    printf("[1,2,3,4,5]           = %d  (expected 5)\n":  lisLength(lis2));
+    Let lis3:Array = [5, 4, 3, 2, 1];
+    printf("[5,4,3,2,1]           = %d  (expected 1)\n":  lisLength(lis3));
+    Let lis4:Array = [3, 10, 2, 1, 20];
+    printf("[3,10,2,1,20]         = %d  (expected 3)\n":  lisLength(lis4));
+    print("");
+
+    /# --- Knapsack --- #/
+    print("--- 0/1 Knapsack ---");
+    Let vals1:Array = [60, 100, 120];
+    Let wts1:Array  = [10, 20, 30];
+    printf("W=50 [(60,10),(100,20),(120,30)]: %d  (expected 220)\n":
+           knapsack(vals1, wts1, 50));
+    Let vals2:Array = [1, 6, 10, 16];
+    Let wts2:Array  = [1, 2, 3, 5];
+    printf("W=7  [(1,1),(6,2),(10,3),(16,5)]: %d  (expected 22)\n":
+           knapsack(vals2, wts2, 7));
+    print("");
+
+    /# --- Edit Distance --- #/
+    print("--- Edit Distance (Levenshtein) ---");
+    printf("'kitten' -> 'sitting':  %d  (expected 3)\n":  editDistance("kitten", "sitting"));
+    printf("'sunday' -> 'saturday': %d  (expected 3)\n":  editDistance("sunday", "saturday"));
+    printf("'abc'    -> 'abc':      %d  (expected 0)\n":  editDistance("abc", "abc"));
+    printf("''       -> 'hello':    %d  (expected 5)\n":  editDistance("", "hello"));
+    printf("'horse'  -> 'ros':      %d  (expected 3)\n":  editDistance("horse", "ros"));
+    print("");
+
+    /# --- Recursive Digit Sum --- #/
+    print("--- Recursive Digit Sum ---");
+    printf("sumDigits(12345)  = %d\n":  sumDigitsRec(12345));
+    printf("sumDigits(9999)   = %d\n":  sumDigitsRec(9999));
+    printf("sumDigits(0)      = %d\n":  sumDigitsRec(0));
+    printf("sumDigits(-123)   = %d\n":  sumDigitsRec(-123));
+    print("");
+
+    print("All recursion & DP tests complete.");
+}

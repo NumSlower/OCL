@@ -1,0 +1,193 @@
+/#
+  OCL Algorithm Tests — Sorting Algorithms
+  Tests: Bubble Sort, Selection Sort, Insertion Sort, Merge Sort, Quick Sort
+  All sorts operate in-place (void return) since Array is not a valid return type.
+#/
+
+func void printArray(arr:Array, label:String) {
+    printf("%s: ": label);
+    Let i:Int = 0;
+    while (i < arrayLen(arr)) {
+        if (i > 0) { printf(", "); }
+        printf("%d": toInt(arrayGet(arr, i)));
+        i++;
+    }
+    print("");
+}
+
+/# ── Bubble Sort (in-place) ── #/
+func void bubbleSort(arr:Array) {
+    Let n:Int = arrayLen(arr);
+    Let i:Int = 0;
+    while (i < n - 1) {
+        Let j:Int = 0;
+        while (j < n - i - 1) {
+            if (toInt(arrayGet(arr, j)) > toInt(arrayGet(arr, j + 1))) {
+                Let temp:Int = toInt(arrayGet(arr, j));
+                arraySet(arr, j, arrayGet(arr, j + 1));
+                arraySet(arr, j + 1, temp);
+            }
+            j++;
+        }
+        i++;
+    }
+}
+
+/# ── Selection Sort (in-place) ── #/
+func void selectionSort(arr:Array) {
+    Let n:Int = arrayLen(arr);
+    Let i:Int = 0;
+    while (i < n - 1) {
+        Let minIdx:Int = i;
+        Let j:Int = i + 1;
+        while (j < n) {
+            if (toInt(arrayGet(arr, j)) < toInt(arrayGet(arr, minIdx))) {
+                minIdx = j;
+            }
+            j++;
+        }
+        if (minIdx != i) {
+            Let temp:Int = toInt(arrayGet(arr, i));
+            arraySet(arr, i, arrayGet(arr, minIdx));
+            arraySet(arr, minIdx, temp);
+        }
+        i++;
+    }
+}
+
+/# ── Insertion Sort (in-place) ── #/
+func void insertionSort(arr:Array) {
+    Let n:Int = arrayLen(arr);
+    Let i:Int = 1;
+    while (i < n) {
+        Let key:Int = toInt(arrayGet(arr, i));
+        Let j:Int = i - 1;
+        while (j >= 0 && toInt(arrayGet(arr, j)) > key) {
+            arraySet(arr, j + 1, arrayGet(arr, j));
+            j = j - 1;
+        }
+        arraySet(arr, j + 1, key);
+        i++;
+    }
+}
+
+/# ── Merge two arrays into dst ── #/
+func void mergeInto(dst:Array, left:Array, right:Array) {
+    Let i:Int = 0;
+    Let j:Int = 0;
+    Let k:Int = 0;
+    while (i < arrayLen(left) && j < arrayLen(right)) {
+        if (toInt(arrayGet(left, i)) <= toInt(arrayGet(right, j))) {
+            arraySet(dst, k, arrayGet(left, i));
+            i++;
+        } else {
+            arraySet(dst, k, arrayGet(right, j));
+            j++;
+        }
+        k++;
+    }
+    while (i < arrayLen(left))  { arraySet(dst, k, arrayGet(left,  i)); i++; k++; }
+    while (j < arrayLen(right)) { arraySet(dst, k, arrayGet(right, j)); j++; k++; }
+}
+
+/# ── Merge Sort (in-place) ── #/
+func void mergeSort(arr:Array) {
+    Let n:Int = arrayLen(arr);
+    if (n <= 1) { return; }
+    Let mid:Int = n / 2;
+
+    Let left:Array  = arrayNew(mid);
+    Let right:Array = arrayNew(n - mid);
+
+    Let i:Int = 0;
+    while (i < mid) { arraySet(left,  i,       arrayGet(arr, i)); i++; }
+    while (i < n)   { arraySet(right, i - mid, arrayGet(arr, i)); i++; }
+
+    mergeSort(left);
+    mergeSort(right);
+    mergeInto(arr, left, right);
+}
+
+/# ── Quick Sort partition ── #/
+func int partition(arr:Array, low:Int, high:Int) {
+    Let pivot:Int = toInt(arrayGet(arr, high));
+    Let i:Int = low - 1;
+    Let j:Int = low;
+    while (j < high) {
+        if (toInt(arrayGet(arr, j)) <= pivot) {
+            i++;
+            Let temp:Int = toInt(arrayGet(arr, i));
+            arraySet(arr, i, arrayGet(arr, j));
+            arraySet(arr, j, temp);
+        }
+        j++;
+    }
+    Let temp:Int = toInt(arrayGet(arr, i + 1));
+    arraySet(arr, i + 1, arrayGet(arr, high));
+    arraySet(arr, high, temp);
+    return i + 1;
+}
+
+func void quickSort(arr:Array, low:Int, high:Int) {
+    if (low < high) {
+        Let pi:Int = partition(arr, low, high);
+        quickSort(arr, low, pi - 1);
+        quickSort(arr, pi + 1, high);
+    }
+}
+
+func void main() {
+    print("=== Sorting Algorithm Tests ===");
+    print("");
+
+    /# Bubble Sort #/
+    Let b:Array = [64, 34, 25, 12, 22, 11, 90];
+    printArray(b, "Bubble  Input ");
+    bubbleSort(b);
+    printArray(b, "Bubble  Output");
+    print("");
+
+    /# Selection Sort #/
+    Let s:Array = [64, 25, 12, 22, 11];
+    printArray(s, "Select  Input ");
+    selectionSort(s);
+    printArray(s, "Select  Output");
+    print("");
+
+    /# Insertion Sort #/
+    Let ins:Array = [12, 11, 13, 5, 6];
+    printArray(ins, "Insert  Input ");
+    insertionSort(ins);
+    printArray(ins, "Insert  Output");
+    print("");
+
+    /# Merge Sort #/
+    Let m:Array = [38, 27, 43, 3, 9, 82, 10];
+    printArray(m, "Merge   Input ");
+    mergeSort(m);
+    printArray(m, "Merge   Output");
+    print("");
+
+    /# Quick Sort #/
+    Let q:Array = [10, 7, 8, 9, 1, 5];
+    printArray(q, "Quick   Input ");
+    quickSort(q, 0, arrayLen(q) - 1);
+    printArray(q, "Quick   Output");
+    print("");
+
+    /# Edge cases #/
+    print("--- Edge Cases ---");
+    Let already:Array  = [1, 2, 3, 4, 5];
+    Let reversed:Array = [5, 4, 3, 2, 1];
+    Let dups:Array     = [3, 1, 4, 1, 5, 9, 2, 6, 5, 3];
+
+    bubbleSort(already);
+    printArray(already,  "Already sorted");
+    bubbleSort(reversed);
+    printArray(reversed, "Reverse sorted");
+    bubbleSort(dups);
+    printArray(dups,     "With dups     ");
+
+    print("");
+    print("All sorting tests complete.");
+}

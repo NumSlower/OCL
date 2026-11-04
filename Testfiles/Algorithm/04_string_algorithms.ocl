@@ -1,0 +1,268 @@
+/#
+  OCL Algorithm Tests — String Algorithms
+  Tests: Palindrome, Reverse, Char count, Word count,
+         Substring count, Run-length encoding, Caesar cipher,
+         Title case, Longest common prefix, Built-in string functions
+#/
+
+/# ── Palindrome check ── #/
+func bool isPalindromeStr(s:String) {
+    Let n:Int   = strLen(s);
+    Let left:Int  = 0;
+    Let right:Int = n - 1;
+    while (left < right) {
+        if (s[left] != s[right]) { return false; }
+        left++;
+        right = right - 1;
+    }
+    return true;
+}
+
+/# ── Reverse a string ── #/
+func string reverseStr(s:String) {
+    Let n:Int = strLen(s);
+    Let result:String = "";
+    Let i:Int = n - 1;
+    while (i >= 0) {
+        result = result + s[i];
+        i = i - 1;
+    }
+    return result;
+}
+
+/# ── Count character occurrences ── #/
+func int countChar(s:String, ch:Char) {
+    Let count:Int = 0;
+    Let i:Int = 0;
+    while (i < strLen(s)) {
+        if (s[i] == ch) { count++; }
+        i++;
+    }
+    return count;
+}
+
+/# ── Count words (whitespace-delimited) ── #/
+func int wordCount(s:String) {
+    Let n:Int = strLen(s);
+    Let count:Int = 0;
+    Let inWord:Bool = false;
+    Let i:Int = 0;
+    while (i < n) {
+        Let c:Char = s[i];
+        if (c == ' ' || c == '\t' || c == '\n') {
+            inWord = false;
+        } else {
+            if (!inWord) { count++; inWord = true; }
+        }
+        i++;
+    }
+    return count;
+}
+
+/# ── Count substring occurrences ── #/
+func int countSubstring(haystack:String, needle:String) {
+    Let hLen:Int = strLen(haystack);
+    Let nLen:Int = strLen(needle);
+    if (nLen == 0 || nLen > hLen) { return 0; }
+    Let count:Int = 0;
+    Let i:Int = 0;
+    while (i <= hLen - nLen) {
+        Let sub:String = substr(haystack, i, nLen);
+        if (sub == needle) { count++; i = i + nLen; }
+        else               { i++;                   }
+    }
+    return count;
+}
+
+/# ── Run-length encoding ── #/
+func string runLengthEncode(s:String) {
+    Let n:Int = strLen(s);
+    if (n == 0) { return ""; }
+    Let result:String = "";
+    Let count:Int = 1;
+    Let i:Int = 1;
+    while (i < n) {
+        if (s[i] == s[i - 1]) {
+            count++;
+        } else {
+            result = result + toString(count) + s[i - 1];
+            count = 1;
+        }
+        i++;
+    }
+    result = result + toString(count) + s[n - 1];
+    return result;
+}
+
+/# ── Caesar cipher (letters only, preserves case) ── #/
+func string caesarEncrypt(s:String, shift:Int) {
+    Let lower:String = "abcdefghijklmnopqrstuvwxyz";
+    Let upper:String = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    Let n:Int = strLen(s);
+    Let result:String = "";
+    Let i:Int = 0;
+    while (i < n) {
+        Let cs:String = toString(s[i]);
+        Let posL:Int = strIndexOf(lower, cs);
+        Let posU:Int = strIndexOf(upper, cs);
+        if (posL >= 0) {
+            Let off:Int = (posL + shift) % 26;
+            if (off < 0) { off = off + 26; }
+            result = result + substr(lower, off, 1);
+        } else if (posU >= 0) {
+            Let off:Int = (posU + shift) % 26;
+            if (off < 0) { off = off + 26; }
+            result = result + substr(upper, off, 1);
+        } else {
+            result = result + cs;
+        }
+        i++;
+    }
+    return result;
+}
+
+/# ── Title case ── #/
+func string toTitleCase(s:String) {
+    Let n:Int = strLen(s);
+    Let result:String = "";
+    Let capNext:Bool = true;
+    Let i:Int = 0;
+    while (i < n) {
+        Let c:Char = s[i];
+        if (c == ' ') {
+            result = result + c;
+            capNext = true;
+        } else if (capNext) {
+            result = result + toUpperCase(toString(c));
+            capNext = false;
+        } else {
+            result = result + toLowerCase(toString(c));
+        }
+        i++;
+    }
+    return result;
+}
+
+/# ── Longest common prefix of two strings ── #/
+func string longestCommonPrefix(a:String, b:String) {
+    Let lenA:Int = strLen(a);
+    Let lenB:Int = strLen(b);
+    Let minLen:Int = min(lenA, lenB);
+    Let i:Int = 0;
+    while (i < minLen) {
+        if (a[i] != b[i]) { break; }
+        i++;
+    }
+    return substr(a, 0, i);
+}
+
+/# ── Check all digits ── #/
+func bool isDigitsOnly(s:String) {
+    Let n:Int = strLen(s);
+    if (n == 0) { return false; }
+    Let digits:String = "0123456789";
+    Let i:Int = 0;
+    while (i < n) {
+        if (!strContains(digits, toString(s[i]))) { return false; }
+        i++;
+    }
+    return true;
+}
+
+func void main() {
+    print("=== String Algorithm Tests ===");
+    print("");
+
+    /# --- Palindrome --- #/
+    print("--- Palindrome Check ---");
+    printf("'racecar'  = %b\n":  isPalindromeStr("racecar"));
+    printf("'hello'    = %b\n":  isPalindromeStr("hello"));
+    printf("'madam'    = %b\n":  isPalindromeStr("madam"));
+    printf("'a'        = %b\n":  isPalindromeStr("a"));
+    printf("''         = %b\n":  isPalindromeStr(""));
+    print("");
+
+    /# --- Reverse --- #/
+    print("--- String Reverse ---");
+    printf("reverse('hello')  = %s\n":  reverseStr("hello"));
+    printf("reverse('OCL')    = %s\n":  reverseStr("OCL"));
+    printf("reverse('12345')  = %s\n":  reverseStr("12345"));
+    print("");
+
+    /# --- Character Count --- #/
+    print("--- Character Count ---");
+    printf("'l' in 'hello world' = %d\n":  countChar("hello world", 'l'));
+    printf("'a' in 'banana'      = %d\n":  countChar("banana", 'a'));
+    printf("'z' in 'hello'       = %d\n":  countChar("hello", 'z'));
+    print("");
+
+    /# --- Word Count --- #/
+    print("--- Word Count ---");
+    printf("'hello world'          = %d\n":  wordCount("hello world"));
+    printf("'the quick brown fox'  = %d\n":  wordCount("the quick brown fox"));
+    printf("'  spaces  around  '   = %d\n":  wordCount("  spaces  around  "));
+    printf("'oneword'              = %d\n":  wordCount("oneword"));
+    printf("''                     = %d\n":  wordCount(""));
+    print("");
+
+    /# --- Substring Count --- #/
+    print("--- Count Substring ---");
+    printf("'ab' in 'ababab'  = %d\n":  countSubstring("ababab", "ab"));
+    printf("'aa' in 'aabbcc'  = %d\n":  countSubstring("aabbcc", "aa"));
+    printf("'abc' in 'abcabc' = %d\n":  countSubstring("abcabc", "abc"));
+    printf("'xyz' in 'hello'  = %d\n":  countSubstring("hello", "xyz"));
+    print("");
+
+    /# --- Run-Length Encoding --- #/
+    print("--- Run-Length Encoding ---");
+    printf("RLE 'AAABBBCCDA' = %s\n":  runLengthEncode("AAABBBCCDA"));
+    printf("RLE 'aabbcc'     = %s\n":  runLengthEncode("aabbcc"));
+    printf("RLE 'ABCD'       = %s\n":  runLengthEncode("ABCD"));
+    printf("RLE 'AAAA'       = %s\n":  runLengthEncode("AAAA"));
+    print("");
+
+    /# --- Caesar Cipher --- #/
+    print("--- Caesar Cipher ---");
+    Let plain:String  = "Hello World";
+    Let enc:String    = caesarEncrypt(plain, 3);
+    Let dec:String    = caesarEncrypt(enc, -3);
+    printf("Plain:   %s\n":  plain);
+    printf("Encrypt: %s\n":  enc);
+    printf("Decrypt: %s\n":  dec);
+    print("");
+
+    /# --- Title Case --- #/
+    print("--- Title Case ---");
+    printf("%s\n":  toTitleCase("the quick brown fox"));
+    printf("%s\n":  toTitleCase("hello world"));
+    printf("%s\n":  toTitleCase("ocl programming language"));
+    print("");
+
+    /# --- Longest Common Prefix --- #/
+    print("--- Longest Common Prefix ---");
+    printf("lcp('flower','flow')     = '%s'\n":  longestCommonPrefix("flower", "flow"));
+    printf("lcp('interview','inter') = '%s'\n":  longestCommonPrefix("interview", "inter"));
+    printf("lcp('dog','cat')         = '%s'\n":  longestCommonPrefix("dog", "cat"));
+    printf("lcp('abc','abc')         = '%s'\n":  longestCommonPrefix("abc", "abc"));
+    print("");
+
+    /# --- isDigitsOnly --- #/
+    print("--- isDigitsOnly ---");
+    printf("'12345'  = %b\n":  isDigitsOnly("12345"));
+    printf("'123a5'  = %b\n":  isDigitsOnly("123a5"));
+    printf("''       = %b\n":  isDigitsOnly(""));
+    print("");
+
+    /# --- Built-in String Functions --- #/
+    print("--- Built-in String Functions ---");
+    printf("toUpperCase('hello')         = %s\n":  toUpperCase("hello"));
+    printf("toLowerCase('WORLD')         = %s\n":  toLowerCase("WORLD"));
+    printf("strTrim('  hello  ')         = '%s'\n": strTrim("  hello  "));
+    printf("strContains('hello','ell')   = %b\n":  strContains("hello", "ell"));
+    printf("strIndexOf('hello','ll')     = %d\n":  strIndexOf("hello", "ll"));
+    printf("strReplace('aabbcc','bb','X') = %s\n": strReplace("aabbcc", "bb", "X"));
+    printf("substr('abcdef',2,3)         = %s\n":  substr("abcdef", 2, 3));
+    print("");
+
+    print("All string tests complete.");
+}

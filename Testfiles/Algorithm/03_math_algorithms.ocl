@@ -1,0 +1,253 @@
+/#
+  OCL Algorithm Tests — Math & Number Theory
+  Tests: Fibonacci, Factorial, GCD/LCM, Primes, Sieve,
+         Fast Power, Digit ops, Palindrome number, Collatz
+#/
+
+/# ── Fibonacci (iterative) ── #/
+func int fibIterative(n:Int) {
+    if (n <= 0) { return 0; }
+    if (n == 1) { return 1; }
+    Let a:Int = 0;
+    Let b:Int = 1;
+    Let i:Int = 2;
+    while (i <= n) {
+        Let c:Int = a + b;
+        a = b;
+        b = c;
+        i++;
+    }
+    return b;
+}
+
+/# ── Fibonacci (recursive) ── #/
+func int fibRecursive(n:Int) {
+    if (n <= 0) { return 0; }
+    if (n == 1) { return 1; }
+    return fibRecursive(n - 1) + fibRecursive(n - 2);
+}
+
+/# ── Factorial (iterative) ── #/
+func int factorialIter(n:Int) {
+    if (n < 0)  { return -1; }
+    if (n == 0) { return 1;  }
+    Let result:Int = 1;
+    Let i:Int = 1;
+    while (i <= n) {
+        result = result * i;
+        i++;
+    }
+    return result;
+}
+
+/# ── Factorial (recursive) ── #/
+func int factorialRec(n:Int) {
+    if (n <= 1) { return 1; }
+    return n * factorialRec(n - 1);
+}
+
+/# ── GCD (Euclidean) ── #/
+func int gcd(a:Int, b:Int) {
+    while (b != 0) {
+        Let temp:Int = b;
+        b = a % b;
+        a = temp;
+    }
+    return a;
+}
+
+/# ── LCM ── #/
+func int lcm(a:Int, b:Int) {
+    return (a / gcd(a, b)) * b;
+}
+
+/# ── Primality test ── #/
+func bool isPrime(n:Int) {
+    if (n < 2)      { return false; }
+    if (n == 2)     { return true;  }
+    if (n % 2 == 0) { return false; }
+    Let i:Int = 3;
+    while (i * i <= n) {
+        if (n % i == 0) { return false; }
+        i = i + 2;
+    }
+    return true;
+}
+
+/# ── Sieve of Eratosthenes — fills dst with primes up to limit ── #/
+func void sieve(limit:Int, dst:Array) {
+    Let flags:Array = arrayNew(limit + 1);
+    Let i:Int = 0;
+    while (i <= limit) { arraySet(flags, i, 1); i++; }
+    arraySet(flags, 0, 0);
+    if (limit >= 1) { arraySet(flags, 1, 0); }
+    Let p:Int = 2;
+    while (p * p <= limit) {
+        if (toInt(arrayGet(flags, p)) == 1) {
+            Let multiple:Int = p * p;
+            while (multiple <= limit) {
+                arraySet(flags, multiple, 0);
+                multiple = multiple + p;
+            }
+        }
+        p++;
+    }
+    Let j:Int = 2;
+    while (j <= limit) {
+        if (toInt(arrayGet(flags, j)) == 1) { arrayPush(dst, j); }
+        j++;
+    }
+}
+
+/# ── Fast integer power (exponentiation by squaring) ── #/
+func int intPow(base:Int, exp:Int) {
+    if (exp < 0)  { return 0; }
+    if (exp == 0) { return 1; }
+    Let result:Int = 1;
+    Let b:Int = base;
+    Let e:Int = exp;
+    while (e > 0) {
+        if (e % 2 == 1) { result = result * b; }
+        b = b * b;
+        e = e / 2;
+    }
+    return result;
+}
+
+/# ── Digit sum ── #/
+func int digitSum(n:Int) {
+    Let x:Int = n;
+    if (x < 0) { x = -x; }
+    Let sum:Int = 0;
+    while (x > 0) {
+        sum = sum + (x % 10);
+        x = x / 10;
+    }
+    return sum;
+}
+
+/# ── Reverse digits ── #/
+func int reverseDigits(n:Int) {
+    Let x:Int = n;
+    Let rev:Int = 0;
+    while (x != 0) {
+        rev = rev * 10 + (x % 10);
+        x = x / 10;
+    }
+    return rev;
+}
+
+/# ── Palindrome number ── #/
+func bool isPalindromeNum(n:Int) {
+    if (n < 0) { return false; }
+    return n == reverseDigits(n);
+}
+
+/# ── Count digits ── #/
+func int countDigits(n:Int) {
+    if (n == 0) { return 1; }
+    Let x:Int = n;
+    if (x < 0) { x = -x; }
+    Let count:Int = 0;
+    while (x > 0) { x = x / 10; count++; }
+    return count;
+}
+
+/# ── Collatz sequence length ── #/
+func int collatzLength(n:Int) {
+    Let x:Int = n;
+    Let steps:Int = 0;
+    while (x != 1) {
+        if (x % 2 == 0) { x = x / 2; }
+        else             { x = x * 3 + 1; }
+        steps++;
+    }
+    return steps;
+}
+
+func void main() {
+    print("=== Math & Number Theory Tests ===");
+    print("");
+
+    /# --- Fibonacci --- #/
+    print("--- Fibonacci ---");
+    Let i:Int = 0;
+    printf("Iterative [0..9]: ");
+    while (i < 10) { printf("%d ": fibIterative(i)); i++; }
+    print("");
+    i = 0;
+    printf("Recursive [0..9]: ");
+    while (i < 10) { printf("%d ": fibRecursive(i)); i++; }
+    print("");
+    printf("fib(20) = %d\n": fibIterative(20));
+    printf("fib(30) = %d\n": fibIterative(30));
+    print("");
+
+    /# --- Factorial --- #/
+    print("--- Factorial ---");
+    printf("0!  = %d\n": factorialIter(0));
+    printf("1!  = %d\n": factorialIter(1));
+    printf("5!  = %d\n": factorialIter(5));
+    printf("10! = %d\n": factorialIter(10));
+    printf("12! (recursive) = %d\n": factorialRec(12));
+    print("");
+
+    /# --- GCD / LCM --- #/
+    print("--- GCD / LCM ---");
+    printf("gcd(48, 18)   = %d\n":  gcd(48, 18));
+    printf("gcd(100, 75)  = %d\n":  gcd(100, 75));
+    printf("gcd(17, 13)   = %d\n":  gcd(17, 13));
+    printf("lcm(4, 6)     = %d\n":  lcm(4, 6));
+    printf("lcm(12, 18)   = %d\n":  lcm(12, 18));
+    printf("lcm(7, 13)    = %d\n":  lcm(7, 13));
+    print("");
+
+    /# --- Primality --- #/
+    print("--- Primality Tests ---");
+    printf("isPrime(1)   = %b\n":  isPrime(1));
+    printf("isPrime(2)   = %b\n":  isPrime(2));
+    printf("isPrime(17)  = %b\n":  isPrime(17));
+    printf("isPrime(18)  = %b\n":  isPrime(18));
+    printf("isPrime(97)  = %b\n":  isPrime(97));
+    printf("isPrime(100) = %b\n":  isPrime(100));
+    print("");
+
+    print("--- Sieve (primes up to 50) ---");
+    Let primes:Array = [];
+    sieve(50, primes);
+    i = 0;
+    while (i < arrayLen(primes)) { printf("%d ": toInt(arrayGet(primes, i))); i++; }
+    print("");
+    printf("Count: %d\n": arrayLen(primes));
+    print("");
+
+    /# --- Fast Power --- #/
+    print("--- Integer Power ---");
+    printf("2^10  = %d\n":  intPow(2, 10));
+    printf("3^5   = %d\n":  intPow(3, 5));
+    printf("10^6  = %d\n":  intPow(10, 6));
+    printf("5^0   = %d\n":  intPow(5, 0));
+    print("");
+
+    /# --- Digit Operations --- #/
+    print("--- Digit Operations ---");
+    printf("digitSum(12345)      = %d\n":  digitSum(12345));
+    printf("digitSum(9999)       = %d\n":  digitSum(9999));
+    printf("reverseDigits(1234)  = %d\n":  reverseDigits(1234));
+    printf("reverseDigits(1000)  = %d\n":  reverseDigits(1000));
+    printf("isPalindromeNum(121) = %b\n":  isPalindromeNum(121));
+    printf("isPalindromeNum(123) = %b\n":  isPalindromeNum(123));
+    printf("countDigits(12345)   = %d\n":  countDigits(12345));
+    printf("countDigits(0)       = %d\n":  countDigits(0));
+    print("");
+
+    /# --- Collatz --- #/
+    print("--- Collatz Sequence Length ---");
+    printf("collatz(6)   = %d steps\n":  collatzLength(6));
+    printf("collatz(27)  = %d steps\n":  collatzLength(27));
+    printf("collatz(1)   = %d steps\n":  collatzLength(1));
+    printf("collatz(100) = %d steps\n":  collatzLength(100));
+    print("");
+
+    print("All math tests complete.");
+}

@@ -1,0 +1,805 @@
+/# ═══════════════════════════════════════════════════════════════════════════
+   showcase.ocl — OCL Language Feature Showcase v2
+   Demonstrates: arrays, import, declare, if/else-if/else, for/while loops,
+                 printf/print, recursion, iteration, and common algorithms.
+   Build & run with Valgrind:
+     make valgrind && valgrind --leak-check=full --track-origins=yes ./ocl showcase.ocl
+═══════════════════════════════════════════════════════════════════════════ #/
+
+/# ─────────────────────────────────────────────────────────────────────────
+   §1  UTILITY / MATH HELPERS
+───────────────────────────────────────────────────────────────────────── #/
+
+func int absolute(n:int) {
+    return abs(n);
+}
+
+func int factorial(n:int) {
+    if (n <= 1) { return 1; }
+    return n * factorial(n - 1);
+}
+
+func int fibonacci(n:int) {
+    if (n <= 0) { return 0; }
+    if (n == 1) { return 1; }
+    Let a:Int = 0;
+    Let b:Int = 1;
+    Let i:Int = 2;
+    while (i <= n) {
+        Let tmp:Int = a + b;
+        a = b;
+        b = tmp;
+        i = i + 1;
+    }
+    return b;
+}
+
+func int gcd(a:int, b:int) {
+    while (b != 0) {
+        Let tmp:Int = b;
+        b = a % b;
+        a = tmp;
+    }
+    return a;
+}
+
+func int lcm(a:int, b:int) {
+    return (a / gcd(a, b)) * b;
+}
+
+func int ipow(base:int, exp:int) {
+    Let result:Int = 1;
+    Let e:Int = exp;
+    while (e > 0) {
+        result = result * base;
+        e = e - 1;
+    }
+    return result;
+}
+
+func bool is_prime(n:int) {
+    if (n < 2)       { return false; }
+    if (n == 2)      { return true;  }
+    if (n % 2 == 0)  { return false; }
+    Let i:Int = 3;
+    while (i * i <= n) {
+        if (n % i == 0) { return false; }
+        i = i + 2;
+    }
+    return true;
+}
+
+func int popcount(n:int) {
+    Let count:Int = 0;
+    Let x:Int = n;
+    while (x > 0) {
+        count = count + (x % 2);
+        x = x / 2;
+    }
+    return count;
+}
+
+func int digit_sum(n:int) {
+    Let s:Int = abs(n);
+    Let total:Int = 0;
+    while (s > 0) {
+        total = total + (s % 10);
+        s = s / 10;
+    }
+    return total;
+}
+
+func int reverse_int(n:int) {
+    Let x:Int = abs(n);
+    Let rev:Int = 0;
+    while (x > 0) {
+        rev = rev * 10 + (x % 10);
+        x = x / 10;
+    }
+    return rev;
+}
+
+func int count_digits(n:int) {
+    if (n == 0) { return 1; }
+    Let x:Int = abs(n);
+    Let c:Int = 0;
+    while (x > 0) {
+        c = c + 1;
+        x = x / 10;
+    }
+    return c;
+}
+
+func int digital_root(n:int) {
+    Let x:Int = abs(n);
+    while (x >= 10) { x = digit_sum(x); }
+    return x;
+}
+
+func bool is_power_of_two(n:int) {
+    if (n <= 0) { return false; }
+    Let x:Int = n;
+    while (x > 1) {
+        if (x % 2 != 0) { return false; }
+        x = x / 2;
+    }
+    return true;
+}
+
+func int isqrt(n:int) {
+    if (n < 0)  { return -1; }
+    if (n == 0) { return 0; }
+    Let x:Int = n;
+    Let y:Int = (x + 1) / 2;
+    while (y < x) {
+        x = y;
+        y = (x + n / x) / 2;
+    }
+    return x;
+}
+
+func int sum_to_n(n:int) {
+    return n * (n + 1) / 2;
+}
+
+func int collatz_steps(n:int) {
+    Let x:Int = n;
+    Let steps:Int = 0;
+    while (x != 1) {
+        if (x % 2 == 0) { x = x / 2; }
+        else             { x = x * 3 + 1; }
+        steps = steps + 1;
+    }
+    return steps;
+}
+
+func int count_primes(limit:int) {
+    Let count:Int = 0;
+    Let i:Int = 2;
+    while (i <= limit) {
+        if (is_prime(i)) { count = count + 1; }
+        i = i + 1;
+    }
+    return count;
+}
+
+
+/# ─────────────────────────────────────────────────────────────────────────
+   §2  FLOATING-POINT / MATH LIBRARY
+───────────────────────────────────────────────────────────────────────── #/
+
+func float hypotenuse(a:float, b:float) {
+    return sqrt(pow(a, 2.0) + pow(b, 2.0));
+}
+
+func float circle_area(r:float) {
+    Let pi:Float = 3.14159265358979;
+    return pi * r * r;
+}
+
+func float approx_derivative_sin(x:float) {
+    Let h:Float = 0.0001;
+    return (sin(x + h) - sin(x - h)) / (2.0 * h);
+}
+
+func float clamp(val:float, lo:float, hi:float) {
+    if (val < lo) { return lo; }
+    if (val > hi) { return hi; }
+    return val;
+}
+
+func float lerp(a:float, b:float, t:float) {
+    return a + (b - a) * t;
+}
+
+func void demo_math() {
+    printf("  sqrt(2)         = %f\n":  sqrt(2.0));
+    printf("  pow(2, 10)      = %f\n":  pow(2.0, 10.0));
+    printf("  sin(0)          = %f\n":  sin(0.0));
+    printf("  cos(0)          = %f\n":  cos(0.0));
+    printf("  tan(0.7854)     = %f\n":  tan(0.7854));
+    printf("  floor(3.9)      = %f\n":  floor(3.9));
+    printf("  ceil(3.1)       = %f\n":  ceil(3.1));
+    printf("  round(3.5)      = %f\n":  round(3.5));
+    printf("  abs(-42)        = %d\n":  abs(-42));
+    printf("  max(7, 13)      = %f\n":  max(7.0, 13.0));
+    printf("  min(7, 13)      = %f\n":  min(7.0, 13.0));
+    printf("  hypotenuse(3,4) = %f\n":  hypotenuse(3.0, 4.0));
+    printf("  circle_area(5)  = %f\n":  circle_area(5.0));
+    printf("  lerp(0,100,0.3) = %f\n":  lerp(0.0, 100.0, 0.3));
+    printf("  clamp(150,0,100)= %f\n":  clamp(150.0, 0.0, 100.0));
+    printf("  approx d/dx sin(pi/4) = %f  (expect ~0.7071)\n":
+           approx_derivative_sin(0.7854));
+}
+
+
+/# ─────────────────────────────────────────────────────────────────────────
+   §3  STRING HELPERS
+───────────────────────────────────────────────────────────────────────── #/
+
+func int count_substr(haystack:string, needle:string) {
+    Let count:Int = 0;
+    Let nlen:Int  = strLen(needle);
+    Let hlen:Int  = strLen(haystack);
+    if (nlen == 0) { return 0; }
+    Let i:Int = 0;
+    while (i <= hlen - nlen) {
+        Let chunk:String = substr(haystack, i, nlen);
+        if (chunk == needle) {
+            count = count + 1;
+            i = i + nlen;
+        } else {
+            i = i + 1;
+        }
+    }
+    return count;
+}
+
+func bool is_palindrome(s:string) {
+    Let n:Int = strLen(s);
+    Let i:Int = 0;
+    while (i < n / 2) {
+        Let left:String  = substr(s, i, 1);
+        Let right:String = substr(s, n - i - 1, 1);
+        if (left != right) { return false; }
+        i = i + 1;
+    }
+    return true;
+}
+
+func string repeat_str(s:string, k:int) {
+    Let result:String = "";
+    Let i:Int = 0;
+    while (i < k) {
+        result = result + s;
+        i = i + 1;
+    }
+    return result;
+}
+
+func string capitalise(s:string) {
+    if (strLen(s) == 0) { return s; }
+    Let first:String = toUpperCase(substr(s, 0, 1));
+    Let rest:String  = toLowerCase(substr(s, 1, strLen(s) - 1));
+    return first + rest;
+}
+
+func int word_count(s:string) {
+    Let trimmed:String = strTrim(s);
+    if (strLen(trimmed) == 0) { return 0; }
+    return strSplit(trimmed, " ");
+}
+
+func string separator(ch:string, n:int) {
+    return repeat_str(ch, n);
+}
+
+func string rle_encode(s:string) {
+    Let n:Int = strLen(s);
+    if (n == 0) { return ""; }
+    Let result:String = "";
+    Let i:Int = 0;
+    while (i < n) {
+        Let ch:String = substr(s, i, 1);
+        Let count:Int = 1;
+        while (i + count < n && substr(s, i + count, 1) == ch) {
+            count = count + 1;
+        }
+        result = result + toString(count) + ch;
+        i = i + count;
+    }
+    return result;
+}
+
+func string caesar_char(c:string, k:int) {
+    Let upper:String = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    Let lower:String = "abcdefghijklmnopqrstuvwxyz";
+    Let ui:Int = strIndexOf(upper, c);
+    if (ui >= 0) { return substr(upper, (ui + k) % 26, 1); }
+    Let li:Int = strIndexOf(lower, c);
+    if (li >= 0) { return substr(lower, (li + k) % 26, 1); }
+    return c;
+}
+
+func string caesar_encrypt(msg:string, k:int) {
+    Let result:String = "";
+    Let n:Int = strLen(msg);
+    Let i:Int = 0;
+    while (i < n) {
+        result = result + caesar_char(substr(msg, i, 1), k);
+        i = i + 1;
+    }
+    return result;
+}
+
+func void demo_strings() {
+    Let s:String = "  Hello, OCL World!  ";
+    printf("  original         : \"%s\"\n": s);
+    printf("  trim             : \"%s\"\n": strTrim(s));
+    printf("  toUpper          : \"%s\"\n": toUpperCase(s));
+    printf("  toLower          : \"%s\"\n": toLowerCase(s));
+    printf("  length           : %d\n":     strLen(s));
+    printf("  contains \"OCL\"   : %b\n":   strContains(s, "OCL"));
+    printf("  indexOf  \"World\" : %d\n":   strIndexOf(s, "World"));
+    printf("  substr(2,5)      : \"%s\"\n": substr(s, 2, 5));
+    printf("  replace O->0     : \"%s\"\n": strReplace(s, "O", "0"));
+    printf("  word count       : %d\n":     word_count(strTrim(s)));
+    Let sentence:String = "the quick brown fox";
+    printf("  capitalise       : \"%s\"\n": capitalise(sentence));
+    printf("  repeat \"ab\" x3  : \"%s\"\n": repeat_str("ab", 3));
+    printf("  palindrome \"racecar\": %b\n": is_palindrome("racecar"));
+    printf("  palindrome \"hello\"  : %b\n": is_palindrome("hello"));
+    printf("  count \"o\"       : %d\n":    count_substr(sentence, "o"));
+    printf("  RLE \"aaabbc\"    : \"%s\"\n": rle_encode("aaabbc"));
+    Let secret:String = "Hello World";
+    Let enc:String = caesar_encrypt(secret, 13);
+    printf("  caesar ROT13     : \"%s\"\n": enc);
+    printf("  caesar ROT13 x2  : \"%s\"\n": caesar_encrypt(enc, 13));
+}
+
+
+/# ─────────────────────────────────────────────────────────────────────────
+   §4  TYPE INSPECTION / CONVERSION
+───────────────────────────────────────────────────────────────────────── #/
+
+func void demo_type_funcs() {
+    Let iv:Int    = 42;
+    Let fv:Float  = 3.14;
+    Let sv:String = "123";
+    Let bv:Bool   = true;
+    printf("typeOf(42)       = %s\n": typeOf(iv));
+    printf("typeOf(3.14)     = %s\n": typeOf(fv));
+    printf("typeOf(\"123\")    = %s\n": typeOf(sv));
+    printf("typeOf(true)     = %s\n": typeOf(bv));
+    printf("toInt(\"123\")     = %d\n": toInt(sv));
+    printf("toFloat(42)      = %f\n":  toFloat(iv));
+    printf("toString(3.14)   = %s\n":  toString(fv));
+    printf("toBool(0)        = %b\n":  toBool(0));
+    printf("toBool(1)        = %b\n":  toBool(1));
+    printf("isInt(42)        = %b\n":  isInt(iv));
+    printf("isFloat(42)      = %b\n":  isFloat(iv));
+    printf("isString(\"hi\")   = %b\n":  isString(sv));
+    printf("isBool(true)     = %b\n":  isBool(bv));
+    printf("isNull(42)       = %b\n":  isNull(iv));
+}
+
+
+/# ─────────────────────────────────────────────────────────────────────────
+   §5  ARRAYS  (real array literals + index access)
+───────────────────────────────────────────────────────────────────────── #/
+
+func void make_prime_array(n:int) {
+    Let primes:Array = [2, 3, 5, 7, 11, 13, 17, 19, 23, 29];
+    printf("  first 10 primes  : [": );
+    Let i:Int = 0;
+    while (i < 10) {
+        if (i > 0) { printf(", ": ); }
+        printf("%d": arrayGet(primes, i));
+        i = i + 1;
+    }
+    print("]");
+    printf("  length           : %d\n": arrayLen(primes));
+    printf("  primes[4]        : %d\n": arrayGet(primes, 4));
+}
+
+func void demo_array_sort() {
+    Let arr:Array = [64, 34, 25, 12, 22, 11, 90, 1];
+    Let n:Int = arrayLen(arr);
+
+    printf("  unsorted: [": );
+    Let i:Int = 0;
+    while (i < n) {
+        if (i > 0) { printf(", ": ); }
+        printf("%d": arrayGet(arr, i));
+        i = i + 1;
+    }
+    print("]");
+
+    Let pass:Int = 0;
+    while (pass < n - 1) {
+        Let j:Int = 0;
+        while (j < n - pass - 1) {
+            Let a:Int = arrayGet(arr, j);
+            Let b:Int = arrayGet(arr, j + 1);
+            if (a > b) {
+                arraySet(arr, j,     b);
+                arraySet(arr, j + 1, a);
+            }
+            j = j + 1;
+        }
+        pass = pass + 1;
+    }
+
+    printf("  sorted  : [": );
+    i = 0;
+    while (i < n) {
+        if (i > 0) { printf(", ": ); }
+        printf("%d": arrayGet(arr, i));
+        i = i + 1;
+    }
+    print("]");
+
+    Let target:Int = 22;
+    Let found:Int  = -1;
+    i = 0;
+    while (i < n) {
+        if (arrayGet(arr, i) == target) { found = i; break; }
+        i = i + 1;
+    }
+    printf("  linear_search(22): index %d\n": found);
+
+    Let lo:Int = 0;
+    Let hi:Int = n - 1;
+    Let bs:Int = -1;
+    Let tgt:Int = 25;
+    while (lo <= hi) {
+        Let mid:Int = (lo + hi) / 2;
+        Let v:Int   = arrayGet(arr, mid);
+        if (v == tgt)      { bs = mid; break; }
+        else if (v < tgt)  { lo = mid + 1; }
+        else               { hi = mid - 1; }
+    }
+    printf("  binary_search(25): index %d\n": bs);
+}
+
+func void demo_array_push() {
+    Let evens:Array = arrayNew(0);
+    Let i:Int = 0;
+    while (i <= 20) {
+        if (i % 2 == 0) { arrayPush(evens, i); }
+        i = i + 1;
+    }
+    printf("  evens 0..20 (%d items): [": arrayLen(evens));
+    i = 0;
+    while (i < arrayLen(evens)) {
+        if (i > 0) { printf(", ": ); }
+        printf("%d": arrayGet(evens, i));
+        i = i + 1;
+    }
+    print("]");
+}
+
+func void demo_matrix() {
+    Let mat:Array = [1, 2, 3, 4, 5, 6, 7, 8, 9];
+    printf("  3x3 matrix:\n": );
+    Let row:Int = 0;
+    while (row < 3) {
+        printf("    ": );
+        Let col:Int = 0;
+        while (col < 3) {
+            printf("%d ": arrayGet(mat, row * 3 + col));
+            col = col + 1;
+        }
+        print("");
+        row = row + 1;
+    }
+    Let r:Int = 0;
+    while (r < 3) {
+        Let c:Int = r + 1;
+        while (c < 3) {
+            Let tmp:Int = arrayGet(mat, r * 3 + c);
+            arraySet(mat, r * 3 + c, arrayGet(mat, c * 3 + r));
+            arraySet(mat, c * 3 + r, tmp);
+            c = c + 1;
+        }
+        r = r + 1;
+    }
+    printf("  transposed:\n": );
+    row = 0;
+    while (row < 3) {
+        printf("    ": );
+        Let col:Int = 0;
+        while (col < 3) {
+            printf("%d ": arrayGet(mat, row * 3 + col));
+            col = col + 1;
+        }
+        print("");
+        row = row + 1;
+    }
+}
+
+
+/# ─────────────────────────────────────────────────────────────────────────
+   §6  FOR-LOOP PATTERNS
+───────────────────────────────────────────────────────────────────────── #/
+
+func void print_triangle(height:int) {
+    for (int row = 1; row <= height; row++) {
+        print(repeat_str("*", row));
+    }
+}
+
+func void print_mult_table(n:int) {
+    for (int i = 1; i <= n; i = i + 1) {
+        Let row:String = "";
+        for (int j = 1; j <= n; j = j + 1) {
+            Let cell:Int = i * j;
+            Let pad:String = "";
+            if (cell < 10)       { pad = "  "; }
+            else if (cell < 100) { pad = " "; }
+            row = row + pad + toString(cell);
+        }
+        print(row);
+    }
+}
+
+func void print_primes(n:int) {
+    Let found:Int = 0;
+    Let candidate:Int = 2;
+    Let line:String = "";
+    while (found < n) {
+        if (is_prime(candidate)) {
+            if (strLen(line) > 0) { line = line + "  "; }
+            line = line + toString(candidate);
+            found = found + 1;
+            if (found % 5 == 0) { print(line); line = ""; }
+        }
+        candidate = candidate + 1;
+    }
+    if (strLen(line) > 0) { print(line); }
+}
+
+func void print_fib_sequence(limit:int) {
+    Let a:Int = 0;
+    Let b:Int = 1;
+    Let line:String = "";
+    while (a <= limit) {
+        if (strLen(line) > 0) { line = line + " "; }
+        line = line + toString(a);
+        Let tmp:Int = a + b;
+        a = b;
+        b = tmp;
+    }
+    print(line);
+}
+
+
+/# ─────────────────────────────────────────────────────────────────────────
+   §7  FIZZBUZZ
+───────────────────────────────────────────────────────────────────────── #/
+
+func string fizzbuzz(n:int) {
+    if (n % 15 == 0)      { return "FizzBuzz"; }
+    else if (n % 3 == 0)  { return "Fizz"; }
+    else if (n % 5 == 0)  { return "Buzz"; }
+    else                  { return toString(n); }
+}
+
+
+/# ─────────────────────────────────────────────────────────────────────────
+   §8  CONTROL FLOW  (break / continue / nested)
+───────────────────────────────────────────────────────────────────────── #/
+
+func int sum_evens(n:int) {
+    Let total:Int = 0;
+    for (int i = 1; i <= n; i = i + 1) {
+        if (i % 2 != 0) { continue; }
+        total = total + i;
+    }
+    return total;
+}
+
+func int first_divisible(start:int, end:int, d1:int, d2:int) {
+    Let i:Int = start;
+    while (i <= end) {
+        if (i % d1 == 0 && i % d2 == 0) { break; }
+        i = i + 1;
+    }
+    if (i > end) { return -1; }
+    return i;
+}
+
+
+/# ─────────────────────────────────────────────────────────────────────────
+   §9  IF / ELSE-IF / ELSE
+───────────────────────────────────────────────────────────────────────── #/
+
+func string grade(score:int) {
+    if (score >= 90)      { return "A"; }
+    else if (score >= 80) { return "B"; }
+    else if (score >= 70) { return "C"; }
+    else if (score >= 60) { return "D"; }
+    else                  { return "F"; }
+}
+
+
+/# ─────────────────────────────────────────────────────────────────────────
+   §12  ASSERTIONS
+───────────────────────────────────────────────────────────────────────── #/
+
+func void run_assertions() {
+    assert(factorial(5)             == 120,  "factorial(5) = 120");
+    assert(fibonacci(10)            == 55,   "fibonacci(10) = 55");
+    assert(gcd(48, 18)              == 6,    "gcd(48,18) = 6");
+    assert(lcm(4, 6)                == 12,   "lcm(4,6) = 12");
+    assert(is_prime(97)             == true, "97 is prime");
+    assert(is_prime(100)            == false,"100 is not prime");
+    assert(is_palindrome("racecar") == true,  "racecar is palindrome");
+    assert(is_palindrome("hello")   == false, "hello is not palindrome");
+    assert(sum_evens(10)            == 30,   "sum_evens(10) = 30");
+    assert(digital_root(493)        == 7,    "digital_root(493) = 7");
+    assert(isqrt(144)               == 12,   "isqrt(144) = 12");
+    assert(popcount(255)            == 8,    "popcount(255) = 8");
+    assert(is_power_of_two(64)      == true, "64 is power of 2");
+    assert(is_power_of_two(100)     == false,"100 is not power of 2");
+    Let arr:Array = [10, 20, 30, 40, 50];
+    assert(arrayLen(arr)    == 5,  "arrayLen = 5");
+    assert(arrayGet(arr, 0) == 10, "arr[0] = 10");
+    assert(arrayGet(arr, 4) == 50, "arr[4] = 50");
+    arraySet(arr, 2, 99);
+    assert(arrayGet(arr, 2) == 99, "arr[2] = 99 after set");
+    arrayPush(arr, 60);
+    assert(arrayLen(arr)    == 6,  "arrayLen = 6 after push");
+    assert(arrayGet(arr, 5) == 60, "arr[5] = 60 after push");
+    print("  All assertions passed.");
+}
+
+
+/# ─────────────────────────────────────────────────────────────────────────
+   §13  NEW FEATURES  (arrays / import / declare / else-if chain)
+───────────────────────────────────────────────────────────────────────── #/
+
+func void demo_new_features() {
+    print("  [declare]");
+    declare result : Int;
+    result = 0;
+    for (int k = 1; k <= 5; k = k + 1) { result = result + k; }
+    printf("    sum 1..5 via declare = %d\n": result);
+    declare msg : String;
+    msg = "forward-declared string";
+    printf("    %s\n": msg);
+
+    print("  [array literals]");
+    Let fib10:Array = [0, 1, 1, 2, 3, 5, 8, 13, 21, 34];
+    printf("    fib10[0]=%d  fib10[9]=%d  len=%d\n":
+           arrayGet(fib10, 0), arrayGet(fib10, 9), arrayLen(fib10));
+    arraySet(fib10, 0, 999);
+    printf("    after set fib10[0]=%d\n": arrayGet(fib10, 0));
+
+    print("  [arrayPush / arrayPop]");
+    Let stk:Array = arrayNew(0);
+    arrayPush(stk, 10);
+    arrayPush(stk, 20);
+    arrayPush(stk, 30);
+    printf("    stack len after 3 pushes: %d\n": arrayLen(stk));
+    Let top:Int = arrayPop(stk);
+    printf("    popped: %d  remaining len: %d\n": top, arrayLen(stk));
+
+    print("  [else-if chains]");
+    Let scores:Array = [100, 85, 72, 61, 45];
+    Let si:Int = 0;
+    while (si < arrayLen(scores)) {
+        Let sc:Int = arrayGet(scores, si);
+        printf("    score %d -> grade %s\n": sc, grade(sc));
+        si = si + 1;
+    }
+
+    print("  [import]");
+    printf("    strLen(\"import works\") = %d\n": strLen("import works"));
+}
+
+
+/# ─────────────────────────────────────────────────────────────────────────
+   SECTION HELPER + MAIN
+───────────────────────────────────────────────────────────────────────── #/
+
+func void section(title:string) {
+    Let line:String = separator("-", 60);
+    print(line);
+    printf("  %s\n": title);
+    print(line);
+}
+
+func void main() {
+    Let border:String = separator("=", 60);
+    print(border);
+    print("  OCL Language Showcase v2");
+    print(border);
+
+    section("§1  Integer Arithmetic");
+    printf("  absolute(-7)         = %d\n": absolute(-7));
+    printf("  factorial(10)        = %d\n": factorial(10));
+    printf("  fibonacci(15)        = %d\n": fibonacci(15));
+    printf("  gcd(252, 198)        = %d\n": gcd(252, 198));
+    printf("  lcm(12, 18)          = %d\n": lcm(12, 18));
+    printf("  ipow(2, 16)          = %d\n": ipow(2, 16));
+    printf("  isqrt(625)           = %d\n": isqrt(625));
+    printf("  digit_sum(9999)      = %d\n": digit_sum(9999));
+    printf("  digital_root(493)    = %d\n": digital_root(493));
+    printf("  reverse_int(12345)   = %d\n": reverse_int(12345));
+    printf("  count_digits(100000) = %d\n": count_digits(100000));
+    printf("  popcount(255)        = %d\n": popcount(255));
+    printf("  sum_to_n(100)        = %d\n": sum_to_n(100));
+    printf("  collatz steps(27)    = %d\n": collatz_steps(27));
+    printf("  count primes <=100   = %d\n": count_primes(100));
+    printf("  is_prime(97)         = %b\n": is_prime(97));
+    printf("  is_prime(100)        = %b\n": is_prime(100));
+    printf("  is_power_of_two(64)  = %b\n": is_power_of_two(64));
+    printf("  is_power_of_two(96)  = %b\n": is_power_of_two(96));
+
+    section("§2  Floating-Point & Math Library");
+    demo_math();
+
+    section("§3  String Library");
+    demo_strings();
+
+    section("§4  Type Inspection & Conversion");
+    demo_type_funcs();
+
+    section("§5  Arrays");
+    make_prime_array(10);
+    demo_array_sort();
+    demo_array_push();
+    demo_matrix();
+
+    section("§6  For-Loop Patterns");
+    printf("  Multiplication table 5x5:\n": );
+    print_mult_table(5);
+    printf("  Right triangle (height 5):\n": );
+    print_triangle(5);
+    printf("  First 15 primes:\n": );
+    print_primes(15);
+    printf("  Fibonacci <= 1000:\n": );
+    print_fib_sequence(1000);
+
+    section("§7  FizzBuzz (1 - 30)");
+    Let fb_line:String = "";
+    for (int i = 1; i <= 30; i = i + 1) {
+        if (strLen(fb_line) > 0) { fb_line = fb_line + "  "; }
+        fb_line = fb_line + fizzbuzz(i);
+        if (i % 10 == 0) { print(fb_line); fb_line = ""; }
+    }
+    if (strLen(fb_line) > 0) { print(fb_line); }
+
+    section("§8  Control Flow (break / continue / nested)");
+    printf("  sum of evens 1..20      = %d\n": sum_evens(20));
+    printf("  first in [1..100] /6&/9 = %d\n": first_divisible(1, 100, 6, 9));
+    Let outer:Int = 1;
+    Let found_pair:Bool = false;
+    while (outer <= 10 && !found_pair) {
+        for (int inner = outer + 1; inner <= 10; inner = inner + 1) {
+            if (outer * inner == 42) {
+                printf("  product 42 found: %d x %d\n": outer, inner);
+                found_pair = true;
+                break;
+            }
+        }
+        outer = outer + 1;
+    }
+    if (!found_pair) { print("  no pair with product 42 found"); }
+
+    section("§9  If / Else-if / Else");
+    for (int score = 100; score >= 50; score = score - 10) {
+        printf("  score %d -> grade %s\n": score, grade(score));
+    }
+
+    section("§10  Recursive Algorithms");
+    Let fi:Int = 0;
+    while (fi <= 12) {
+        printf("  fib(%d) = %d\n": fi, fibonacci(fi));
+        fi = fi + 1;
+    }
+    Let fc:Int = 0;
+    while (fc <= 10) {
+        printf("  %d! = %d\n": fc, factorial(fc));
+        fc = fc + 1;
+    }
+
+    section("§11  Encryption & Encoding");
+    Let phrases:String = "Attack at dawn";
+    printf("  original : \"%s\"\n": phrases);
+    printf("  ROT-13   : \"%s\"\n": caesar_encrypt(phrases, 13));
+    printf("  ROT-3    : \"%s\"\n": caesar_encrypt(phrases, 3));
+    printf("  RLE      : \"%s\"\n": rle_encode("AABBBCCDDDDEEEE"));
+    printf("  RLE check: \"%s\"\n": rle_encode("abcde"));
+
+    section("§12  Assertions (correctness checks)");
+    run_assertions();
+
+    section("§13  New Features (arrays / import / declare / else-if)");
+    demo_new_features();
+
+    print(border);
+    print("  Showcase complete - all features exercised.");
+    print(border);
+}

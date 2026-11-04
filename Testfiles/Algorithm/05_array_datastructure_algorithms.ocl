@@ -1,0 +1,364 @@
+/#
+  OCL Algorithm Tests — Array & Data Structure Algorithms
+  Tests: Stack, Queue, Two-pointer, Prefix Sums, Sliding Window,
+         Kadane's Max Subarray, Frequency Count, Array Rotation
+  Note: functions that return arrays use void + output param instead.
+#/
+
+/# ═══════════════════════════════════
+   STACK  (array-backed)
+   ═══════════════════════════════════ #/
+
+func void stackPush(stack:Array, val:Int) { arrayPush(stack, val); }
+
+func int stackPop(stack:Array) {
+    if (arrayLen(stack) == 0) { print("ERROR: stack underflow"); return -1; }
+    return toInt(arrayPop(stack));
+}
+
+func int stackPeek(stack:Array) {
+    Let n:Int = arrayLen(stack);
+    if (n == 0) { return -1; }
+    return toInt(arrayGet(stack, n - 1));
+}
+
+func bool stackEmpty(stack:Array) { return arrayLen(stack) == 0; }
+
+/# ── Balanced parentheses via stack ── #/
+func bool isBalanced(s:String) {
+    Let stack:Array = [];
+    Let i:Int = 0;
+    while (i < strLen(s)) {
+        Let c:Char = s[i];
+        if (c == '(' || c == '[' || c == '{') {
+            arrayPush(stack, toInt(c));
+        } else if (c == ')' || c == ']' || c == '}') {
+            if (arrayLen(stack) == 0) { return false; }
+            Let top:Int = stackPop(stack);
+            if (c == ')' && top != toInt('(')) { return false; }
+            if (c == ']' && top != toInt('[')) { return false; }
+            if (c == '}' && top != toInt('{')) { return false; }
+        }
+        i++;
+    }
+    return arrayLen(stack) == 0;
+}
+
+/# ═══════════════════════════════════
+   QUEUE  (array + front index array)
+   ═══════════════════════════════════ #/
+
+func void enqueue(q:Array, val:Int) { arrayPush(q, val); }
+
+func int dequeue(q:Array, front:Array) {
+    Let f:Int = toInt(arrayGet(front, 0));
+    if (f >= arrayLen(q)) { print("ERROR: queue empty"); return -1; }
+    Let val:Int = toInt(arrayGet(q, f));
+    arraySet(front, 0, f + 1);
+    return val;
+}
+
+/# ═══════════════════════════════════
+   TWO-POINTER
+   ═══════════════════════════════════ #/
+
+/# Two Sum on sorted array — result stored in dst[0] and dst[1] #/
+func bool twoSum(arr:Array, target:Int, dst:Array) {
+    Let left:Int  = 0;
+    Let right:Int = arrayLen(arr) - 1;
+    while (left < right) {
+        Let sum:Int = toInt(arrayGet(arr, left)) + toInt(arrayGet(arr, right));
+        if (sum == target) {
+            arraySet(dst, 0, left);
+            arraySet(dst, 1, right);
+            return true;
+        } else if (sum < target) { left++;           }
+        else                     { right = right - 1; }
+    }
+    return false;
+}
+
+/# Remove duplicates from sorted array — returns new logical length #/
+func int removeDuplicates(arr:Array) {
+    Let n:Int = arrayLen(arr);
+    if (n == 0) { return 0; }
+    Let write:Int = 1;
+    Let read:Int  = 1;
+    while (read < n) {
+        if (toInt(arrayGet(arr, read)) != toInt(arrayGet(arr, write - 1))) {
+            arraySet(arr, write, arrayGet(arr, read));
+            write++;
+        }
+        read++;
+    }
+    return write;
+}
+
+/# Max water container (two-pointer) #/
+func int maxWater(heights:Array) {
+    Let left:Int  = 0;
+    Let right:Int = arrayLen(heights) - 1;
+    Let best:Int  = 0;
+    while (left < right) {
+        Let h:Int   = min(toInt(arrayGet(heights, left)), toInt(arrayGet(heights, right)));
+        Let vol:Int = h * (right - left);
+        if (vol > best) { best = vol; }
+        if (toInt(arrayGet(heights, left)) < toInt(arrayGet(heights, right))) { left++;           }
+        else                                                                   { right = right - 1; }
+    }
+    return best;
+}
+
+/# ═══════════════════════════════════
+   PREFIX SUMS
+   ═══════════════════════════════════ #/
+
+func void buildPrefixSum(arr:Array, prefix:Array) {
+    Let n:Int = arrayLen(arr);
+    arraySet(prefix, 0, 0);
+    Let i:Int = 0;
+    while (i < n) {
+        arraySet(prefix, i + 1, toInt(arrayGet(prefix, i)) + toInt(arrayGet(arr, i)));
+        i++;
+    }
+}
+
+func int rangeSum(prefix:Array, l:Int, r:Int) {
+    return toInt(arrayGet(prefix, r + 1)) - toInt(arrayGet(prefix, l));
+}
+
+/# ═══════════════════════════════════
+   SLIDING WINDOW
+   ═══════════════════════════════════ #/
+
+func int maxSubarraySum(arr:Array, k:Int) {
+    Let n:Int = arrayLen(arr);
+    if (k > n) { return 0; }
+    Let win:Int = 0;
+    Let i:Int = 0;
+    while (i < k) { win = win + toInt(arrayGet(arr, i)); i++; }
+    Let best:Int = win;
+    while (i < n) {
+        win = win + toInt(arrayGet(arr, i)) - toInt(arrayGet(arr, i - k));
+        if (win > best) { best = win; }
+        i++;
+    }
+    return best;
+}
+
+func int minSubarraySum(arr:Array, k:Int) {
+    Let n:Int = arrayLen(arr);
+    if (k > n) { return 0; }
+    Let win:Int = 0;
+    Let i:Int = 0;
+    while (i < k) { win = win + toInt(arrayGet(arr, i)); i++; }
+    Let least:Int = win;
+    while (i < n) {
+        win = win + toInt(arrayGet(arr, i)) - toInt(arrayGet(arr, i - k));
+        if (win < least) { least = win; }
+        i++;
+    }
+    return least;
+}
+
+/# ═══════════════════════════════════
+   KADANE'S ALGORITHM
+   ═══════════════════════════════════ #/
+
+func int maxSubarray(arr:Array) {
+    Let n:Int = arrayLen(arr);
+    if (n == 0) { return 0; }
+    Let best:Int    = toInt(arrayGet(arr, 0));
+    Let current:Int = toInt(arrayGet(arr, 0));
+    Let i:Int = 1;
+    while (i < n) {
+        Let v:Int = toInt(arrayGet(arr, i));
+        current = max(v, current + v);
+        if (current > best) { best = current; }
+        i++;
+    }
+    return best;
+}
+
+/# ═══════════════════════════════════
+   FREQUENCY COUNT  (parallel arrays)
+   ═══════════════════════════════════ #/
+
+func void printFrequency(arr:Array) {
+    Let vals:Array   = [];
+    Let counts:Array = [];
+    Let n:Int = arrayLen(arr);
+    Let i:Int = 0;
+    while (i < n) {
+        Let val:Int   = toInt(arrayGet(arr, i));
+        Let found:Bool = false;
+        Let j:Int = 0;
+        while (j < arrayLen(vals)) {
+            if (toInt(arrayGet(vals, j)) == val) {
+                arraySet(counts, j, toInt(arrayGet(counts, j)) + 1);
+                found = true;
+                break;
+            }
+            j++;
+        }
+        if (!found) { arrayPush(vals, val); arrayPush(counts, 1); }
+        i++;
+    }
+    Let k:Int = 0;
+    while (k < arrayLen(vals)) {
+        printf("  %d -> %d times\n": toInt(arrayGet(vals, k)), toInt(arrayGet(counts, k)));
+        k++;
+    }
+}
+
+/# ═══════════════════════════════════
+   ROTATE ARRAY RIGHT  (reverse-based)
+   ═══════════════════════════════════ #/
+
+func void reverseRange(arr:Array, left:Int, right:Int) {
+    Let l:Int = left;
+    Let r:Int = right;
+    while (l < r) {
+        Let tmp:Int = toInt(arrayGet(arr, l));
+        arraySet(arr, l, arrayGet(arr, r));
+        arraySet(arr, r, tmp);
+        l++; r = r - 1;
+    }
+}
+
+func void rotateRight(arr:Array, k:Int) {
+    Let n:Int = arrayLen(arr);
+    if (n == 0) { return; }
+    Let steps:Int = k % n;
+    if (steps == 0) { return; }
+    reverseRange(arr, 0, n - 1);
+    reverseRange(arr, 0, steps - 1);
+    reverseRange(arr, steps, n - 1);
+}
+
+func void printArr(arr:Array) {
+    Let i:Int = 0;
+    while (i < arrayLen(arr)) {
+        if (i > 0) { printf(", "); }
+        printf("%d": toInt(arrayGet(arr, i)));
+        i++;
+    }
+    print("");
+}
+
+func void main() {
+    print("=== Array & Data Structure Tests ===");
+    print("");
+
+    /# --- Stack --- #/
+    print("--- Stack ---");
+    Let stk:Array = [];
+    stackPush(stk, 10);
+    stackPush(stk, 20);
+    stackPush(stk, 30);
+    printf("Peek:  %d\n":  stackPeek(stk));
+    printf("Pop:   %d\n":  stackPop(stk));
+    printf("Pop:   %d\n":  stackPop(stk));
+    printf("Empty? %b\n":  stackEmpty(stk));
+    stackPop(stk);
+    printf("Empty? %b\n":  stackEmpty(stk));
+    print("");
+
+    /# --- Balanced Parentheses --- #/
+    print("--- Balanced Parentheses ---");
+    printf("'(())'    = %b\n":  isBalanced("(())"));
+    printf("'({[]})'  = %b\n":  isBalanced("({[]})"));
+    printf("'([)]'    = %b\n":  isBalanced("([)]"));
+    printf("'('       = %b\n":  isBalanced("("));
+    printf("''        = %b\n":  isBalanced(""));
+    print("");
+
+    /# --- Queue --- #/
+    print("--- Queue ---");
+    Let q:Array     = [];
+    Let front:Array = [0];
+    enqueue(q, 1);
+    enqueue(q, 2);
+    enqueue(q, 3);
+    printf("Dequeue: %d\n":  dequeue(q, front));
+    printf("Dequeue: %d\n":  dequeue(q, front));
+    enqueue(q, 4);
+    printf("Dequeue: %d\n":  dequeue(q, front));
+    printf("Dequeue: %d\n":  dequeue(q, front));
+    print("");
+
+    /# --- Two Sum --- #/
+    print("--- Two Sum (sorted) ---");
+    Let sorted:Array = [1, 2, 3, 4, 6, 8, 11];
+    Let res:Array    = [0, 0];
+    if (twoSum(sorted, 10, res)) {
+        printf("Sum=10: [%d, %d]\n":  toInt(arrayGet(res, 0)), toInt(arrayGet(res, 1)));
+    } else { print("Sum=10: no pair"); }
+    if (twoSum(sorted, 3, res)) {
+        printf("Sum=3:  [%d, %d]\n":  toInt(arrayGet(res, 0)), toInt(arrayGet(res, 1)));
+    } else { print("Sum=3: no pair"); }
+    print("");
+
+    /# --- Remove Duplicates --- #/
+    print("--- Remove Duplicates (sorted) ---");
+    Let dups:Array = [1, 1, 2, 3, 3, 3, 4, 5, 5];
+    Let newLen:Int = removeDuplicates(dups);
+    printf("New length: %d -> ":  newLen);
+    Let i:Int = 0;
+    while (i < newLen) { printf("%d ":  toInt(arrayGet(dups, i))); i++; }
+    print("");
+    print("");
+
+    /# --- Max Water --- #/
+    print("--- Container With Most Water ---");
+    Let heights:Array = [1, 8, 6, 2, 5, 4, 8, 3, 7];
+    printf("Max water: %d  (expected 49)\n":  maxWater(heights));
+    print("");
+
+    /# --- Prefix Sums --- #/
+    print("--- Prefix Sums ---");
+    Let nums:Array   = [3, 1, 4, 1, 5, 9, 2, 6];
+    Let prefix:Array = arrayNew(arrayLen(nums) + 1);
+    buildPrefixSum(nums, prefix);
+    printf("rangeSum[0,3] = %d\n":  rangeSum(prefix, 0, 3));
+    printf("rangeSum[2,5] = %d\n":  rangeSum(prefix, 2, 5));
+    printf("rangeSum[0,7] = %d\n":  rangeSum(prefix, 0, 7));
+    printf("rangeSum[4,4] = %d\n":  rangeSum(prefix, 4, 4));
+    print("");
+
+    /# --- Sliding Window --- #/
+    print("--- Sliding Window (k=3) ---");
+    Let w:Array = [2, 1, 5, 1, 3, 2];
+    printf("maxSubarraySum: %d\n":  maxSubarraySum(w, 3));
+    printf("minSubarraySum: %d\n":  minSubarraySum(w, 3));
+    print("");
+
+    /# --- Kadane --- #/
+    print("--- Kadane Max Subarray ---");
+    Let k1:Array = [-2, 1, -3, 4, -1, 2, 1, -5, 4];
+    printf("[..] max = %d  (expected 6)\n":  maxSubarray(k1));
+    Let k2:Array = [1, 2, 3, 4, 5];
+    printf("[1..5] max = %d  (expected 15)\n":  maxSubarray(k2));
+    Let k3:Array = [-1, -2, -3, -4];
+    printf("[neg] max = %d  (expected -1)\n":  maxSubarray(k3));
+    print("");
+
+    /# --- Frequency --- #/
+    print("--- Frequency Count ---");
+    Let freq:Array = [4, 2, 7, 2, 4, 4, 1, 7, 2];
+    printFrequency(freq);
+    print("");
+
+    /# --- Rotate --- #/
+    print("--- Rotate Array Right ---");
+    Let rot:Array = [1, 2, 3, 4, 5, 6, 7];
+    printf("Before:        ");  printArr(rot);
+    rotateRight(rot, 3);
+    printf("After rotate 3: "); printArr(rot);
+    Let rot2:Array = [1, 2, 3];
+    rotateRight(rot2, 1);
+    printf("[1,2,3] rot 1: ");  printArr(rot2);
+    print("");
+
+    print("All data structure tests complete.");
+}

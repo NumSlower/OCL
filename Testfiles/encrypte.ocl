@@ -1,0 +1,109 @@
+/# ─────────────────────────────────────────────────────────────────
+   encrypt / decrypt — byte-level Vigenere cipher
+   Encryption steps (per byte):
+     1. add key byte   (mod 256)
+     2. multiply by 3  (mod 256)
+     3. add 17         (mod 256)
+   Decryption is the exact inverse using modular arithmetic:
+     1. subtract 17    (mod 256)
+     2. multiply by 171  ← modular inverse of 3 mod 256
+     3. subtract key byte (mod 256)
+   Proof: 3 × 171 = 513 = 2×256 + 1 ≡ 1 (mod 256) ✓
+───────────────────────────────────────────────────────────────── #/
+
+func int encryptByte(b:int, k:int) {
+    assert(b >= 0 && b <= 255, "encryptByte: byte value out of range [0,255]");
+    assert(k >= 0 && k <= 255, "encryptByte: key byte out of range [0,255]");
+    b = (b + k) % 256;
+    b = (b * 3) % 256;
+    b = (b + 17) % 256;
+    return b;
+}
+
+func int decryptByte(b:int, k:int) {
+    assert(b >= 0 && b <= 255, "decryptByte: byte value out of range [0,255]");
+    assert(k >= 0 && k <= 255, "decryptByte: key byte out of range [0,255]");
+    b = (b - 17 + 256) % 256;
+    b = (b * 171) % 256;    /# 171 = modular inverse of 3 mod 256 #/
+    b = (b - k + 256) % 256;
+    return b;
+}
+
+/# encrypt: returns array of encrypted byte values (ints 0-255) #/
+func Int encrypt(msg:String, key:String) {
+    assert(strLen(msg) > 0,  "encrypt: message must not be empty");
+    assert(strLen(key) > 0,  "encrypt: key must not be empty");
+
+    Let msgLen:Int  = strLen(msg);
+    Let keyLen:Int  = strLen(key);
+    Let result:Int  = arrayNew(msgLen);
+
+    for (Let i:Int = 0; i < msgLen; i++) {
+        Let b:Int  = toInt(msg[i]);          /# msg[i] returns Char, toInt(Char) = ASCII value #/
+        Let kb:Int = toInt(key[i % keyLen]);
+        assert(b >= 0 && b <= 255,  "encrypt: character out of byte range at index");
+        assert(kb >= 0 && kb <= 255, "encrypt: key character out of byte range");
+        arraySet(result, i, encryptByte(b, kb));
+    }
+
+    return result;
+}
+
+/# decrypt: takes array of encrypted ints, returns array of decrypted ints #/
+func Int decrypt(cipher:Int, key:String) {
+    assert(arrayLen(cipher) > 0, "decrypt: cipher array must not be empty");
+    assert(strLen(key) > 0,      "decrypt: key must not be empty");
+
+    Let len:Int    = arrayLen(cipher);
+    Let keyLen:Int = strLen(key);
+    Let result:Int = arrayNew(len);
+
+    for (Let i:Int = 0; i < len; i++) {
+        Let b:Int  = toInt(arrayGet(cipher, i));
+        Let kb:Int = toInt(key[i % keyLen]);
+        assert(b >= 0 && b <= 255,  "decrypt: cipher byte out of range [0,255] at index");
+        assert(kb >= 0 && kb <= 255, "decrypt: key character out of byte range");
+        arraySet(result, i, decryptByte(b, kb));
+    }
+
+    return result;
+}
+
+func void printBytes(label:String, arr:Int) {
+    assert(!isNull(arr), "printBytes: array is null");
+    printf("%s [": label);
+    Let len:Int = arrayLen(arr);
+    for (Let i:Int = 0; i < len; i++) {
+        if (i > 0) { printf(", "); }
+        printf("%d": toInt(arrayGet(arr, i)));
+    }
+    print("]");
+}
+
+func void main() {
+    Let message:String = "MEH";
+    Let key:String     = "KEY";
+
+    assert(strLen(message) > 0, "main: message is empty");
+    assert(strLen(key) > 0,     "main: key is empty");
+
+    Let encrypted:Int = encrypt(message, key);
+    assert(!isNull(encrypted), "main: encrypt returned null");
+    printBytes("Encrypted:", encrypted);
+
+    Let decrypted:Int = decrypt(encrypted, key);
+    assert(!isNull(decrypted), "main: decrypt returned null");
+    printBytes("Decrypted:", decrypted);
+
+    /# Verify every decrypted byte matches the original ASCII value #/
+    Let ok:Bool = true;
+    for (Let i:Int = 0; i < strLen(message); i++) {
+        Let orig:Int = toInt(message[i]);
+        Let got:Int  = toInt(arrayGet(decrypted, i));
+        if (orig != got) {
+            printf("MISMATCH at index %d: expected %d got %d\n": i, orig, got);
+            ok = false;
+        }
+    }
+    printf("Round-trip correct: %b\n": ok);
+}

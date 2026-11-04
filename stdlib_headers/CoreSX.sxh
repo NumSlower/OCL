@@ -1,0 +1,11 @@
+/# CoreSX.sxh — OCL Standard Core Header #/
+/# Provides declarations for core built-ins and runtime utilities #/
+
+declare print:void;
+declare printf:void;
+declare input:String;
+declare readLine:String;
+declare exit:void;
+declare assert:void;
+declare timeNow:Int;
+declare random:Int;
