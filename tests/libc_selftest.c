@@ -5,12 +5,12 @@
  * from-scratch allocator, string/memory routines, printf family, number
  * parsing and math library without any host libc present.
  */
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <math.h>
-#include <ctype.h>
-#include <stdint.h>
+#include <oclrt/stdio.h>
+#include <oclrt/stdlib.h>
+#include <oclrt/string.h>
+#include <oclrt/math.h>
+#include <oclrt/ctype.h>
+#include <oclrt/stdint.h>
 
 static int g_pass = 0;
 static int g_fail = 0;

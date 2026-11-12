@@ -1,5 +1,5 @@
 /*
- * OCL freestanding math.h — implemented in src/libc/math.c.
+ * OCL runtime math.h — implemented in src/libc/math.c.
  */
 #ifndef OCL_FS_MATH_H
 #define OCL_FS_MATH_H

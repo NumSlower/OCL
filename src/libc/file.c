@@ -5,9 +5,9 @@
  * No host stdio is used.
  */
 #include "port.h"
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include <oclrt/stdio.h>
+#include <oclrt/stdlib.h>
+#include <oclrt/string.h>
 
 struct OclFile {
     int fd;

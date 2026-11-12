@@ -1,5 +1,5 @@
 /*
- * OCL freestanding time.h — implemented in src/libc/misc.c.
+ * OCL runtime time.h — implemented in src/libc/misc.c.
  */
 #ifndef OCL_FS_TIME_H
 #define OCL_FS_TIME_H

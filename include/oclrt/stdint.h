@@ -1,5 +1,5 @@
 /*
- * OCL freestanding stdint.h — no compiler-supplied header is used.
+ * OCL runtime stdint.h — no compiler-supplied header is used.
  *
  * The exact-width types come from the compiler's predefined type macros,
  * so the definitions are correct for every target without a host header.

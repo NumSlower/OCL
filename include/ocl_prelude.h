@@ -1,10 +1,9 @@
 /*
  * ocl_prelude.h — force-included into every translation unit (-include).
  *
- * The build compiles with -nostdinc and -Iinclude/freestanding, so each of
- * these standard-named headers resolves to the in-tree runtime header in
- * include/freestanding/, never to a host header. Nothing here comes from the
- * system or from a third party.
+ * The build compiles with -nostdinc and -Iinclude, and every runtime header
+ * is included by its in-tree path (<oclrt/...>), so nothing here can resolve
+ * to a host header. Nothing comes from the system or from a third party.
  *
  * Force-including them guarantees the runtime declarations are visible even
  * if an individual source file's own #include lines are edited or removed,
@@ -13,18 +12,18 @@
 #ifndef OCL_PRELUDE_H
 #define OCL_PRELUDE_H
 
-#include <stddef.h>
-#include <stdint.h>
-#include <stdbool.h>
-#include <stdarg.h>
+#include <oclrt/stddef.h>
+#include <oclrt/stdint.h>
+#include <oclrt/stdbool.h>
+#include <oclrt/stdarg.h>
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <ctype.h>
-#include <math.h>
-#include <time.h>
-#include <errno.h>
-#include <inttypes.h>
+#include <oclrt/stdio.h>
+#include <oclrt/stdlib.h>
+#include <oclrt/string.h>
+#include <oclrt/ctype.h>
+#include <oclrt/math.h>
+#include <oclrt/time.h>
+#include <oclrt/errno.h>
+#include <oclrt/inttypes.h>
 
 #endif /* OCL_PRELUDE_H */

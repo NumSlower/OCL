@@ -1,5 +1,5 @@
 /*
- * OCL freestanding stddef.h — no compiler-supplied header is used.
+ * OCL runtime stddef.h — no compiler-supplied header is used.
  */
 #ifndef OCL_FS_STDDEF_H
 #define OCL_FS_STDDEF_H

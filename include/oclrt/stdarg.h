@@ -1,5 +1,5 @@
 /*
- * OCL freestanding stdarg.h — no compiler-supplied header is used.
+ * OCL runtime stdarg.h — no compiler-supplied header is used.
  *
  * The variadic machinery is a compiler builtin on every supported target;
  * this header only names it.

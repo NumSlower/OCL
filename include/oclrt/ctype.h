@@ -1,5 +1,5 @@
 /*
- * OCL freestanding ctype.h — implemented in src/libc/misc.c.
+ * OCL runtime ctype.h — implemented in src/libc/misc.c.
  */
 #ifndef OCL_FS_CTYPE_H
 #define OCL_FS_CTYPE_H

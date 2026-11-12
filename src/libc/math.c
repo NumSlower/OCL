@@ -5,8 +5,8 @@
  * is what the OCL stdlib and its tests need. No host libm is used.
  */
 
-#include <stdint.h>
-#include <math.h>
+#include <oclrt/stdint.h>
+#include <oclrt/math.h>
 
 typedef union { double d; uint64_t u; } DBits;
 

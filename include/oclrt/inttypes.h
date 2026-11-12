@@ -1,10 +1,10 @@
 /*
- * OCL freestanding inttypes.h — format macros for the fixed-width types.
+ * OCL runtime inttypes.h — format macros for the fixed-width types.
  */
 #ifndef OCL_FS_INTTYPES_H
 #define OCL_FS_INTTYPES_H
 
-#include <stdint.h>
+#include <oclrt/stdint.h>
 
 #if __SIZEOF_LONG__ == 8
 #  define __OCL_PRI64 "l"

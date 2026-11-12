@@ -2,10 +2,10 @@
  * OCL freestanding numeric parsing: strtol, strtod, atoi.
  */
 
-#include <stdlib.h>
-#include <ctype.h>
-#include <math.h>
-#include <errno.h>
+#include <oclrt/stdlib.h>
+#include <oclrt/ctype.h>
+#include <oclrt/math.h>
+#include <oclrt/errno.h>
 
 static int digit_value(int c) {
     if (c >= '0' && c <= '9') return c - '0';

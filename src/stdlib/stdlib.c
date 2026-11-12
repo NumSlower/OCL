@@ -1,7 +1,7 @@
-#include <ctype.h>
-#include <inttypes.h>
-#include <math.h>
-#include <time.h>
+#include <oclrt/ctype.h>
+#include <oclrt/inttypes.h>
+#include <oclrt/math.h>
+#include <oclrt/time.h>
 
 #include "common.h"
 #include "ocl_stdlib.h"

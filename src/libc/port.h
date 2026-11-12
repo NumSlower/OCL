@@ -6,10 +6,10 @@
  * reimplementing exactly these primitives; nothing else in the tree
  * needs to change.
  */
-#include <stddef.h>
-#include <stdlib.h>
-#include <time.h>
-#include <errno.h>
+#include <oclrt/stddef.h>
+#include <oclrt/stdlib.h>
+#include <oclrt/time.h>
+#include <oclrt/errno.h>
 
 #ifndef OCL_PORT_H
 #define OCL_PORT_H

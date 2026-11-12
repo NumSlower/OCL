@@ -5,8 +5,8 @@
  * anonymous memory obtained from the port layer. No libc malloc is used.
  */
 #include "port.h"
-#include <stdint.h>
-#include <string.h>
+#include <oclrt/stdint.h>
+#include <oclrt/string.h>
 
 #define OCL_ALIGN      16u
 #define OCL_MIN_SPLIT  (sizeof(Block) + OCL_ALIGN)

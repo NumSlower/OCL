@@ -1,5 +1,5 @@
 /*
- * OCL freestanding errno.h — implemented in src/libc/misc.c.
+ * OCL runtime errno.h — implemented in src/libc/misc.c.
  */
 #ifndef OCL_FS_ERRNO_H
 #define OCL_FS_ERRNO_H

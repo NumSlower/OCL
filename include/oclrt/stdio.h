@@ -1,14 +1,14 @@
 /*
- * OCL freestanding stdio.h
+ * OCL runtime stdio.h
  *
- * Shadows the host <stdio.h> when building with -Iinclude/freestanding.
+ * Included as <oclrt/stdio.h>; there is no host stdio in this project.
  * Everything here is implemented from scratch in src/libc/.
  */
 #ifndef OCL_FS_STDIO_H
 #define OCL_FS_STDIO_H
 
-#include <stddef.h>
-#include <stdarg.h>
+#include <oclrt/stddef.h>
+#include <oclrt/stdarg.h>
 
 typedef struct OclFile FILE;
 

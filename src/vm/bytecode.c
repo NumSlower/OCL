@@ -1,5 +1,5 @@
 #include "bytecode.h"
-#include <errno.h>
+#include <oclrt/errno.h>
 
 #include "common.h"
 

@@ -1,10 +1,10 @@
 /*
- * OCL freestanding stdlib.h — implemented in src/libc/alloc.c and misc.c.
+ * OCL runtime stdlib.h — implemented in src/libc/alloc.c and misc.c.
  */
 #ifndef OCL_FS_STDLIB_H
 #define OCL_FS_STDLIB_H
 
-#include <stddef.h>
+#include <oclrt/stddef.h>
 
 #define EXIT_SUCCESS 0
 #define EXIT_FAILURE 1

@@ -6,12 +6,12 @@
  * Length: hh h l ll z j t
  */
 
-#include <stddef.h>
-#include <stdint.h>
-#include <stdarg.h>
-#include <stdio.h>
-#include <string.h>
-#include <math.h>
+#include <oclrt/stddef.h>
+#include <oclrt/stdint.h>
+#include <oclrt/stdarg.h>
+#include <oclrt/stdio.h>
+#include <oclrt/string.h>
+#include <oclrt/math.h>
 
 typedef void (*PutFn)(void *ctx, const char *s, size_t n);
 

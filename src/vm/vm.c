@@ -1,4 +1,4 @@
-#include <inttypes.h>
+#include <oclrt/inttypes.h>
 
 #include "vm.h"
 #include "ocl_stdlib.h"

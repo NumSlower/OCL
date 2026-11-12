@@ -46,13 +46,15 @@ make
 The binary is compiled with `-ffreestanding -fno-builtin -nostdinc -nostdlib`
 and linked with `-nostdlib -static` against `src/libc/`. No system header
 directory and no compiler header directory is on the include path:
-`include/freestanding/` supplies every header, including `stddef.h`,
-`stdint.h`, `stdbool.h` and `stdarg.h`. `include/ocl_prelude.h` is
+`include/oclrt/` supplies every header, including `stddef.h`,
+`stdint.h`, `stdbool.h` and `stdarg.h`, and sources include them as
+`<oclrt/stdio.h>` and so on. `include/ocl_prelude.h` is
 force-included into every translation unit, so the runtime declarations are
 always visible even if a file's own includes are edited. Verify the result:
 
 ```bash
 make check-nodeps          # every header resolves inside the repository
+make check-no-external     # no dynamic section, no NEEDED, no undefined symbols
 nm -u ocl                  # must print nothing
 ldd ocl                    # "not a dynamic executable"
 make check-libc            # runtime self-tests, also linked with -nostdlib

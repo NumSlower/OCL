@@ -62,11 +62,13 @@ runtime in `src/libc/`. It is compiled with
 | Misc | `src/libc/misc.c` | `ctype`, `rand`, `clock_gettime`, `strerror`, `errno` |
 | Entry point | `src/libc/start.c` | `_start` for `-nostdlib` links |
 
-`include/freestanding/` supplies every header the build can see — including
-`stddef.h`, `stdint.h`, `stdbool.h` and `stdarg.h` — so neither the system
-header directory nor the compiler's own header directory is on the search
-path (`-nostdinc`, no `-isystem`). Porting to a new host means reimplementing
-the primitives in `src/libc/port.h` and nothing else.
+`include/oclrt/` supplies every header the build can see — including
+`stddef.h`, `stdint.h`, `stdbool.h` and `stdarg.h` — and every source includes
+them by their in-tree path (`<oclrt/stdio.h>`, `<oclrt/stdlib.h>`, ...). No
+source line names a host header, and neither the system header directory nor
+the compiler's own header directory is on the search path (`-nostdinc`, no
+`-isystem`). Porting to a new host means reimplementing the primitives in
+`src/libc/port.h` and nothing else.
 
 `include/ocl_prelude.h` is force-included into every translation unit with
 `-include`, so the runtime declarations are always visible even if a source
@@ -77,6 +79,7 @@ Verification:
 
 ```bash
 make check-nodeps              # every header resolves in-tree
+make check-no-external         # no dynamic section, no NEEDED, no undefined symbols
 nm -u ocl                      # no undefined symbols
 ldd ocl                        # "not a dynamic executable"
 make check-libc                # 90 runtime self-tests
@@ -436,7 +439,7 @@ Built-in functions are resolved at compile time by name and dispatched via `OP_C
 │   ├── codegen.h
 │   ├── common.h
 │   ├── errors.h
-│   ├── freestanding/      # Every header the build can see
+│   ├── oclrt/             # Every header the build can see, as <oclrt/...>
 │   │   ├── ctype.h
 │   │   ├── errno.h
 │   │   ├── inttypes.h

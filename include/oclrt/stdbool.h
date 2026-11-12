@@ -1,5 +1,5 @@
 /*
- * OCL freestanding stdbool.h — no compiler-supplied header is used.
+ * OCL runtime stdbool.h — no compiler-supplied header is used.
  */
 #ifndef OCL_FS_STDBOOL_H
 #define OCL_FS_STDBOOL_H

@@ -1,10 +1,10 @@
 /*
- * OCL freestanding string.h — implemented in src/libc/mem.c.
+ * OCL runtime string.h — implemented in src/libc/mem.c.
  */
 #ifndef OCL_FS_STRING_H
 #define OCL_FS_STRING_H
 
-#include <stddef.h>
+#include <oclrt/stddef.h>
 
 void  *memcpy(void *dst, const void *src, size_t n);
 void  *memmove(void *dst, const void *src, size_t n);

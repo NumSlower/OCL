@@ -32,8 +32,10 @@ SRCS := $(wildcard $(SRC_DIR)/*.c) \
 OBJS := $(patsubst $(SRC_DIR)/%.c, $(BUILD_DIR)/%.o, $(SRCS))
 
 # ── Flags ────────────────────────────────────────────────────────────────────
-# -nostdinc drops every system and compiler header directory; the only
-# headers visible are include/ and include/freestanding/.
+# -nostdinc drops every system and compiler header directory. The only
+# headers visible are include/ and include/oclrt/, and every runtime header
+# is included by its in-tree path (<oclrt/stdio.h>), so no source line can
+# resolve to a host header.
 # -include ocl_prelude.h force-includes the in-tree runtime declarations into
 # every translation unit, so the build cannot break if a file's own includes
 # are edited.
@@ -50,7 +52,6 @@ CFLAGS_COMMON := \
     -Wno-unused-parameter \
     -nostdinc \
     -include ocl_prelude.h \
-    -I$(INC_DIR)/freestanding \
     -I$(INC_DIR)
 
 CFLAGS_DEBUG   := $(CFLAGS_COMMON) -g3 -O0 -DDEBUG
@@ -63,7 +64,7 @@ CFLAGS := $(CFLAGS_DEBUG)
 # ── Default target ───────────────────────────────────────────────────────────
 .PHONY: all
 all: CFLAGS := $(CFLAGS_DEBUG)
-all: check-nodeps $(TARGET)
+all: check-nodeps $(TARGET) check-no-external
 
 # ── Release build ────────────────────────────────────────────────────────────
 .PHONY: release
@@ -107,6 +108,26 @@ check-nodeps:
 	    echo "  ERROR third-party headers reachable:"; echo "$$bad"; exit 1; \
 	fi; \
 	echo "  OK    every header resolves inside the repository"
+
+# ── Guard: the linked binary must reference no external library ─────────────
+# Fails if the executable has a dynamic section, a DT_NEEDED entry, an
+# interpreter, or any undefined symbol.
+.PHONY: check-no-external
+check-no-external: $(TARGET)
+	@fail=0; \
+	if readelf -d $(TARGET) 2>/dev/null | grep -q NEEDED; then \
+	    echo "  ERROR $(TARGET) links external libraries:"; \
+	    readelf -d $(TARGET) | grep NEEDED; fail=1; \
+	fi; \
+	if readelf -S $(TARGET) 2>/dev/null | grep -qE '\.interp|\.dynamic'; then \
+	    echo "  ERROR $(TARGET) has a dynamic section / interpreter"; fail=1; \
+	fi; \
+	if [ -n "$$(nm -u $(TARGET) 2>/dev/null)" ]; then \
+	    echo "  ERROR $(TARGET) has undefined symbols:"; \
+	    nm -u $(TARGET); fail=1; \
+	fi; \
+	if [ $$fail -ne 0 ]; then exit 1; fi; \
+	echo "  OK    $(TARGET) references no external library"
 
 # ── Runtime self-test (linked with -nostdlib) ────────────────────────────────
 LIBC_OBJS := $(patsubst $(SRC_DIR)/libc/%.c, $(BUILD_DIR)/libc/%.o, \
@@ -197,6 +218,7 @@ help:
 	@echo "  make debug      Explicit debug build"
 	@echo "  make freestanding  Alias for make (every build is freestanding)"
 	@echo "  make check-nodeps  Verify every header resolves inside the repository"
+	@echo "  make check-no-external  Verify the binary references no external library"
 	@echo "  make check-libc    Run the from-scratch C runtime self-tests"
 	@echo "  make test       Build and run all .ocl integration tests in $(TEST_DIR)/"
 	@echo "  make run FILE=x Build and run a specific .ocl file"

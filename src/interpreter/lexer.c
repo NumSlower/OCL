@@ -1,4 +1,4 @@
-#include <ctype.h>
+#include <oclrt/ctype.h>
 
 #include "lexer.h"
 #include "common.h"
