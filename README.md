@@ -68,6 +68,11 @@ header directory nor the compiler's own header directory is on the search
 path (`-nostdinc`, no `-isystem`). Porting to a new host means reimplementing
 the primitives in `src/libc/port.h` and nothing else.
 
+`include/ocl_prelude.h` is force-included into every translation unit with
+`-include`, so the runtime declarations are always visible even if a source
+file's own `#include` lines are edited. The build cannot regress into
+"unknown type name 'bool'" errors.
+
 Verification:
 
 ```bash
@@ -445,6 +450,7 @@ Built-in functions are resolved at compile time by name and dispatched via `OP_C
 │   │   ├── string.h
 │   │   └── time.h
 │   ├── lexer.h
+│   ├── ocl_prelude.h     # Force-included into every translation unit
 │   ├── ocl_stdlib.h      # OCL stdlib declarations
 │   ├── parser.h
 │   ├── runtime.h

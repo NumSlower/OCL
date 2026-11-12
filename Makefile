@@ -34,6 +34,9 @@ OBJS := $(patsubst $(SRC_DIR)/%.c, $(BUILD_DIR)/%.o, $(SRCS))
 # ── Flags ────────────────────────────────────────────────────────────────────
 # -nostdinc drops every system and compiler header directory; the only
 # headers visible are include/ and include/freestanding/.
+# -include ocl_prelude.h force-includes the in-tree runtime declarations into
+# every translation unit, so the build cannot break if a file's own includes
+# are edited.
 # -nostdlib drops libc, libm and the crt startup files; src/libc/start.c
 # provides _start and src/libc/ supplies every symbol.
 CFLAGS_COMMON := \
@@ -46,6 +49,7 @@ CFLAGS_COMMON := \
     -Wextra \
     -Wno-unused-parameter \
     -nostdinc \
+    -include ocl_prelude.h \
     -I$(INC_DIR)/freestanding \
     -I$(INC_DIR)
 

@@ -47,7 +47,9 @@ The binary is compiled with `-ffreestanding -fno-builtin -nostdinc -nostdlib`
 and linked with `-nostdlib -static` against `src/libc/`. No system header
 directory and no compiler header directory is on the include path:
 `include/freestanding/` supplies every header, including `stddef.h`,
-`stdint.h`, `stdbool.h` and `stdarg.h`. Verify the result:
+`stdint.h`, `stdbool.h` and `stdarg.h`. `include/ocl_prelude.h` is
+force-included into every translation unit, so the runtime declarations are
+always visible even if a file's own includes are edited. Verify the result:
 
 ```bash
 make check-nodeps          # every header resolves inside the repository
