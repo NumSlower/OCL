@@ -34,6 +34,28 @@ make
 
 This will compile the interpreter and produce the `ocl` executable.
 
+### Freestanding build (no host C library)
+
+OCL also ships its own C runtime, so it can be built without the host libc,
+libm or C runtime startup files:
+
+```bash
+make freestanding
+```
+
+This produces `./ocl-freestanding`, compiled with
+`-ffreestanding -fno-builtin -nostdinc -nostdlib` and linked against
+`src/libc/`. Verify the result:
+
+```bash
+nm -u ocl-freestanding     # must print nothing
+make check-libc            # runtime self-tests, also linked with -nostdlib
+make test-freestanding     # full .ocl suite on the freestanding binary
+```
+
+Only `src/libc/port_linux.c` (raw syscalls) is host-specific; porting to a new
+platform means reimplementing the primitives declared in `src/libc/port.h`.
+
 ## Running OCL
 
 Once built, you can run a `.ocl` source file with:

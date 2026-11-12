@@ -33,9 +33,47 @@ make debug
 
 # Clean all build artefacts
 make clean
+
+# Freestanding build — no host libc, no host libm, no crt
+make freestanding
+
+# Verify the from-scratch C runtime on its own
+make check-libc
 ```
 
 The resulting binary is `./ocl`.
+
+### Freestanding build
+
+`make freestanding` produces `./ocl-freestanding`, a statically linked
+executable that does not use the host C library at all. It is compiled with
+`-ffreestanding -fno-builtin -nostdinc -nostdlib` and links against OCL's own
+runtime in `src/libc/`:
+
+| Area | File | Notes |
+|------|------|-------|
+| OS primitives | `src/libc/port_linux.c` | Raw `syscall`/`svc` — the only host-specific file |
+| Memory | `src/libc/mem.c` | `memcpy`, `memmove`, `memset`, `memcmp`, `str*` |
+| Allocator | `src/libc/alloc.c` | First-fit free list with coalescing over `mmap` |
+| stdio | `src/libc/file.c` | Unbuffered `FILE` over descriptors |
+| printf | `src/libc/fmt.c` | Full formatter: `%d %u %o %x %c %s %p %f %e %g`, flags/width/precision |
+| Numbers | `src/libc/num.c` | `strtol`, `strtoll`, `strtoull`, `strtod`, `atoi` |
+| Math | `src/libc/math.c` | `sqrt`, `pow`, `exp`, `log`, `sin`, `cos`, `tan`, `atan`, `floor`, `ceil`, `round`, `fmod`, … |
+| Misc | `src/libc/misc.c` | `ctype`, `rand`, `clock_gettime`, `strerror`, `errno` |
+| Entry point | `src/libc/start.c` | `_start` for `-nostdlib` links |
+
+The host headers are shadowed by `include/freestanding/`, so the freestanding
+build cannot accidentally pick up a system `<stdio.h>` or `<stdlib.h>`.
+Porting to a new host means reimplementing the primitives in
+`src/libc/port.h` and nothing else.
+
+Verification:
+
+```bash
+make freestanding && nm -u ocl-freestanding   # no undefined symbols
+make check-libc                               # 90 runtime self-tests
+make test-freestanding                        # full .ocl suite on the freestanding binary
+```
 
 ---
 
@@ -62,6 +100,9 @@ make run FILE=path/to/program.ocl
 
 # Run the test suite
 make test
+
+# Run the test suite against the freestanding (no-libc) binary
+make test-freestanding
 ```
 
 ### Test Suite
@@ -390,6 +431,15 @@ Built-in functions are resolved at compile time by name and dispatched via `OP_C
 │   ├── codegen.h
 │   ├── common.h
 │   ├── errors.h
+│   ├── freestanding/      # Shadow headers for the no-libc build
+│   │   ├── ctype.h
+│   │   ├── errno.h
+│   │   ├── inttypes.h
+│   │   ├── math.h
+│   │   ├── stdio.h
+│   │   ├── stdlib.h
+│   │   ├── string.h
+│   │   └── time.h
 │   ├── lexer.h
 │   ├── ocl_stdlib.h      # OCL stdlib declarations
 │   ├── parser.h
@@ -407,15 +457,30 @@ Built-in functions are resolved at compile time by name and dispatched via `OP_C
 │   │   ├── lexer.c        # Tokeniser
 │   │   ├── parser.c       # Recursive-descent parser + import resolution
 │   │   └── type_checker.c # Symbol table & type inference
+│   ├── libc/              # From-scratch C runtime (freestanding build only)
+│   │   ├── alloc.c        # malloc/calloc/realloc/free
+│   │   ├── file.c         # FILE streams over raw descriptors
+│   │   ├── fmt.c          # printf family
+│   │   ├── math.c         # libm replacement
+│   │   ├── mem.c          # mem*/str* routines
+│   │   ├── misc.c         # ctype, rand, time, errno, strerror
+│   │   ├── num.c          # strtol/strtod/atoi
+│   │   ├── port.h         # OS primitive contract
+│   │   ├── port_linux.c   # Raw syscalls (x86-64, aarch64)
+│   │   └── start.c        # _start for -nostdlib links
 │   ├── stdlib/
 │   │   └── stdlib.c       # Standard library built-in functions (40 functions)
 │   └── vm/
 │       ├── bytecode.c     # Bytecode chunk management
 │       ├── runtime.c      # Frame/global helpers, error reporting
 │       └── vm.c           # Main execution loop
-└── test/
-    ├── test_lexer.c       # (stub — TODO)
-    ├── test_parser.c      # (stub — TODO)
-    ├── test_type_checker.c# (stub — TODO)
-    └── test_vm.c          # (stub — TODO)
+├── tests/
+│   └── libc_selftest.c    # Runtime self-test (built with -nostdlib)
+└── Testfiles/
+    ├── algorithms/        # Sorting, searching, bigint, matrix, sieve
+    ├── crypto/            # AES-128 implementation and KATs
+    ├── errors/            # Expected-failure programs
+    ├── language/          # Syntax and semantics coverage
+    ├── stress/            # Recursion and allocation stress
+    └── strings/           # String operation coverage
 ```

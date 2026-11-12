@@ -18,9 +18,12 @@ INTERP_DIR  := $(SRC_DIR)/interpreter
 FRONT_DIR   := $(SRC_DIR)/frontend
 
 # ── Sources (portable wildcard matching, no dependency on external find) ─────
-SRCS := $(wildcard $(SRC_DIR)/*.c) \
+# src/libc/ is the freestanding runtime: it is built only by `make freestanding`
+# and must never be linked into the host build (it would shadow libc symbols).
+SRCS := $(filter-out $(SRC_DIR)/libc/%, \
+        $(wildcard $(SRC_DIR)/*.c) \
         $(wildcard $(SRC_DIR)/*/*.c) \
-        $(wildcard $(SRC_DIR)/*/*/*.c)
+        $(wildcard $(SRC_DIR)/*/*/*.c))
 
 # ── Objects: mirror the src/ tree under build/ ───────────────────────────────
 OBJS := $(patsubst $(SRC_DIR)/%.c, $(BUILD_DIR)/%.o, $(SRCS))
@@ -59,6 +62,30 @@ LDFLAGS        := -lm
 LDFLAGS_DEBUG  := $(LDFLAGS) $(SAN_FLAGS)
 CFLAGS         := $(CFLAGS_DEBUG)
 LFLAGS         := $(LDFLAGS_DEBUG)
+
+# ── Freestanding build (no host libc, no host libm) ─────────────────────────
+FS_TARGET  := ocl-freestanding
+FS_INC     := $(INC_DIR)/freestanding
+FS_BUILD   := $(BUILD_DIR)/freestanding
+FS_SRCS    := $(SRCS) $(wildcard $(SRC_DIR)/libc/*.c)
+FS_OBJS    := $(patsubst $(SRC_DIR)/%.c, $(FS_BUILD)/%.o, $(FS_SRCS))
+
+FS_CFLAGS  := \
+    -std=c11 \
+    -O2 \
+    -ffreestanding \
+    -fno-builtin \
+    -fno-stack-protector \
+    -fno-pie \
+    -Wall \
+    -Wextra \
+    -Wno-unused-parameter \
+    -nostdinc \
+    -isystem $(shell $(CC) -print-file-name=include) \
+    -I$(FS_INC) \
+    -I$(INC_DIR)
+
+FS_LDFLAGS := -nostdlib -static -no-pie -Wl,--build-id=none
 
 # ── Default target ────────────────────────────────────────────────────────────
 .PHONY: all
@@ -99,23 +126,62 @@ $(BUILD_DIR)/%.o: $(SRC_DIR)/%.c
 	@echo "  CC    $<"
 	@$(CC) $(CFLAGS) -c $< -o $@
 
+# ── Freestanding build: no libc, no libm, no crt ────────────────────────────
+.PHONY: freestanding
+freestanding: $(FS_TARGET)
+
+$(FS_TARGET): $(FS_OBJS)
+	@echo "  LINK  $@ (nostdlib)"
+	@$(CC) $(FS_OBJS) -o $@ $(FS_LDFLAGS)
+	@echo "Built $(FS_TARGET) v$(VERSION) — freestanding, no host libc"
+
+$(FS_BUILD)/%.o: $(SRC_DIR)/%.c
+	@mkdir -p $(dir $@)
+	@echo "  CC    $< [freestanding]"
+	@$(CC) $(FS_CFLAGS) -c $< -o $@
+
+# ── Freestanding runtime self-test (no libc linked) ─────────────────────────
+LIBC_OBJS := $(patsubst $(SRC_DIR)/libc/%.c, $(FS_BUILD)/libc/%.o, \
+             $(wildcard $(SRC_DIR)/libc/*.c))
+
+.PHONY: check-libc
+check-libc: $(LIBC_OBJS) $(FS_BUILD)/tests/libc_selftest.o
+	@echo "  LINK  $(BUILD_DIR)/libc_selftest (nostdlib)"
+	@$(CC) $^ -o $(BUILD_DIR)/libc_selftest $(FS_LDFLAGS)
+	@./$(BUILD_DIR)/libc_selftest
+
+$(FS_BUILD)/tests/%.o: tests/%.c
+	@mkdir -p $(dir $@)
+	@echo "  CC    $< [freestanding]"
+	@$(CC) $(FS_CFLAGS) -c $< -o $@
+
 # ── Clean ─────────────────────────────────────────────────────────────────────
 .PHONY: clean
 clean:
 	@echo "  CLEAN"
-	@rm -rf $(BUILD_DIR) $(TARGET) $(TARGET).exe
+	@rm -rf $(BUILD_DIR) $(TARGET) $(TARGET).exe $(FS_TARGET) $(FS_TARGET).exe
 
 # ── Test (.ocl integration tests only) ───────────────────────────────────────
+TEST_BIN ?= ./$(TARGET)
+
 .PHONY: test
 test: all
-	@echo "── Running tests ──────────────────────────────────────"
+	@$(MAKE) --no-print-directory _run_tests TEST_BIN=./$(TARGET)
+
+.PHONY: test-freestanding
+test-freestanding: freestanding
+	@$(MAKE) --no-print-directory _run_tests TEST_BIN=./$(FS_TARGET)
+
+.PHONY: _run_tests
+_run_tests:
+	@echo "── Running tests with $(TEST_BIN) ──────────────────────"
 	@pass=0; fail=0; \
 	for f in $(TEST_DIR)/*.ocl $(TEST_DIR)/*/*.ocl; do \
 	    [ -f "$$f" ] || continue; \
 	    expected="$${f%.ocl}.expected"; \
 	    exitcode_file="$${f%.ocl}.exitcode"; \
 	    if [ -f "$$expected" ]; then \
-	        actual=$$(./$(TARGET) "$$f" 2>/dev/null); \
+	        actual=$$($(TEST_BIN) "$$f" 2>/dev/null); \
 	        status=$$?; \
 	        expected_output="$$(cat "$$expected")"; \
 	        matched=1; \
@@ -142,7 +208,7 @@ test: all
 	            fail=$$((fail+1)); \
 	        fi; \
 	    else \
-	        ./$(TARGET) "$$f" >/dev/null 2>&1 && echo "  PASS  $$f" && pass=$$((pass+1)) || (echo "  FAIL  $$f" && fail=$$((fail+1))); \
+	        $(TEST_BIN) "$$f" >/dev/null 2>&1 && echo "  PASS  $$f" && pass=$$((pass+1)) || (echo "  FAIL  $$f" && fail=$$((fail+1))); \
 	    fi; \
 	done; \
 	echo "──────────────────────────────────────────────────────"; \
@@ -161,7 +227,9 @@ help:
 	@echo "  make            Build with debug + sanitizers (default)"
 	@echo "  make release    Build optimised release binary"
 	@echo "  make debug      Explicit debug build"
+	@echo "  make freestanding  Build ocl-freestanding (no host libc/libm)"
 	@echo "  make clean      Remove build artefacts"
 	@echo "  make test       Build and run all .ocl integration tests in $(TEST_DIR)/"
+	@echo "  make test-freestanding  Run the suite against the freestanding binary"
 	@echo "  make run FILE=x Build and run a specific .ocl file"
 	@echo "  make help       Show this message"

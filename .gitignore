@@ -9,6 +9,8 @@ build/
 *.dylib
 ocl
 ocl.exe
+ocl-freestanding
+ocl-freestanding.exe
 
 # Local generated files
 *.log
