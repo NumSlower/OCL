@@ -1,0 +1,15 @@
+* text=auto
+*.c text
+*.h text
+*.md text
+*.ocl text
+*.expected text
+*.yml text
+*.yaml text
+*.gitignore text
+
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
