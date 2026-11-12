@@ -1,0 +1,14 @@
+2 3 5 7 11 13 17 19 23 29 31 37 41 43 47 53 59
+pi(100) = 25
+pi(200) = 46
+sum of primes below 100 = 1060
+twin prime pairs up to 100 = 8
+largest prime gap up to 200 = 14
+Goldbach partitions of 100 = 6
+Goldbach verified for all even n in 4..200
+360 = 2^3 * 3^2 * 5
+97 = 97
+1001 = 7 * 11 * 13
+65536 = 2^16
+999999 = 3^3 * 7 * 11 * 13 * 37
+600851475143 = 71 * 839 * 1471 * 6857

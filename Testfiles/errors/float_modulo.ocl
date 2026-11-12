@@ -1,0 +1,5 @@
+/# Using % on Float operands is a documented runtime error. #/
+print("before");
+Let f:Float = 5.5;
+print(f % 2);
+print("after - must never be printed");

@@ -1,0 +1,18 @@
+/#
+  Without a main() function, top-level statements run in source order.
+  Functions may be defined after the statement that calls them.
+#/
+print("start");
+Let total = 0;
+for (int i = 1; i <= 5; i = i + 1) {
+    total = total + square(i);
+}
+print("sum of squares 1..5 = " + toString(total));
+total = total * 2;
+print("doubled = " + toString(total));
+
+func int square(n:int) {
+    return n * n;
+}
+
+print("end");

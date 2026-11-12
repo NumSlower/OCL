@@ -1,0 +1,71 @@
+/#
+  Built-in functions and the dynamic type system: typeOf, conversions,
+  null handling, array built-ins, integer arithmetic corner cases.
+#/
+func show_type(label:string, value:int) {
+    print(label + " -> " + typeOf(value));
+}
+
+func main() {
+    /# typeOf on every value kind #/
+    show_type("42", 42);
+    show_type("string", "text");
+    show_type("true", true);
+    show_type("char literal", 'x');
+    show_type("float", 3.5);
+    show_type("array", [1, 2, 3]);
+    show_type("out-of-range arrayGet", arrayGet([1, 2, 3], 10));
+
+    /# predicates #/
+    printf("isInt: %b %b\n": isInt(7), isInt("7"));
+    printf("isString: %b %b\n": isString("7"), isString(7));
+    printf("isBool: %b %b\n": isBool(false), isBool(0));
+    printf("isNull: %b %b\n": isNull(arrayGet([1], 5)), isNull(0));
+
+    /# conversions #/
+    print(toString(42) + "!");
+    print(toString(true));
+    printf("toInt: %d %d\n": toInt("123") + 1, toInt("77") + 3);
+    printf("toBool: %b %b %b %b\n": toBool(0), toBool(7), toBool(""), toBool("x"));
+
+    /# integer arithmetic #/
+    printf("division truncates toward zero: %d %d %d %d\n": 7 / 2, (0 - 7) / 2, 7 / (0 - 2), (0 - 7) / (0 - 2));
+    printf("modulo: %d %d\n": 7 % 3, 100 % 7);
+    printf("abs/min/max: %d %d %d\n": abs(0 - 5), min(3, 9), max(3, 9));
+    int power = 1;
+    for (int i = 0; i < 62; i = i + 1) {
+        power = power * 2;
+    }
+    printf("2^62 = %d\n": power);
+
+    /# array built-ins #/
+    Let arr = [10, 20, 30];
+    arrayPush(arr, 40);
+    printf("len after push: %d\n": arrayLen(arr));
+    int popped = arrayPop(arr);
+    printf("popped %d, len now %d\n": popped, arrayLen(arr));
+    arraySet(arr, 1, 99);
+    printf("arr[1] after arraySet: %d, via arrayGet: %d\n": arr[1], arrayGet(arr, 1));
+    printf("arrayGet out of range is null: %b\n": isNull(arrayGet(arr, 3)));
+    printf("arrayLen of a string: %d\n": arrayLen("hello"));
+
+    /# arrays hold any mix of types and may nest #/
+    Let mixed = [1, "two", true, 'c', [5, 6]];
+    string kinds = "";
+    for (int j = 0; j < arrayLen(mixed); j = j + 1) {
+        if (j > 0) {
+            kinds = kinds + ",";
+        }
+        kinds = kinds + typeOf(mixed[j]);
+    }
+    print(kinds);
+    Let inner = mixed[4];
+    printf("nested element mixed[4][1] = %d\n": inner[1]);
+    printf("chained access: %d\n": mixed[4][0]);
+
+    /# array assignment aliases rather than copies #/
+    Let first = [1, 2, 3];
+    Let second = first;
+    second[0] = 100;
+    printf("aliasing: first[0] = %d\n": first[0]);
+}

@@ -224,7 +224,9 @@ Import <CoreSX.sxh>
 Import <mylib.ocl>
 ```
 
-The parser searches for the file relative to the importing file's directory, then under `ocl_headers/` and `stdlib_headers/`. If found, the file is inlined at parse time. If not found, a parse error is raised.
+The parser searches for the file relative to the importing file's directory, then under `ocl_headers/` and `stdlib_headers/` (next to the executable and in the current directory). If found, the file is inlined at parse time. If not found, a parse error is raised.
+
+`CoreSX.sxh` is built into the runtime, so `Import <CoreSX.sxh>` always succeeds even when no header file is present on disk.
 
 ---
 

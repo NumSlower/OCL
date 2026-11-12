@@ -1,0 +1,112 @@
+/#
+  AES-128 known-answer tests: FIPS-197 appendices A.1, B and C.1, plus S-box
+  structural properties.  Every check is an assert, so any mismatch halts
+  with exit code 1 and a message naming the failing vector.
+#/
+Import <aes128.ocl>
+
+func expect_str(name:string, got:string, want:string) {
+    assert(got == want, name + ": expected " + want + " but got " + got);
+    print("PASS " + name + " " + got);
+}
+
+func expect_int(name:string, got:int, want:int) {
+    assert(got == want, name + ": expected " + toString(want) + " but got " + toString(got));
+    print("PASS " + name + " " + toString(got));
+}
+
+func string encrypt_hex(key:string, plain:string) {
+    aes_load_key_hex(key);
+    for (int i = 0; i < 16; i = i + 1) {
+        AES_IN[i] = aes_hexbyte(plain, i);
+    }
+    aes_encrypt_block();
+    return aes_out_hex();
+}
+
+func string decrypt_hex(key:string, cipher:string) {
+    aes_load_key_hex(key);
+    for (int i = 0; i < 16; i = i + 1) {
+        AES_IN[i] = aes_hexbyte(cipher, i);
+    }
+    aes_decrypt_block();
+    return aes_out_hex();
+}
+
+func sbox_checks() {
+    expect_int("sbox[0x00]", AES_SBOX[0], 99);
+    expect_int("sbox[0x01]", AES_SBOX[1], 124);
+    expect_int("sbox[0x53]", AES_SBOX[83], 237);
+    expect_int("sbox[0xff]", AES_SBOX[255], 22);
+    expect_int("isbox[0x63]", AES_ISBOX[99], 0);
+
+    int mismatches = 0;
+    int fixed_points = 0;
+    int opposite_fixed_points = 0;
+    int seen_sum = 0;
+    for (int i = 0; i < 256; i = i + 1) {
+        if (AES_ISBOX[AES_SBOX[i]] != i) {
+            mismatches = mismatches + 1;
+        }
+        if (AES_SBOX[i] == i) {
+            fixed_points = fixed_points + 1;
+        }
+        if (AES_SBOX[i] + i == 255) {
+            opposite_fixed_points = opposite_fixed_points + 1;
+        }
+        seen_sum = seen_sum + AES_SBOX[i];
+    }
+    expect_int("sbox inverse mismatches", mismatches, 0);
+    expect_int("sbox fixed points", fixed_points, 0);
+    expect_int("sbox opposite fixed points", opposite_fixed_points, 0);
+    expect_int("sbox sum (permutation of 0..255)", seen_sum, 32640);
+}
+
+func xor_checks() {
+    expect_int("xor 0x57 ^ 0x83", aes_xor(87, 131), 212);
+    expect_int("xor a ^ a", aes_xor(170, 170), 0);
+    expect_int("xor a ^ 0", aes_xor(170, 0), 170);
+    expect_int("xtime(0x57)", aes_xtime(87), 174);
+    expect_int("xtime(0xae)", aes_xtime(174), 71);
+    expect_int("gmul 0x57 * 0x13", aes_mul(87, 19), 254);
+    expect_int("gmul 0x57 * 0x83", aes_mul(87, 131), 193);
+}
+
+func key_schedule_checks() {
+    aes_load_key_hex("2b7e151628aed2a6abf7158809cf4f3c");
+    expect_str("round key 0", aes_round_key_hex(0), "2b7e151628aed2a6abf7158809cf4f3c");
+    expect_str("round key 1", aes_round_key_hex(1), "a0fafe1788542cb123a339392a6c7605");
+    expect_str("round key 2", aes_round_key_hex(2), "f2c295f27a96b9435935807a7359f67f");
+    expect_str("round key 10", aes_round_key_hex(10), "d014f9a8c9ee2589e13f0cc8b6630ca6");
+}
+
+func block_checks() {
+    string keyb = "2b7e151628aed2a6abf7158809cf4f3c";
+    string ptb = "3243f6a8885a308d313198a2e0370734";
+    string ctb = "3925841d02dc09fbdc118597196a0b32";
+    expect_str("FIPS-197 B encrypt", encrypt_hex(keyb, ptb), ctb);
+    expect_str("FIPS-197 B decrypt", decrypt_hex(keyb, ctb), ptb);
+
+    string keyc = "000102030405060708090a0b0c0d0e0f";
+    string ptc = "00112233445566778899aabbccddeeff";
+    string ctc = "69c4e0d86a7b0430d8cdb78070b4c55a";
+    expect_str("FIPS-197 C.1 encrypt", encrypt_hex(keyc, ptc), ctc);
+    expect_str("FIPS-197 C.1 decrypt", decrypt_hex(keyc, ctc), ptc);
+
+    /# edge-case keys and blocks #/
+    string zero = "00000000000000000000000000000000";
+    expect_str("zero key, zero block", encrypt_hex(zero, zero), "66e94bd4ef8a2c3b884cfa59ca342b2e");
+    expect_str("zero key, zero block (decrypt)", decrypt_hex(zero, "66e94bd4ef8a2c3b884cfa59ca342b2e"), zero);
+    string ones = "ffffffffffffffffffffffffffffffff";
+    expect_str("ones key, ones block", encrypt_hex(ones, ones), "bcbf217cb280cf30b2517052193ab979");
+    expect_str("ones key, ones block (decrypt)", decrypt_hex(ones, "bcbf217cb280cf30b2517052193ab979"), ones);
+}
+
+func main() {
+    aes_init();
+    sbox_checks();
+    xor_checks();
+    key_schedule_checks();
+    block_checks();
+    print("all AES-128 known-answer tests passed");
+}

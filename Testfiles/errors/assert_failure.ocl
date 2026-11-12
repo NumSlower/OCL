@@ -1,0 +1,4 @@
+/# A failing assert halts with exit code 1. #/
+print("before");
+assert(1 + 1 == 3, "arithmetic is broken");
+print("after - must never be printed");

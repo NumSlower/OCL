@@ -1,0 +1,4 @@
+sum_to(3500) = 6126750
+ping(3000) = 4500
+nested string length = 1001
+repeated deep recursion ok

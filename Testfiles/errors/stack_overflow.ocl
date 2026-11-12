@@ -1,0 +1,7 @@
+/# Unbounded recursion must be reported as a stack overflow, not crash the host process. #/
+func int forever(n:int) {
+    return forever(n + 1);
+}
+print("before");
+print(forever(0));
+print("after - must never be printed");

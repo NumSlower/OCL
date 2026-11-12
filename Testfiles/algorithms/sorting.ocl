@@ -1,0 +1,335 @@
+/#
+  Six sorting algorithms (bubble, insertion, selection, quick, merge, heap)
+  over six datasets that include the awkward cases: empty, single element,
+  all-equal, already sorted and reverse sorted.  Every algorithm must produce
+  the same order-sensitive checksum.  Binary search and duplicate counting are
+  verified on the sorted result.
+#/
+Let SEED = 20261105;
+Let DATA = [];
+Let A = [];
+Let W = [];
+
+func int next_rand() {
+    SEED = (SEED * 1103515245 + 12345) % 2147483648;
+    return SEED / 65536 % 200;
+}
+
+func load_dataset(kind:int) {
+    while (arrayLen(DATA) > 0) {
+        arrayPop(DATA);
+    }
+    if (kind == 0) {
+        for (int i = 0; i < 40; i = i + 1) {
+            arrayPush(DATA, next_rand());
+        }
+    } else if (kind == 1) {
+        for (int i = 1; i <= 25; i = i + 1) {
+            arrayPush(DATA, i);
+        }
+    } else if (kind == 2) {
+        for (int i = 25; i >= 1; i = i - 1) {
+            arrayPush(DATA, i);
+        }
+    } else if (kind == 3) {
+        for (int i = 0; i < 17; i = i + 1) {
+            arrayPush(DATA, 7);
+        }
+    } else if (kind == 4) {
+        arrayPush(DATA, 42);
+    }
+}
+
+func string dataset_name(kind:int) {
+    if (kind == 0) {
+        return "random";
+    }
+    if (kind == 1) {
+        return "sorted";
+    }
+    if (kind == 2) {
+        return "reversed";
+    }
+    if (kind == 3) {
+        return "all-equal";
+    }
+    if (kind == 4) {
+        return "single";
+    }
+    return "empty";
+}
+
+func reset_work() {
+    while (arrayLen(A) > 0) {
+        arrayPop(A);
+    }
+    while (arrayLen(W) > 0) {
+        arrayPop(W);
+    }
+    for (int i = 0; i < arrayLen(DATA); i = i + 1) {
+        arrayPush(A, DATA[i]);
+        arrayPush(W, 0);
+    }
+}
+
+func swap(i:int, j:int) {
+    int tmp = A[i];
+    A[i] = A[j];
+    A[j] = tmp;
+}
+
+func bubble_sort() {
+    int n = arrayLen(A);
+    for (int i = 0; i < n - 1; i = i + 1) {
+        int swapped = 0;
+        for (int j = 0; j < n - 1 - i; j = j + 1) {
+            if (A[j] > A[j + 1]) {
+                swap(j, j + 1);
+                swapped = 1;
+            }
+        }
+        if (swapped == 0) {
+            break;
+        }
+    }
+}
+
+func insertion_sort() {
+    for (int i = 1; i < arrayLen(A); i = i + 1) {
+        int key = A[i];
+        int j = i - 1;
+        while (j >= 0 && A[j] > key) {
+            A[j + 1] = A[j];
+            j = j - 1;
+        }
+        A[j + 1] = key;
+    }
+}
+
+func selection_sort() {
+    int n = arrayLen(A);
+    for (int i = 0; i < n - 1; i = i + 1) {
+        int smallest = i;
+        for (int j = i + 1; j < n; j = j + 1) {
+            if (A[j] < A[smallest]) {
+                smallest = j;
+            }
+        }
+        if (smallest != i) {
+            swap(i, smallest);
+        }
+    }
+}
+
+func quick_sort(lo:int, hi:int) {
+    if (lo < hi) {
+        int pivot = A[hi];
+        int i = lo - 1;
+        for (int j = lo; j < hi; j = j + 1) {
+            if (A[j] <= pivot) {
+                i = i + 1;
+                swap(i, j);
+            }
+        }
+        swap(i + 1, hi);
+        quick_sort(lo, i);
+        quick_sort(i + 2, hi);
+    }
+}
+
+func merge_sort(lo:int, hi:int) {
+    if (hi - lo > 1) {
+        int mid = (lo + hi) / 2;
+        merge_sort(lo, mid);
+        merge_sort(mid, hi);
+        int i = lo;
+        int j = mid;
+        int k = lo;
+        while (i < mid && j < hi) {
+            if (A[i] <= A[j]) {
+                W[k] = A[i];
+                i = i + 1;
+            } else {
+                W[k] = A[j];
+                j = j + 1;
+            }
+            k = k + 1;
+        }
+        while (i < mid) {
+            W[k] = A[i];
+            i = i + 1;
+            k = k + 1;
+        }
+        while (j < hi) {
+            W[k] = A[j];
+            j = j + 1;
+            k = k + 1;
+        }
+        for (int m = lo; m < hi; m = m + 1) {
+            A[m] = W[m];
+        }
+    }
+}
+
+func sift_down(first:int, last:int) {
+    int root = first;
+    while (root * 2 + 1 <= last) {
+        int child = root * 2 + 1;
+        int target = root;
+        if (A[target] < A[child]) {
+            target = child;
+        }
+        if (child + 1 <= last && A[target] < A[child + 1]) {
+            target = child + 1;
+        }
+        if (target == root) {
+            break;
+        }
+        swap(root, target);
+        root = target;
+    }
+}
+
+func heap_sort() {
+    int n = arrayLen(A);
+    for (int s = n / 2 - 1; s >= 0; s = s - 1) {
+        sift_down(s, n - 1);
+    }
+    for (int e = n - 1; e > 0; e = e - 1) {
+        swap(0, e);
+        sift_down(0, e - 1);
+    }
+}
+
+func int is_sorted() {
+    for (int i = 1; i < arrayLen(A); i = i + 1) {
+        if (A[i - 1] > A[i]) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+func int checksum() {
+    int sum = 0;
+    for (int i = 0; i < arrayLen(A); i = i + 1) {
+        sum = sum + (i + 1) * A[i];
+    }
+    return sum;
+}
+
+func string join_range(begin:int, count:int) {
+    string res = "";
+    int start = begin;
+    if (start < 0) {
+        start = 0;
+    }
+    for (int i = start; i < start + count && i < arrayLen(A); i = i + 1) {
+        if (res != "") {
+            res = res + " ";
+        }
+        res = res + toString(A[i]);
+    }
+    return res;
+}
+
+func run_algorithm(which:int) {
+    reset_work();
+    int n = arrayLen(A);
+    if (which == 0) {
+        bubble_sort();
+    } else if (which == 1) {
+        insertion_sort();
+    } else if (which == 2) {
+        selection_sort();
+    } else if (which == 3) {
+        quick_sort(0, n - 1);
+    } else if (which == 4) {
+        merge_sort(0, n);
+    } else {
+        heap_sort();
+    }
+}
+
+func int binary_search(target:int) {
+    int lo = 0;
+    int hi = arrayLen(A) - 1;
+    while (lo <= hi) {
+        int mid = (lo + hi) / 2;
+        if (A[mid] == target) {
+            return mid;
+        }
+        if (A[mid] < target) {
+            lo = mid + 1;
+        } else {
+            hi = mid - 1;
+        }
+    }
+    return 0 - 1;
+}
+
+func int lower_bound(target:int) {
+    int lo = 0;
+    int hi = arrayLen(A);
+    while (lo < hi) {
+        int mid = (lo + hi) / 2;
+        if (A[mid] < target) {
+            lo = mid + 1;
+        } else {
+            hi = mid;
+        }
+    }
+    return lo;
+}
+
+func int upper_bound(target:int) {
+    int lo = 0;
+    int hi = arrayLen(A);
+    while (lo < hi) {
+        int mid = (lo + hi) / 2;
+        if (A[mid] <= target) {
+            lo = mid + 1;
+        } else {
+            hi = mid;
+        }
+    }
+    return lo;
+}
+
+func main() {
+    for (int kind = 0; kind <= 5; kind = kind + 1) {
+        load_dataset(kind);
+        int expected = 0;
+        for (int which = 0; which <= 5; which = which + 1) {
+            run_algorithm(which);
+            assert(is_sorted() == 1, "algorithm " + toString(which) + " left " + dataset_name(kind) + " unsorted");
+            if (which == 0) {
+                expected = checksum();
+            }
+            assert(checksum() == expected, "algorithms disagree on " + dataset_name(kind));
+        }
+        printf("%s: n=%d checksum=%d head=[%s] tail=[%s]\n": dataset_name(kind), arrayLen(A), expected, join_range(0, 5), join_range(arrayLen(A) - 5, 5));
+    }
+
+    /# searching on the sorted random dataset #/
+    load_dataset(0);
+    run_algorithm(3);
+    int found = 0;
+    for (int i = 0; i < arrayLen(A); i = i + 1) {
+        int idx = binary_search(A[i]);
+        assert(idx >= 0 && A[idx] == A[i], "binary search lost element " + toString(A[i]));
+        found = found + 1;
+    }
+    printf("binary search found all %d elements\n": found);
+    assert(binary_search(0 - 5) == 0 - 1, "negative value must be absent");
+    assert(binary_search(100000) == 0 - 1, "huge value must be absent");
+
+    int dupes = 0;
+    for (int v = 0; v < 200; v = v + 1) {
+        int c = upper_bound(v) - lower_bound(v);
+        if (c > 1) {
+            dupes = dupes + 1;
+        }
+    }
+    printf("values occurring more than once = %d\n": dupes);
+}

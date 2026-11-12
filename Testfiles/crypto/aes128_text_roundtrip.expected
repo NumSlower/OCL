@@ -1,0 +1,21 @@
+PASS all 95 printable ASCII characters round trip
+PASS pad(empty) = 16 x 0x10
+PASS pad(16 bytes) adds a whole block
+PASS pad(1 byte) = 15 x 0x0f
+PASS pad/unpad round trip for 0..40 bytes
+len=0 bytes=16 6431995611c0a30f53df1710cfc3eb76
+len=1 bytes=16 f1bb1a6ed7da37a87cb815264066a481
+len=15 bytes=16 b125246d75b98a8386828e11a9912080
+len=16 bytes=32 9bbb360da006de2611736ac3aad9a40c3455fcf80a1b64a89989dc421fb69ce1
+len=17 bytes=32 9bbb360da006de2611736ac3aad9a40c42cf377cf444cd0327f7af7d97382efc
+len=31 bytes=32 9bbb360da006de2611736ac3aad9a40ce315779d1b7d617a030e10c61cc834fe
+len=32 bytes=48 9bbb360da006de2611736ac3aad9a40c95ec3a0691c3de276b5ca14042a08c9538bfb703e34f0cf504be5d181ec62f2b
+len=33 bytes=48 9bbb360da006de2611736ac3aad9a40c95ec3a0691c3de276b5ca14042a08c955fe1c2083570c37bfd82a99f8c4fab1e
+len=47 bytes=48 9bbb360da006de2611736ac3aad9a40c95ec3a0691c3de276b5ca14042a08c95a40648b27a6147c1a97f3a687e9ceffb
+len=48 bytes=64 9bbb360da006de2611736ac3aad9a40c95ec3a0691c3de276b5ca14042a08c9592501107d0477f5fe234594476dfff3b4b103a6bcc025e7951e4d5eab97f8057
+len=49 bytes=64 9bbb360da006de2611736ac3aad9a40c95ec3a0691c3de276b5ca14042a08c9592501107d0477f5fe234594476dfff3b41bf06678156af5b1ea2d44d5015d9ea
+special bytes=64 2ec57e9bebf47c466f0d5eb5c027b099363e46d0385ac6d7a10eaf16b31fbc68fb3caa79b7413f101e71ea7638cef318468e4cd3a2c686dd48c15c1a1e60217c
+PASS deterministic for fixed key+IV
+PASS IV change propagates to every block
+PASS wrong key does not decrypt
+all AES text round-trip tests passed

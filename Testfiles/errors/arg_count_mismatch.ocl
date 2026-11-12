@@ -1,0 +1,6 @@
+/# Compile-time error: calling a function with the wrong number of arguments. #/
+func int add(a:int, b:int) {
+    return a + b;
+}
+print("this must not run");
+print(add(1));

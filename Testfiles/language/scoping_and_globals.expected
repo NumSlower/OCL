@@ -1,0 +1,7 @@
+BASE=10 DOUBLED=20
+COUNTER after 3 bumps: 3
+forward reference: 11
+scalar passed by value: original=5 returned=105
+frame_sum(4) = 100
+outer x=1;block x=2;inner x=3;block again x=2;outer again x=1;
+two loops reusing i and squared: 370

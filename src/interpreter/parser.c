@@ -452,8 +452,12 @@ static ASTNode *parse_for_init_var(Parser *p, SourceLocation loc) {
 static ASTNode *parse_for_init_let(Parser *p, SourceLocation loc) {
     Token n_tok = consume(p, TOKEN_IDENTIFIER, "Expected variable name");
     char *vname = dup_lexeme(&n_tok);
-    consume(p, TOKEN_COLON, "Expected ':' after variable name in for-loop initializer");
-    TypeNode *vtype = parse_type(p);
+    TypeNode *vtype;
+    if (match(p, TOKEN_COLON)) {
+        vtype = parse_type(p);
+    } else {
+        vtype = ast_create_type(TYPE_UNKNOWN);
+    }
 
     ExprNode *vinit = NULL;
     if (match(p, TOKEN_EQUAL)) {
@@ -513,12 +517,16 @@ static ASTNode *parse_statement(Parser *p) {
         return (ASTNode *)dn;
     }
 
-    /* Let name : Type = expr */
+    /* Let name : Type = expr   OR   Let name = expr  (type inferred) */
     if (match(p, TOKEN_LET)) {
         Token name_tok = consume(p, TOKEN_IDENTIFIER, "Expected variable name");
         char *name = dup_lexeme(&name_tok);
-        consume(p, TOKEN_COLON, "Expected ':' after variable name");
-        TypeNode *type = parse_type(p);
+        TypeNode *type;
+        if (match(p, TOKEN_COLON)) {
+            type = parse_type(p);
+        } else {
+            type = ast_create_type(TYPE_UNKNOWN);
+        }
         ExprNode *init = match(p, TOKEN_EQUAL) ? parse_expression(p) : NULL;
         match(p, TOKEN_SEMICOLON);
         return ast_create_var_decl(loc, name, type, init);
@@ -626,26 +634,54 @@ static ASTNode *parse_statement(Parser *p) {
     return (ASTNode *)expr;
 }
 
+static const char *intern_filename(const char *name);
+
 Parser *parser_create(Token *tokens, size_t token_count,
                        const char *filename, ErrorCollector *errors) {
     Parser *p = ocl_malloc(sizeof(Parser));
     p->tokens = tokens; p->token_count = token_count; p->current = 0;
-    p->filename = filename; p->errors = errors;
+    p->filename = intern_filename(filename); p->errors = errors;
     return p;
 }
 
 void parser_free(Parser *p) { ocl_free(p); }
 
+/* ── Stable filename pool ───────────────────────────────────────────
+   AST nodes keep SourceLocation.filename pointers for the lifetime of
+   the program (error messages, .ocx debug info). Imported files are
+   read into temporary buffers, so their names must be interned instead
+   of pointing at freed storage. The pool lives for the process.        */
+static char  **g_filename_pool     = NULL;
+static size_t  g_filename_count    = 0;
+static size_t  g_filename_capacity = 0;
+
+static const char *intern_filename(const char *name) {
+    if (!name) return NULL;
+    for (size_t i = 0; i < g_filename_count; i++)
+        if (!strcmp(g_filename_pool[i], name)) return g_filename_pool[i];
+
+    if (g_filename_count >= g_filename_capacity) {
+        g_filename_capacity = g_filename_capacity ? g_filename_capacity * 2 : 8;
+        g_filename_pool = ocl_realloc(g_filename_pool,
+                                      g_filename_capacity * sizeof(char *));
+    }
+    char *copy = ocl_strdup(name);
+    g_filename_pool[g_filename_count++] = copy;
+    return copy;
+}
+
 /* ── Import file resolution ─────────────────────────────────────────
    Search order:
      1. Same directory as the importing file
-     2. ./ocl_headers/
-     3. ./stdlib_headers/
-     4. Current working directory
+     2. <executable dir>/ocl_headers/
+     3. <executable dir>/stdlib_headers/
+     4. ./ocl_headers/
+     5. ./stdlib_headers/
+     6. Current working directory
    Extensions tried in order: as-is, .ocl, .sxh
 ─────────────────────────────────────────────────────────────────── */
 static char *find_import_file(const char *importing_file, const char *import_name) {
-    char bases[4][512];
+    char bases[6][512];
     int  nb = 0;
 
     if (importing_file) {
@@ -654,6 +690,12 @@ static char *find_import_file(const char *importing_file, const char *import_nam
         size_t dir_len = slash ? (size_t)(slash - importing_file + 1) : 0;
         if (dir_len + strlen(import_name) + 5 < 512)
             snprintf(bases[nb++], 512, "%.*s%s", (int)dir_len, importing_file, import_name);
+    }
+
+    const char *prog_dir = ocl_program_dir();
+    if (prog_dir && prog_dir[0]) {
+        snprintf(bases[nb++], 512, "%socl_headers/%s",    prog_dir, import_name);
+        snprintf(bases[nb++], 512, "%sstdlib_headers/%s", prog_dir, import_name);
     }
     snprintf(bases[nb++], 512, "ocl_headers/%s",    import_name);
     snprintf(bases[nb++], 512, "stdlib_headers/%s", import_name);
@@ -671,6 +713,24 @@ static char *find_import_file(const char *importing_file, const char *import_nam
         }
     }
     return NULL;
+}
+
+/* Headers that are part of the runtime itself. They are compiled in so
+   that no OCL program depends on a header file being present on disk. */
+static const char *builtin_import_source(const char *name) {
+    if (!name) return NULL;
+    if (strcmp(name, "CoreSX.sxh") && strcmp(name, "coresx.sxh"))
+        return NULL;
+    return
+        "/# CoreSX.sxh — built-in OCL core header #/\n"
+        "declare print:void;\n"
+        "declare printf:void;\n"
+        "declare input:String;\n"
+        "declare readLine:String;\n"
+        "declare exit:void;\n"
+        "declare assert:void;\n"
+        "declare timeNow:Int;\n"
+        "declare random:Int;\n";
 }
 
 static char *read_file_import(const char *path) {
@@ -734,15 +794,20 @@ ProgramNode *parser_parse(Parser *p) {
             ImportNode *imp = (ImportNode *)import_node;
 
             char *resolved = find_import_file(p->filename, imp->filename);
-            if (resolved) {
-                char *src = read_file_import(resolved);
+            const char *builtin = resolved ? NULL : builtin_import_source(imp->filename);
+            if (resolved || builtin) {
+                char *src = resolved ? read_file_import(resolved)
+                                     : ocl_strdup(builtin);
                 if (src) {
-                    Lexer       *sub_lex    = lexer_create(src, resolved);
+                    /* Keep the name alive: AST locations point at it. */
+                    const char *stable = intern_filename(resolved ? resolved
+                                                                  : imp->filename);
+                    Lexer       *sub_lex    = lexer_create(src, stable);
                     size_t       sub_count  = 0;
                     Token       *sub_tokens = lexer_tokenize_all(sub_lex, &sub_count);
                     lexer_free(sub_lex);
 
-                    Parser      *sub      = parser_create(sub_tokens, sub_count, resolved, p->errors);
+                    Parser      *sub      = parser_create(sub_tokens, sub_count, stable, p->errors);
                     ProgramNode *sub_prog = parser_parse(sub);
                     parser_free(sub);
                     tokens_free(sub_tokens, sub_count);

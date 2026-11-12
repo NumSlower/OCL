@@ -1,0 +1,5 @@
+/# Runtime error: reading past the end of an array must halt (arrayGet is the lenient variant). #/
+Let items = [1, 2, 3];
+print("before");
+print(items[3]);
+print("after - must never be printed");

@@ -1,0 +1,5 @@
+/# Runtime error: a negative array index must halt rather than read out of bounds. #/
+Let items = [1, 2, 3];
+print("before");
+print(items[0 - 1]);
+print("after - must never be printed");

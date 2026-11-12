@@ -1,0 +1,4 @@
+/# exit(n) terminates immediately with status n. #/
+print("before");
+exit(3);
+print("after - must never be printed");

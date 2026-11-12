@@ -1,0 +1,115 @@
+/#
+  AES-128 modes of operation against NIST SP 800-38A (appendix F, key
+  2b7e1516 28aed2a6 abf71588 09cf4f3c), plus structural properties:
+    - ECB leaks repeated blocks, CBC does not
+    - CBC bit-flip in ciphertext block n flips the same bit in plaintext block n+1
+    - CTR is its own inverse, handles partial blocks, carries across counter
+      bytes and wraps at 2^128
+#/
+Import <aes128.ocl>
+
+Let KEY = "2b7e151628aed2a6abf7158809cf4f3c";
+Let PLAIN = "6bc1bee22e409f96e93d7e117393172aae2d8a571e03ac9c9eb76fac45af8e5130c81c46a35ce411e5fbc1191a0a52eff69f2445df4f9b17ad2b417be66c3710";
+Let IV = "000102030405060708090a0b0c0d0e0f";
+Let CTR0 = "f0f1f2f3f4f5f6f7f8f9fafbfcfdfeff";
+
+func expect_str(name:string, got:string, want:string) {
+    assert(got == want, name + ": expected " + want + " but got " + got);
+    print("PASS " + name);
+}
+
+func nist_vectors() {
+    aes_load_key_hex(KEY);
+    string ecb = "3ad77bb40d7a3660a89ecaf32466ef97f5d3d58503b9699de785895a96fdbaaf43b1cd7f598ece23881b00e3ed0306887b0c785e27e8ad3f8223207104725dd4";
+    string cbc = "7649abac8119b246cee98e9b12e9197d5086cb9b507219ee95db113a917678b273bed6b8e3c1743b7116e69e222295163ff1caa1681fac09120eca307586e1a7";
+    string ctr = "874d6191b620e3261bef6864990db6ce9806f66b7970fdff8617187bb9fffdff5ae4df3edbd5d35e5b4f09020db03eab1e031dda2fbe03d1792170a0f3009cee";
+
+    expect_str("SP800-38A F.1.1 ECB-AES128 encrypt", aes_ecb_encrypt_hex(PLAIN), ecb);
+    expect_str("SP800-38A F.2.1 CBC-AES128 encrypt", aes_cbc_encrypt_hex(PLAIN, IV), cbc);
+    expect_str("SP800-38A F.2.2 CBC-AES128 decrypt", aes_cbc_decrypt_hex(cbc, IV), PLAIN);
+    expect_str("SP800-38A F.5.1 CTR-AES128 encrypt", aes_ctr_hex(PLAIN, CTR0), ctr);
+    expect_str("SP800-38A F.5.2 CTR-AES128 decrypt", aes_ctr_hex(ctr, CTR0), PLAIN);
+}
+
+func chaining_properties() {
+    aes_load_key_hex(KEY);
+    string block = "6bc1bee22e409f96e93d7e117393172a";
+    string three = block + block + block;
+    string ecb = aes_ecb_encrypt_hex(three);
+    string cbc = aes_cbc_encrypt_hex(three, IV);
+
+    assert(substr(ecb, 0, 32) == substr(ecb, 32, 32), "ECB: equal plaintext blocks must give equal ciphertext blocks");
+    assert(substr(ecb, 32, 32) == substr(ecb, 64, 32), "ECB: equal plaintext blocks must give equal ciphertext blocks");
+    print("PASS ECB repeats identical blocks");
+
+    assert(substr(cbc, 0, 32) != substr(cbc, 32, 32), "CBC: blocks 0 and 1 must differ");
+    assert(substr(cbc, 32, 32) != substr(cbc, 64, 32), "CBC: blocks 1 and 2 must differ");
+    assert(substr(cbc, 0, 32) != substr(cbc, 64, 32), "CBC: blocks 0 and 2 must differ");
+    print("PASS CBC hides identical blocks");
+
+    assert(aes_cbc_decrypt_hex(cbc, IV) == three, "CBC round trip failed");
+    print("PASS CBC three-block round trip");
+}
+
+func string flip_first_nibble(h:string) {
+    int d = aes_hexval(substr(h, 0, 1));
+    int flipped = AES_XORT[d * 16 + 1];
+    return substr(aes_byte_hex(flipped * 16), 0, 1) + substr(h, 1, strLen(h) - 1);
+}
+
+func bit_flip_propagation() {
+    aes_load_key_hex(KEY);
+    string cipher = aes_cbc_encrypt_hex(PLAIN, IV);
+    /# flip one bit in the first nibble of ciphertext block 0 #/
+    string tampered = flip_first_nibble(cipher);
+    assert(tampered != cipher, "tampering must change the ciphertext");
+    string got = aes_cbc_decrypt_hex(tampered, IV);
+
+    /# block 0 is destroyed, block 1 differs only in byte 0 (high nibble flipped by 1) #/
+    assert(substr(got, 0, 32) != substr(PLAIN, 0, 32), "block 0 should be garbled");
+    assert(substr(got, 32, 32) != substr(PLAIN, 32, 32), "block 1 should differ");
+    assert(substr(got, 34, 30) == substr(PLAIN, 34, 30), "block 1 bytes 1..15 must be unchanged");
+    int b0 = aes_hexbyte(got, 16);
+    int p0 = aes_hexbyte(PLAIN, 16);
+    assert(aes_xor(b0, p0) == 16, "block 1 byte 0 must differ by exactly the flipped bit");
+    /# blocks 2 and 3 are untouched #/
+    assert(substr(got, 64, 64) == substr(PLAIN, 64, 64), "blocks 2 and 3 must be unaffected");
+    print("PASS CBC bit-flip garbles block n and flips one bit of block n+1 only");
+}
+
+func ctr_properties() {
+    aes_load_key_hex(KEY);
+    string full = aes_ctr_hex(PLAIN, CTR0);
+
+    /# partial block: a 20-byte prefix encrypts to the 20-byte prefix of the full stream #/
+    string prefix = aes_ctr_hex(substr(PLAIN, 0, 40), CTR0);
+    expect_str("CTR 20-byte prefix equals prefix of full stream", prefix, substr(full, 0, 40));
+
+    /# single byte #/
+    expect_str("CTR single byte", aes_ctr_hex("6b", CTR0), "87");
+
+    /# empty input #/
+    expect_str("CTR empty input", aes_ctr_hex("", CTR0), "");
+
+    /# carry and wrap, 48 bytes of 7*i mod 256 #/
+    string data = "00070e151c232a31383f464d545b626970777e858c939aa1a8afb6bdc4cbd2d9e0e7eef5fc030a11181f262d343b4249";
+    expect_str("CTR counter carry across 1 byte", aes_ctr_hex(data, "000000000000000000000000000000ff"),
+        "a18b8ef6a519ace248f0a9049a19f9bcd0044ba4726fd64383b6376e28c62bc5621383854f71b3a33ec4384c76cad8c2");
+    expect_str("CTR counter carry across 2 bytes", aes_ctr_hex(data, "0000000000000000000000000000ffff"),
+        "4aa9e0fb8025472690fa4d40f36887288aa514b77f9f55c3056523d75c737d927f32714486cd298d163f5396e2ec65f2");
+    expect_str("CTR counter wraps at 2^128", aes_ctr_hex(data, "ffffffffffffffffffffffffffffffff"),
+        "8af588145ed4acc5310f3a576b25c8c50d801589962b031296ed46fa7dd086b6b7f593b5c8b2b4aeb6eb4094f3492d8f");
+
+    /# involution on odd lengths #/
+    string odd = substr(data, 0, 62);
+    expect_str("CTR involution (31 bytes)", aes_ctr_hex(aes_ctr_hex(odd, CTR0), CTR0), odd);
+}
+
+func main() {
+    aes_init();
+    nist_vectors();
+    chaining_properties();
+    bit_flip_propagation();
+    ctr_properties();
+    print("all AES-128 mode tests passed");
+}

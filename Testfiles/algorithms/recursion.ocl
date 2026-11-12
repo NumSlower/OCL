@@ -1,0 +1,191 @@
+/#
+  Recursion workout: classic recursive definitions, mutual recursion with
+  forward references, backtracking (N-Queens), and string-building recursion.
+  All integer results stay inside 64 bits.
+#/
+Let QUEEN_COLS = arrayNew(10);
+Let QUEEN_SOLUTIONS = 0;
+Let HANOI_MOVES = 0;
+Let MEMO = arrayNew(91);
+
+func int factorial(n:int) {
+    if (n <= 1) {
+        return 1;
+    }
+    return n * factorial(n - 1);
+}
+
+func int fib(n:int) {
+    if (n < 2) {
+        return n;
+    }
+    return fib(n - 1) + fib(n - 2);
+}
+
+func init_memo() {
+    for (int i = 0; i <= 90; i = i + 1) {
+        MEMO[i] = 0;
+    }
+}
+
+func int fib_memo(n:int) {
+    if (n < 2) {
+        return n;
+    }
+    if (MEMO[n] != 0) {
+        return MEMO[n];
+    }
+    MEMO[n] = fib_memo(n - 1) + fib_memo(n - 2);
+    return MEMO[n];
+}
+
+func int gcd(a:int, b:int) {
+    if (b == 0) {
+        return a;
+    }
+    return gcd(b, a % b);
+}
+
+func int ackermann(m:int, n:int) {
+    if (m == 0) {
+        return n + 1;
+    }
+    if (n == 0) {
+        return ackermann(m - 1, 1);
+    }
+    return ackermann(m - 1, ackermann(m, n - 1));
+}
+
+func int is_even(n:int) {
+    if (n == 0) {
+        return 1;
+    }
+    return is_odd(n - 1);
+}
+
+func int is_odd(n:int) {
+    if (n == 0) {
+        return 0;
+    }
+    return is_even(n - 1);
+}
+
+func int sum_to(n:int) {
+    if (n == 0) {
+        return 0;
+    }
+    return n + sum_to(n - 1);
+}
+
+func int pow_mod(base:int, exponent:int, modulus:int) {
+    if (exponent == 0) {
+        return 1 % modulus;
+    }
+    int half = pow_mod(base, exponent / 2, modulus);
+    int sq = half * half % modulus;
+    if (exponent % 2 == 1) {
+        return sq * (base % modulus) % modulus;
+    }
+    return sq;
+}
+
+func int collatz_steps(n:int) {
+    if (n == 1) {
+        return 0;
+    }
+    if (n % 2 == 0) {
+        return 1 + collatz_steps(n / 2);
+    }
+    return 1 + collatz_steps(3 * n + 1);
+}
+
+func int digit_sum(n:int) {
+    if (n < 10) {
+        return n;
+    }
+    return n % 10 + digit_sum(n / 10);
+}
+
+func string to_base(n:int, base:int) {
+    if (n < base) {
+        return substr("0123456789abcdef", n, 1);
+    }
+    return to_base(n / base, base) + substr("0123456789abcdef", n % base, 1);
+}
+
+func string hanoi(n:int, src:string, dst:string, via:string) {
+    HANOI_MOVES = HANOI_MOVES + 1;
+    if (n == 0) {
+        return "";
+    }
+    string left = hanoi(n - 1, src, via, dst);
+    string move = src + dst;
+    string right = hanoi(n - 1, via, dst, src);
+    string res = left;
+    if (res != "") { res = res + " "; }
+    res = res + move;
+    if (right != "") { res = res + " " + right; }
+    return res;
+}
+
+func int queen_safe(row:int, col:int) {
+    for (int r = 0; r < row; r = r + 1) {
+        int c = QUEEN_COLS[r];
+        if (c == col) {
+            return 0;
+        }
+        if (c - col == r - row) {
+            return 0;
+        }
+        if (c - col == row - r) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+func place_queens(row:int, n:int) {
+    if (row == n) {
+        QUEEN_SOLUTIONS = QUEEN_SOLUTIONS + 1;
+    } else {
+        for (int col = 0; col < n; col = col + 1) {
+            if (queen_safe(row, col) == 1) {
+                QUEEN_COLS[row] = col;
+                place_queens(row + 1, n);
+            }
+        }
+    }
+}
+
+func int count_queens(n:int) {
+    QUEEN_SOLUTIONS = 0;
+    place_queens(0, n);
+    return QUEEN_SOLUTIONS;
+}
+
+func main() {
+    init_memo();
+    printf("20! = %d\n": factorial(20));
+    printf("fib(20) = %d\n": fib(20));
+    printf("fib_memo(90) = %d\n": fib_memo(90));
+    assert(fib_memo(30) == fib(30), "memoised and naive Fibonacci must agree");
+    printf("gcd(1071, 462) = %d\n": gcd(1071, 462));
+    printf("gcd(2^40, 6^20) = %d\n": gcd(1099511627776, 3656158440062976));
+    printf("ackermann(2, 3) = %d\n": ackermann(2, 3));
+    printf("ackermann(3, 3) = %d\n": ackermann(3, 3));
+    printf("is_even(10) = %d, is_odd(7) = %d, is_even(7) = %d\n": is_even(10), is_odd(7), is_even(7));
+    printf("sum_to(1000) = %d\n": sum_to(1000));
+    printf("3^200 mod 1000007 = %d\n": pow_mod(3, 200, 1000007));
+    printf("2^62 mod 1000000007 = %d\n": pow_mod(2, 62, 1000000007));
+    printf("collatz(27) = %d steps\n": collatz_steps(27));
+    printf("digit_sum(2^32) = %d\n": digit_sum(4294967296));
+    printf("37 in binary = %s, 255 in hex = %s, 255 in octal = %s\n": to_base(37, 2), to_base(255, 16), to_base(255, 8));
+    print("hanoi(3): " + hanoi(3, "A", "B", "C"));
+    HANOI_MOVES = 0;
+    hanoi(10, "A", "B", "C");
+    printf("hanoi(10) made %d calls\n": HANOI_MOVES);
+    for (int n = 4; n <= 8; n = n + 1) {
+        printf("%d-queens has %d solutions\n": n, count_queens(n));
+    }
+    assert(count_queens(8) == 92, "8-queens must have 92 solutions");
+}

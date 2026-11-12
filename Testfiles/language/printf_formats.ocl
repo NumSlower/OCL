@@ -1,0 +1,18 @@
+/#
+  print and printf formatting.  Both the documented ':' separator and the
+  ',' form of printf arguments are exercised.
+#/
+printf("plain text, no arguments\n");
+printf("%d %i\n": 42, 43);
+printf("%s and %s\n": "left", "right");
+printf("%b %b\n": true, false);
+printf("percent sign: 100%%\n");
+printf("comma form: %d + %d = %d\n", 1, 2, 3);
+printf("chars: %c%c%c\n": "abc"[0], "abc"[1], 'Z');
+printf("mixed: %s=%d (%b)\n": "answer", 42, true);
+print(1, 2, 3);
+print("a", "b");
+print("single");
+Let ch = "hello"[1];
+print(ch);
+print(typeOf(ch));

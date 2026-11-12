@@ -1,0 +1,3 @@
+/# Compile-time error: break outside of a loop. #/
+print("this must not run");
+break;

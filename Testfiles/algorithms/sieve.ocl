@@ -1,0 +1,151 @@
+/#
+  Sieve of Eratosthenes plus number-theory built on top of it: prime counting,
+  twin primes, prime gaps, Goldbach decompositions and prime factorisation.
+  Exercises nested loops, global arrays, string building and integer maths.
+#/
+Let LIMIT = 200;
+Let COMPOSITE = arrayNew(201);
+
+func sieve() {
+    for (int i = 0; i <= LIMIT; i = i + 1) {
+        COMPOSITE[i] = 0;
+    }
+    COMPOSITE[0] = 1;
+    COMPOSITE[1] = 1;
+    for (int p = 2; p * p <= LIMIT; p = p + 1) {
+        if (COMPOSITE[p] == 0) {
+            for (int m = p * p; m <= LIMIT; m = m + p) {
+                COMPOSITE[m] = 1;
+            }
+        }
+    }
+}
+
+func bool is_prime(n:int) {
+    return COMPOSITE[n] == 0;
+}
+
+func int count_primes(upto:int) {
+    int count = 0;
+    for (int i = 2; i <= upto; i = i + 1) {
+        if (is_prime(i)) {
+            count = count + 1;
+        }
+    }
+    return count;
+}
+
+func int sum_primes(upto:int) {
+    int total = 0;
+    for (int i = 2; i <= upto; i = i + 1) {
+        if (is_prime(i)) {
+            total = total + i;
+        }
+    }
+    return total;
+}
+
+func string primes_up_to(upto:int) {
+    string res = "";
+    for (int i = 2; i <= upto; i = i + 1) {
+        if (is_prime(i)) {
+            if (res != "") {
+                res = res + " ";
+            }
+            res = res + toString(i);
+        }
+    }
+    return res;
+}
+
+func int twin_prime_pairs(upto:int) {
+    int count = 0;
+    for (int i = 3; i + 2 <= upto; i = i + 1) {
+        if (is_prime(i) && is_prime(i + 2)) {
+            count = count + 1;
+        }
+    }
+    return count;
+}
+
+func int largest_gap(upto:int) {
+    int best = 0;
+    int last = 2;
+    for (int i = 3; i <= upto; i = i + 1) {
+        if (is_prime(i)) {
+            if (i - last > best) {
+                best = i - last;
+            }
+            last = i;
+        }
+    }
+    return best;
+}
+
+func int goldbach_pairs(n:int) {
+    int count = 0;
+    for (int p = 2; p <= n / 2; p = p + 1) {
+        if (is_prime(p) && is_prime(n - p)) {
+            count = count + 1;
+        }
+    }
+    return count;
+}
+
+func string factor_string(n:int) {
+    string res = "";
+    int m = n;
+    int p = 2;
+    while (p * p <= m) {
+        int e = 0;
+        while (m % p == 0) {
+            m = m / p;
+            e = e + 1;
+        }
+        if (e > 0) {
+            if (res != "") {
+                res = res + " * ";
+            }
+            if (e == 1) {
+                res = res + toString(p);
+            } else {
+                res = res + toString(p) + "^" + toString(e);
+            }
+        }
+        p = p + 1;
+    }
+    if (m > 1) {
+        if (res != "") {
+            res = res + " * ";
+        }
+        res = res + toString(m);
+    }
+    return res;
+}
+
+func main() {
+    sieve();
+    print(primes_up_to(60));
+    printf("pi(100) = %d\n": count_primes(100));
+    printf("pi(200) = %d\n": count_primes(200));
+    printf("sum of primes below 100 = %d\n": sum_primes(100));
+    printf("twin prime pairs up to 100 = %d\n": twin_prime_pairs(100));
+    printf("largest prime gap up to 200 = %d\n": largest_gap(200));
+    printf("Goldbach partitions of 100 = %d\n": goldbach_pairs(100));
+
+    /# Goldbach holds for every even number from 4 to 200 #/
+    for (int n = 4; n <= 200; n = n + 2) {
+        assert(goldbach_pairs(n) > 0, "Goldbach counter-example at " + toString(n));
+    }
+    print("Goldbach verified for all even n in 4..200");
+
+    assert(count_primes(100) == 25, "pi(100) must be 25");
+    assert(count_primes(200) == 46, "pi(200) must be 46");
+
+    print("360 = " + factor_string(360));
+    print("97 = " + factor_string(97));
+    print("1001 = " + factor_string(1001));
+    print("65536 = " + factor_string(65536));
+    print("999999 = " + factor_string(999999));
+    print("600851475143 = " + factor_string(600851475143));
+}

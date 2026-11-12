@@ -120,6 +120,11 @@ void  *ocl_realloc(void *ptr, size_t size);
 void   ocl_free(void *ptr);
 char  *ocl_strdup(const char *s);
 
+/* Directory of the running executable (with trailing separator), or "".
+ * Set once from main() so bundled headers can be found regardless of cwd. */
+void        ocl_set_program_path(const char *argv0);
+const char *ocl_program_dir(void);
+
 /* Convenience: free and zero a pointer. */
 #define OCL_FREE(p) do { ocl_free(p); (p) = NULL; } while (0)
 

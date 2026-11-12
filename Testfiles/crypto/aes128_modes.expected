@@ -1,0 +1,17 @@
+PASS SP800-38A F.1.1 ECB-AES128 encrypt
+PASS SP800-38A F.2.1 CBC-AES128 encrypt
+PASS SP800-38A F.2.2 CBC-AES128 decrypt
+PASS SP800-38A F.5.1 CTR-AES128 encrypt
+PASS SP800-38A F.5.2 CTR-AES128 decrypt
+PASS ECB repeats identical blocks
+PASS CBC hides identical blocks
+PASS CBC three-block round trip
+PASS CBC bit-flip garbles block n and flips one bit of block n+1 only
+PASS CTR 20-byte prefix equals prefix of full stream
+PASS CTR single byte
+PASS CTR empty input
+PASS CTR counter carry across 1 byte
+PASS CTR counter carry across 2 bytes
+PASS CTR counter wraps at 2^128
+PASS CTR involution (31 bytes)
+all AES-128 mode tests passed

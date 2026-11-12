@@ -311,10 +311,14 @@ bool type_checker_check(TypeChecker *tc, ProgramNode *program) {
             VarDeclNode *v = (VarDeclNode *)n;
             if (!symbol_table_has_in_current_scope(tc->symbol_table, v->name))
                 symbol_table_insert(tc->symbol_table, v->name, v->type, false, false);
+            else
+                tc_error(tc, v->base.location, "Variable '%s' already declared in this scope", v->name);
         } else if (n->type == AST_DECLARE) {
             DeclareNode *d = (DeclareNode *)n;
             if (!symbol_table_has_in_current_scope(tc->symbol_table, d->name))
                 symbol_table_insert(tc->symbol_table, d->name, d->type, false, false);
+            else
+                tc_error(tc, d->base.location, "Variable '%s' already declared in this scope", d->name);
         }
     }
 

@@ -1,0 +1,24 @@
+A x B
+  [30 24 18]
+  [84 69 54]
+  [138 114 90]
+A x I
+  [1 2 3]
+  [4 5 6]
+  [7 8 9]
+transpose(A) x A
+  [66 78 90]
+  [78 93 108]
+  [90 108 126]
+transpose(A)
+  [1 4 7]
+  [2 5 8]
+  [3 6 9]
+trace(A) = 15
+det(MAGIC) = -360
+det(MAGIC, rows swapped) = 360
+MAGIC is a magic square: 1
+MA[1][0] after writing through an alias = 400
+F(10) = 55
+F(50) = 12586269025
+F(90) = 2880067194370816120

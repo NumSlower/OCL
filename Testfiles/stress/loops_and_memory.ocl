@@ -1,0 +1,68 @@
+/#
+  Volume tests: long loops, big arrays, nested arrays, large strings.
+  Sizes are modest so the suite stays fast under AddressSanitizer.
+#/
+func main() {
+    int total = 0;
+    int i = 1;
+    while (i <= 100000) {
+        total = total + i;
+        i = i + 1;
+    }
+    printf("sum 1..100000 = %d\n": total);
+
+    int hits = 0;
+    for (int a = 1; a <= 200; a = a + 1) {
+        for (int b = 1; b <= 200; b = b + 1) {
+            if ((a * b) % 7 == 0) {
+                hits = hits + 1;
+            }
+        }
+    }
+    printf("pairs below 200x200 with product divisible by 7: %d\n": hits);
+
+    Let big = [];
+    for (int k = 0; k < 5000; k = k + 1) {
+        arrayPush(big, k * k % 1009);
+    }
+    int acc = 0;
+    for (int m = 0; m < arrayLen(big); m = m + 1) {
+        acc = acc + big[m];
+    }
+    printf("5000-element array: length %d, sum %d\n": arrayLen(big), acc);
+    while (arrayLen(big) > 1) {
+        arrayPop(big);
+    }
+    printf("after popping down: length %d, only element %d\n": arrayLen(big), big[0]);
+
+    Let grid = [];
+    for (int r = 0; r < 40; r = r + 1) {
+        Let row = [];
+        for (int c = 0; c < 40; c = c + 1) {
+            arrayPush(row, r * c);
+        }
+        arrayPush(grid, row);
+    }
+    int grid_sum = 0;
+    for (int r2 = 0; r2 < 40; r2 = r2 + 1) {
+        Let line = grid[r2];
+        for (int c2 = 0; c2 < 40; c2 = c2 + 1) {
+            grid_sum = grid_sum + line[c2];
+        }
+    }
+    printf("40x40 multiplication table sum = %d\n": grid_sum);
+
+    string text = "";
+    for (int s = 0; s < 3000; s = s + 1) {
+        text = text + "x";
+    }
+    printf("3000-character string: length %d\n": strLen(text));
+
+    /# many short-lived strings: exercises the interpreter's string bookkeeping #/
+    int checksum = 0;
+    for (int t = 0; t < 2000; t = t + 1) {
+        string tmp = "item-" + toString(t);
+        checksum = checksum + strLen(tmp);
+    }
+    printf("2000 temporary strings, total length %d\n": checksum);
+}

@@ -1,0 +1,185 @@
+/#
+  Matrices as arrays of arrays: chained indexing, rows as shared references,
+  multiplication, transpose, determinant, magic-square validation and a 2x2
+  Fibonacci matrix raised to a power by repeated squaring.
+  Rows are mutated through a local alias (Let row = M[i]) which also checks
+  that arrays are reference types.
+#/
+Let MA = [[1, 2, 3], [4, 5, 6], [7, 8, 9]];
+Let MB = [[9, 8, 7], [6, 5, 4], [3, 2, 1]];
+Let ID = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
+Let MAGIC = [[2, 7, 6], [9, 5, 1], [4, 3, 8]];
+Let MR = [];
+
+func clear_result() {
+    while (arrayLen(MR) > 0) {
+        arrayPop(MR);
+    }
+}
+
+func string row_string(row_index:int) {
+    string res = "[";
+    for (int j = 0; j < 3; j = j + 1) {
+        if (j > 0) {
+            res = res + " ";
+        }
+        res = res + toString(MR[row_index][j]);
+    }
+    return res + "]";
+}
+
+func print_result(label:string) {
+    print(label);
+    for (int i = 0; i < arrayLen(MR); i = i + 1) {
+        print("  " + row_string(i));
+    }
+}
+
+func multiply(first:int, second:int) {
+    /# first/second select operands: 0=MA 1=MB 2=ID 3=transpose(MA) #/
+    clear_result();
+    for (int i = 0; i < 3; i = i + 1) {
+        Let row = [];
+        for (int j = 0; j < 3; j = j + 1) {
+            int acc = 0;
+            for (int k = 0; k < 3; k = k + 1) {
+                acc = acc + operand(first, i, k) * operand(second, k, j);
+            }
+            arrayPush(row, acc);
+        }
+        arrayPush(MR, row);
+    }
+}
+
+func int operand(which:int, r:int, c:int) {
+    if (which == 0) {
+        return MA[r][c];
+    }
+    if (which == 1) {
+        return MB[r][c];
+    }
+    if (which == 2) {
+        return ID[r][c];
+    }
+    return MA[c][r];
+}
+
+func transpose_a() {
+    clear_result();
+    for (int i = 0; i < 3; i = i + 1) {
+        Let row = [];
+        for (int j = 0; j < 3; j = j + 1) {
+            arrayPush(row, MA[j][i]);
+        }
+        arrayPush(MR, row);
+    }
+}
+
+func int trace_a() {
+    int t = 0;
+    for (int i = 0; i < 3; i = i + 1) {
+        t = t + MA[i][i];
+    }
+    return t;
+}
+
+func int determinant3(r0:int, r1:int, r2:int) {
+    /# determinant of the 3x3 matrix MAGIC-like data selected by a flag; here: rows of MAGIC permuted #/
+    int a = MAGIC[r0][0];
+    int b = MAGIC[r0][1];
+    int c = MAGIC[r0][2];
+    int d = MAGIC[r1][0];
+    int e = MAGIC[r1][1];
+    int f = MAGIC[r1][2];
+    int g = MAGIC[r2][0];
+    int h = MAGIC[r2][1];
+    int i = MAGIC[r2][2];
+    return a * (e * i - f * h) - b * (d * i - f * g) + c * (d * h - e * g);
+}
+
+func int is_magic() {
+    int target = 0;
+    for (int j = 0; j < 3; j = j + 1) {
+        target = target + MAGIC[0][j];
+    }
+    for (int i = 0; i < 3; i = i + 1) {
+        int rowsum = 0;
+        int colsum = 0;
+        for (int j = 0; j < 3; j = j + 1) {
+            rowsum = rowsum + MAGIC[i][j];
+            colsum = colsum + MAGIC[j][i];
+        }
+        if (rowsum != target || colsum != target) {
+            return 0;
+        }
+    }
+    int d1 = MAGIC[0][0] + MAGIC[1][1] + MAGIC[2][2];
+    int d2 = MAGIC[0][2] + MAGIC[1][1] + MAGIC[2][0];
+    if (d1 != target || d2 != target) {
+        return 0;
+    }
+    return 1;
+}
+
+func int fib_by_matrix(n:int) {
+    /# [[1,1],[1,0]]^n = [[F(n+1),F(n)],[F(n),F(n-1)]] by repeated squaring #/
+    int ra = 1;
+    int rb = 0;
+    int rc = 0;
+    int rd = 1;
+    int ba = 1;
+    int bb = 1;
+    int bc = 1;
+    int bd = 0;
+    int e = n;
+    while (e > 0) {
+        if (e % 2 == 1) {
+            int na = ra * ba + rb * bc;
+            int nb = ra * bb + rb * bd;
+            int nc = rc * ba + rd * bc;
+            int nd = rc * bb + rd * bd;
+            ra = na;
+            rb = nb;
+            rc = nc;
+            rd = nd;
+        }
+        int sa = ba * ba + bb * bc;
+        int sb = ba * bb + bb * bd;
+        int sc = bc * ba + bd * bc;
+        int sd = bc * bb + bd * bd;
+        ba = sa;
+        bb = sb;
+        bc = sc;
+        bd = sd;
+        e = e / 2;
+    }
+    return rb;
+}
+
+func main() {
+    multiply(0, 1);
+    print_result("A x B");
+    multiply(0, 2);
+    print_result("A x I");
+    multiply(3, 0);
+    print_result("transpose(A) x A");
+    transpose_a();
+    print_result("transpose(A)");
+    printf("trace(A) = %d\n": trace_a());
+    printf("det(MAGIC) = %d\n": determinant3(0, 1, 2));
+    printf("det(MAGIC, rows swapped) = %d\n": determinant3(1, 0, 2));
+    printf("MAGIC is a magic square: %d\n": is_magic());
+
+    /# reference semantics: a row alias sees later writes #/
+    Let alias = MA[1];
+    alias[0] = 400;
+    printf("MA[1][0] after writing through an alias = %d\n": MA[1][0]);
+    alias[0] = 4;
+    assert(MA[1][0] == 4, "write through the alias must be visible in the matrix");
+
+    printf("F(10) = %d\n": fib_by_matrix(10));
+    printf("F(50) = %d\n": fib_by_matrix(50));
+    printf("F(90) = %d\n": fib_by_matrix(90));
+    assert(fib_by_matrix(1) == 1, "F(1)");
+    assert(fib_by_matrix(0) == 0, "F(0)");
+}

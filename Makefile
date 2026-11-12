@@ -57,6 +57,8 @@ CFLAGS_RELEASE := $(CFLAGS_COMMON) -O2 -DNDEBUG
 
 LDFLAGS        := -lm
 LDFLAGS_DEBUG  := $(LDFLAGS) $(SAN_FLAGS)
+CFLAGS         := $(CFLAGS_DEBUG)
+LFLAGS         := $(LDFLAGS_DEBUG)
 
 # ── Default target ────────────────────────────────────────────────────────────
 .PHONY: all
@@ -111,13 +113,31 @@ test: all
 	for f in $(TEST_DIR)/*.ocl $(TEST_DIR)/*/*.ocl; do \
 	    [ -f "$$f" ] || continue; \
 	    expected="$${f%.ocl}.expected"; \
+	    exitcode_file="$${f%.ocl}.exitcode"; \
 	    if [ -f "$$expected" ]; then \
-	        actual=$$(./$(TARGET) "$$f" 2>&1); \
-	        if [ "$$actual" = "$$(cat $$expected)" ]; then \
+	        actual=$$(./$(TARGET) "$$f" 2>/dev/null); \
+	        status=$$?; \
+	        expected_output="$$(cat "$$expected")"; \
+	        matched=1; \
+	        if [ "$$actual" != "$$expected_output" ]; then \
+	            matched=0; \
+	        fi; \
+	        if [ -f "$$exitcode_file" ]; then \
+	            expected_exit=$$(cat "$$exitcode_file"); \
+	            if [ "$$status" -ne "$$expected_exit" ]; then \
+	                matched=0; \
+	            fi; \
+	        else \
+	            case "$$f" in \
+	                */errors/*) if [ "$$status" -eq 0 ]; then matched=0; fi ;; \
+	                *)          if [ "$$status" -ne 0 ]; then matched=0; fi ;; \
+	            esac; \
+	        fi; \
+	        if [ $$matched -eq 1 ]; then \
 	            echo "  PASS  $$f"; pass=$$((pass+1)); \
 	        else \
 	            echo "  FAIL  $$f"; \
-	            echo "    expected: $$(cat $$expected)"; \
+	            echo "    expected: $$expected_output"; \
 	            echo "    actual:   $$actual"; \
 	            fail=$$((fail+1)); \
 	        fi; \

@@ -1,7 +1,7 @@
 # OCL Language Reference
 
 > **Version:** beta 0.6.0  
-> OCL is a statically-scoped, bytecode-compiled scripting language with a C-like syntax and a set of built-in functions for common tasks. This document is the complete reference for the language as it is currently implemented.
+> OCL is a statically-scoped, language with a C-like syntax and a set of built-in functions for common tasks. This document is the complete reference for the language as it is currently implemented.
 
 ---
 
@@ -412,15 +412,17 @@ Import <CoreSX.sxh>
 The parser searches for the named file in the following locations (in order):
 
 1. Same directory as the importing file
-2. `ocl_headers/<filename>`
-3. `stdlib_headers/<filename>`
-4. The current working directory
+2. `ocl_headers/<filename>` next to the `ocl` executable
+3. `stdlib_headers/<filename>` next to the `ocl` executable
+4. `ocl_headers/<filename>` in the current directory
+5. `stdlib_headers/<filename>` in the current directory
+6. The current working directory
 
 Extensions tried: exact name, then `.ocl`, then `.sxh`.
 
 If the file is found, it is lexed and parsed in-place — its top-level declarations (functions, variables) are merged into the current program as if they had been written there. If the file is **not** found, the interpreter emits a parse error and halts.
 
-> **Note:** `CoreSX.sxh` is a standard header that declares `printf`. Since `printf` is already a built-in, importing it is optional.
+> **Note:** `CoreSX.sxh` is built into the runtime. `Import <CoreSX.sxh>` always succeeds, even when no header file is present on disk.
 
 ---
 

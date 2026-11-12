@@ -117,16 +117,20 @@ static void builtin_substr(VM *vm, int argc) {
     size_t      slen = strlen(src);
     int64_t     start  = to_int64(args[1]);
     int64_t     length = (argc >= 3) ? to_int64(args[2]) : (int64_t)slen;
-    free_args(args, argc);
 
     if (start  < 0)      start  = 0;
     if (length < 0)      length = 0;
-    if ((size_t)start >= slen) { vm_push(vm, value_string(ocl_strdup(""))); return; }
+    if ((size_t)start >= slen) {
+        free_args(args, argc);
+        vm_push(vm, value_string(ocl_strdup("")));
+        return;
+    }
     if ((size_t)(start + length) > slen) length = (int64_t)(slen - (size_t)start);
 
     char *result = ocl_malloc((size_t)length + 1);
     memcpy(result, src + start, (size_t)length);
     result[length] = '\0';
+    free_args(args, argc);
     vm_push(vm, value_string(result));
 }
 
@@ -243,9 +247,10 @@ static void builtin_strsplit(VM *vm, int argc) {
                         ? args[0].data.string_val : "";
     const char *delim = (args[1].type == VALUE_STRING && args[1].data.string_val)
                         ? args[1].data.string_val : "";
-    free_args(args, argc);
     if (!delim || delim[0] == '\0') {
-        vm_push(vm, value_int((int64_t)strlen(str)));
+        int64_t len = (int64_t)strlen(str);
+        free_args(args, argc);
+        vm_push(vm, value_int(len));
         return;
     }
     int64_t count = 0;
@@ -253,6 +258,7 @@ static void builtin_strsplit(VM *vm, int argc) {
     const char *cur = str, *found_ptr;
     while ((found_ptr = strstr(cur, delim)) != NULL) { count++; cur = found_ptr + dlen; }
     if (str[0] != '\0') count++;
+    free_args(args, argc);
     vm_push(vm, value_int(count));
 }
 
@@ -416,7 +422,7 @@ static void builtin_tobool(VM *vm, int argc) {
 static void builtin_typeof(VM *vm, int argc) {
     Value *args = pop_args(vm, argc);
     REQUIRE_ARGS(vm, args, argc, 1, "typeOf");
-    const char *name = value_type_name(args[0].type);
+    const char *name = (args[0].type == VALUE_NULL) ? "null" : value_type_name(args[0].type);
     char *dup = ocl_strdup(name);
     free_args(args, argc);
     vm_push(vm, value_string(dup));
@@ -613,8 +619,12 @@ static void builtin_array_set(VM *vm, int argc) {
 static void builtin_array_len(VM *vm, int argc) {
     Value *args = pop_args(vm, argc);
     REQUIRE_ARGS(vm, args, argc, 1, "arrayLen");
-    int64_t len = (args[0].type == VALUE_ARRAY && args[0].data.array_val)
-                  ? (int64_t)args[0].data.array_val->length : 0;
+    int64_t len = 0;
+    if (args[0].type == VALUE_ARRAY && args[0].data.array_val) {
+        len = (int64_t)args[0].data.array_val->length;
+    } else if (args[0].type == VALUE_STRING && args[0].data.string_val) {
+        len = (int64_t)strlen(args[0].data.string_val);
+    }
     free_args(args, argc);
     vm_push(vm, value_int(len));
 }

@@ -1,0 +1,4 @@
+/# Compile-time error: re-declaring a variable in the same scope. #/
+print("this must not run");
+int counter = 1;
+int counter = 2;

@@ -1,0 +1,88 @@
+/#
+  Variable lifetime and visibility: global initialisers run before main,
+  globals are shared by all functions, forward references to functions,
+  block shadowing, per-call local frames in recursion, pass-by-value for
+  scalars.
+#/
+Let BASE = 10;
+Let DOUBLED = BASE * 2;
+Let COUNTER = 0;
+Let LOG = "";
+
+func bump() {
+    COUNTER = COUNTER + 1;
+}
+
+func note(s:string) {
+    LOG = LOG + s + ";";
+}
+
+func int uses_later_function() {
+    return later_defined(5) + 1;
+}
+
+func int later_defined(x:int) {
+    return x * 2;
+}
+
+func int mutate_parameter(v:int) {
+    v = v + 100;
+    return v;
+}
+
+func int frame_sum(n:int) {
+    int local = n * 10;
+    if (n == 0) {
+        return local;
+    }
+    int rest = frame_sum(n - 1);
+    return local + rest;
+}
+
+func shadowing() {
+    int x = 1;
+    note("outer x=" + toString(x));
+    if (true) {
+        int x = 2;
+        note("block x=" + toString(x));
+        if (true) {
+            int x = 3;
+            note("inner x=" + toString(x));
+        }
+        note("block again x=" + toString(x));
+    }
+    note("outer again x=" + toString(x));
+}
+
+func loop_scope() {
+    int total = 0;
+    for (int i = 0; i < 3; i = i + 1) {
+        int squared = i * i;
+        total = total + squared;
+    }
+    for (int i = 10; i < 13; i = i + 1) {
+        int squared = i * i;
+        total = total + squared;
+    }
+    printf("two loops reusing i and squared: %d\n": total);
+}
+
+func main() {
+    printf("BASE=%d DOUBLED=%d\n": BASE, DOUBLED);
+    bump();
+    bump();
+    bump();
+    printf("COUNTER after 3 bumps: %d\n": COUNTER);
+    printf("forward reference: %d\n": uses_later_function());
+
+    int original = 5;
+    int returned = mutate_parameter(original);
+    printf("scalar passed by value: original=%d returned=%d\n": original, returned);
+    assert(original == 5, "callee must not change the caller's scalar");
+
+    printf("frame_sum(4) = %d\n": frame_sum(4));
+    shadowing();
+    print(LOG);
+    assert(LOG == "outer x=1;block x=2;inner x=3;block again x=2;outer again x=1;", "shadowing must restore each outer value");
+    loop_scope();
+}

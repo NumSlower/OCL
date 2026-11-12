@@ -1,0 +1,604 @@
+/# AES-128 Implementation in OCL #/
+Let AES_ASCII = " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~";
+Let AES_HEX_CHARS = "0123456789abcdef";
+
+Let AES_SBOX = [
+    99, 124, 119, 123, 242, 107, 111, 197, 48, 1, 103, 43, 254, 215, 171, 118,
+    202, 130, 201, 125, 250, 89, 71, 240, 173, 212, 162, 175, 156, 164, 114, 192,
+    183, 253, 147, 38, 54, 63, 247, 204, 52, 165, 229, 241, 113, 216, 49, 21,
+    4, 199, 35, 195, 24, 150, 5, 154, 7, 18, 128, 226, 235, 39, 178, 117,
+    9, 131, 44, 26, 27, 110, 90, 160, 82, 59, 214, 179, 41, 227, 47, 132,
+    83, 209, 0, 237, 32, 252, 177, 91, 106, 203, 190, 57, 74, 76, 88, 207,
+    208, 239, 170, 251, 67, 77, 51, 133, 69, 249, 2, 127, 80, 60, 159, 168,
+    81, 163, 64, 143, 146, 157, 56, 245, 188, 182, 218, 33, 16, 255, 243, 210,
+    205, 12, 19, 236, 95, 151, 68, 23, 196, 167, 126, 61, 100, 93, 25, 115,
+    96, 129, 79, 220, 34, 42, 144, 136, 70, 238, 184, 20, 222, 94, 11, 219,
+    224, 50, 58, 10, 73, 6, 36, 92, 194, 211, 172, 98, 145, 149, 228, 121,
+    231, 200, 55, 109, 141, 213, 78, 169, 108, 86, 244, 234, 101, 122, 174, 8,
+    186, 120, 37, 46, 28, 166, 180, 198, 232, 221, 116, 31, 75, 189, 139, 138,
+    112, 62, 181, 102, 72, 3, 246, 14, 97, 53, 87, 185, 134, 193, 29, 158,
+    225, 248, 152, 17, 105, 217, 142, 148, 155, 30, 135, 233, 206, 85, 40, 223,
+    140, 161, 137, 13, 191, 230, 66, 104, 65, 153, 45, 15, 176, 84, 187, 22
+];
+
+Let AES_ISBOX = [
+    82, 9, 106, 213, 48, 54, 165, 56, 191, 64, 163, 158, 129, 243, 215, 251,
+    124, 227, 57, 130, 155, 47, 255, 135, 52, 142, 67, 68, 196, 222, 233, 203,
+    84, 123, 148, 50, 166, 194, 35, 61, 238, 76, 149, 11, 66, 250, 195, 78,
+    8, 46, 161, 102, 40, 217, 36, 178, 118, 91, 162, 73, 109, 139, 209, 37,
+    114, 248, 246, 100, 134, 104, 152, 22, 212, 164, 92, 204, 93, 101, 182, 146,
+    108, 112, 72, 80, 253, 237, 185, 218, 94, 21, 70, 87, 167, 141, 157, 132,
+    144, 216, 171, 0, 140, 188, 211, 10, 247, 228, 88, 5, 184, 179, 69, 6,
+    208, 44, 30, 143, 202, 63, 15, 2, 193, 175, 189, 3, 1, 19, 138, 107,
+    58, 145, 17, 65, 79, 103, 220, 234, 151, 242, 207, 206, 240, 180, 230, 115,
+    150, 172, 116, 34, 231, 173, 53, 133, 226, 249, 55, 232, 28, 117, 223, 110,
+    71, 241, 26, 113, 29, 41, 197, 137, 111, 183, 98, 14, 170, 24, 190, 27,
+    252, 86, 62, 75, 198, 210, 121, 32, 154, 219, 192, 254, 120, 205, 90, 244,
+    31, 221, 168, 51, 136, 7, 199, 49, 177, 18, 16, 89, 39, 128, 236, 95,
+    96, 81, 127, 169, 25, 181, 74, 13, 45, 229, 122, 159, 147, 201, 156, 239,
+    160, 224, 59, 77, 174, 42, 245, 176, 200, 235, 187, 60, 131, 83, 153, 97,
+    23, 43, 4, 126, 186, 119, 214, 38, 225, 105, 20, 99, 85, 33, 12, 125
+];
+
+Let AES_XORT = [
+    0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
+    1, 0, 3, 2, 5, 4, 7, 6, 9, 8, 11, 10, 13, 12, 15, 14,
+    2, 3, 0, 1, 6, 7, 4, 5, 10, 11, 8, 9, 14, 15, 12, 13,
+    3, 2, 1, 0, 7, 6, 5, 4, 11, 10, 9, 8, 15, 14, 13, 12,
+    4, 5, 6, 7, 0, 1, 2, 3, 12, 13, 14, 15, 8, 9, 10, 11,
+    5, 4, 7, 6, 1, 0, 3, 2, 13, 12, 15, 14, 9, 8, 11, 10,
+    6, 7, 4, 5, 2, 3, 0, 1, 14, 15, 12, 13, 10, 11, 8, 9,
+    7, 6, 5, 4, 3, 2, 1, 0, 15, 14, 13, 12, 11, 10, 9, 8,
+    8, 9, 10, 11, 12, 13, 14, 15, 0, 1, 2, 3, 4, 5, 6, 7,
+    9, 8, 11, 10, 13, 12, 15, 14, 1, 0, 3, 2, 5, 4, 7, 6,
+    10, 11, 8, 9, 14, 15, 12, 13, 2, 3, 0, 1, 6, 7, 4, 5,
+    11, 10, 9, 8, 15, 14, 13, 12, 3, 2, 1, 0, 7, 6, 5, 4,
+    12, 13, 14, 15, 8, 9, 10, 11, 4, 5, 6, 7, 0, 1, 2, 3,
+    13, 12, 15, 14, 9, 8, 11, 10, 5, 4, 7, 6, 1, 0, 3, 2,
+    14, 15, 12, 13, 10, 11, 8, 9, 6, 7, 4, 5, 2, 3, 0, 1,
+    15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0
+];
+
+Let AES_IN = [];
+Let AES_OUT = [];
+Let AES_W = [];
+
+
+func aes_init() {
+    if (arrayLen(AES_IN) == 0) {
+        for (int i = 0; i < 16; i = i + 1) {
+            arrayPush(AES_IN, 0);
+            arrayPush(AES_OUT, 0);
+        }
+        for (int i = 0; i < 176; i = i + 1) {
+            arrayPush(AES_W, 0);
+        }
+    }
+}
+
+func int aes_xor(a:int, b:int) {
+    int ah = a / 16;
+    int al = a % 16;
+    int bh = b / 16;
+    int bl = b % 16;
+    return AES_XORT[ah * 16 + bh] * 16 + AES_XORT[al * 16 + bl];
+}
+
+func int aes_xtime(a:int) {
+    int res = (a * 2) % 256;
+    if (a >= 128) {
+        res = aes_xor(res, 27);
+    }
+    return res;
+}
+
+func int aes_mul(a:int, b:int) {
+    int p = 0;
+    for (int i = 0; i < 8; i = i + 1) {
+        if (b % 2 == 1) {
+            p = aes_xor(p, a);
+        }
+        a = aes_xtime(a);
+        b = b / 2;
+    }
+    return p;
+}
+
+func int aes_hexval(ch:string) {
+    if (ch == "0") { return 0; }
+    if (ch == "1") { return 1; }
+    if (ch == "2") { return 2; }
+    if (ch == "3") { return 3; }
+    if (ch == "4") { return 4; }
+    if (ch == "5") { return 5; }
+    if (ch == "6") { return 6; }
+    if (ch == "7") { return 7; }
+    if (ch == "8") { return 8; }
+    if (ch == "9") { return 9; }
+    if (ch == "a" || ch == "A") { return 10; }
+    if (ch == "b" || ch == "B") { return 11; }
+    if (ch == "c" || ch == "C") { return 12; }
+    if (ch == "d" || ch == "D") { return 13; }
+    if (ch == "e" || ch == "E") { return 14; }
+    if (ch == "f" || ch == "F") { return 15; }
+    return 0;
+}
+
+func string aes_byte_hex(b:int) {
+    return substr(AES_HEX_CHARS, (b / 16) % 16, 1) + substr(AES_HEX_CHARS, b % 16, 1);
+}
+
+func int aes_hexbyte(hex_str:string, byte_idx:int) {
+    int hi = aes_hexval(substr(hex_str, byte_idx * 2, 1));
+    int lo = aes_hexval(substr(hex_str, byte_idx * 2 + 1, 1));
+    return hi * 16 + lo;
+}
+
+func aes_load_key_hex(key:string) {
+    aes_init();
+    for (int i = 0; i < 16; i = i + 1) {
+        AES_W[i] = aes_hexbyte(key, i);
+    }
+    for (int w = 4; w < 44; w = w + 1) {
+        int b0 = AES_W[(w - 1) * 4 + 0];
+        int b1 = AES_W[(w - 1) * 4 + 1];
+        int b2 = AES_W[(w - 1) * 4 + 2];
+        int b3 = AES_W[(w - 1) * 4 + 3];
+        if (w % 4 == 0) {
+            int t0 = AES_SBOX[b1];
+            int t1 = AES_SBOX[b2];
+            int t2 = AES_SBOX[b3];
+            int t3 = AES_SBOX[b0];
+            int rc = 0;
+            int round_idx = w / 4;
+            if (round_idx == 1) { rc = 1; }
+            else if (round_idx == 2) { rc = 2; }
+            else if (round_idx == 3) { rc = 4; }
+            else if (round_idx == 4) { rc = 8; }
+            else if (round_idx == 5) { rc = 16; }
+            else if (round_idx == 6) { rc = 32; }
+            else if (round_idx == 7) { rc = 64; }
+            else if (round_idx == 8) { rc = 128; }
+            else if (round_idx == 9) { rc = 27; }
+            else if (round_idx == 10) { rc = 54; }
+            t0 = aes_xor(t0, rc);
+            b0 = t0; b1 = t1; b2 = t2; b3 = t3;
+        }
+        AES_W[w * 4 + 0] = aes_xor(AES_W[(w - 4) * 4 + 0], b0);
+        AES_W[w * 4 + 1] = aes_xor(AES_W[(w - 4) * 4 + 1], b1);
+        AES_W[w * 4 + 2] = aes_xor(AES_W[(w - 4) * 4 + 2], b2);
+        AES_W[w * 4 + 3] = aes_xor(AES_W[(w - 4) * 4 + 3], b3);
+    }
+}
+
+func string aes_round_key_hex(round:int) {
+    string res = "";
+    int base = round * 16;
+    for (int i = 0; i < 16; i = i + 1) {
+        res = res + aes_byte_hex(AES_W[base + i]);
+    }
+    return res;
+}
+
+func aes_encrypt_block() {
+    int s0 = AES_IN[0];   int s1 = AES_IN[1];   int s2 = AES_IN[2];   int s3 = AES_IN[3];
+    int s4 = AES_IN[4];   int s5 = AES_IN[5];   int s6 = AES_IN[6];   int s7 = AES_IN[7];
+    int s8 = AES_IN[8];   int s9 = AES_IN[9];   int s10 = AES_IN[10]; int s11 = AES_IN[11];
+    int s12 = AES_IN[12]; int s13 = AES_IN[13]; int s14 = AES_IN[14]; int s15 = AES_IN[15];
+
+    s0 = aes_xor(s0, AES_W[0]);   s1 = aes_xor(s1, AES_W[1]);
+    s2 = aes_xor(s2, AES_W[2]);   s3 = aes_xor(s3, AES_W[3]);
+    s4 = aes_xor(s4, AES_W[4]);   s5 = aes_xor(s5, AES_W[5]);
+    s6 = aes_xor(s6, AES_W[6]);   s7 = aes_xor(s7, AES_W[7]);
+    s8 = aes_xor(s8, AES_W[8]);   s9 = aes_xor(s9, AES_W[9]);
+    s10 = aes_xor(s10, AES_W[10]); s11 = aes_xor(s11, AES_W[11]);
+    s12 = aes_xor(s12, AES_W[12]); s13 = aes_xor(s13, AES_W[13]);
+    s14 = aes_xor(s14, AES_W[14]); s15 = aes_xor(s15, AES_W[15]);
+
+    for (int round = 1; round < 10; round = round + 1) {
+        s0 = AES_SBOX[s0];   s1 = AES_SBOX[s1];   s2 = AES_SBOX[s2];   s3 = AES_SBOX[s3];
+        s4 = AES_SBOX[s4];   s5 = AES_SBOX[s5];   s6 = AES_SBOX[s6];   s7 = AES_SBOX[s7];
+        s8 = AES_SBOX[s8];   s9 = AES_SBOX[s9];   s10 = AES_SBOX[s10]; s11 = AES_SBOX[s11];
+        s12 = AES_SBOX[s12]; s13 = AES_SBOX[s13]; s14 = AES_SBOX[s14]; s15 = AES_SBOX[s15];
+
+        int t1 = s5;  s5 = s9;  s9 = s13; s13 = s1; s1 = t1;
+        int t2 = s2;  s2 = s10; s10 = t2; int t6 = s6; s6 = s14; s14 = t6;
+        int t3 = s15; s15 = s11; s11 = s7;  s7 = s3;  s3 = t3;
+
+        int d0 = aes_xor(aes_xor(aes_xtime(s0), aes_xor(aes_xtime(s1), s1)), aes_xor(s2, s3));
+        int d1 = aes_xor(aes_xor(s0, aes_xtime(s1)), aes_xor(aes_xor(aes_xtime(s2), s2), s3));
+        int d2 = aes_xor(aes_xor(s0, s1), aes_xor(aes_xtime(s2), aes_xor(aes_xtime(s3), s3)));
+        int d3 = aes_xor(aes_xor(aes_xor(aes_xtime(s0), s0), s1), aes_xor(s2, aes_xtime(s3)));
+
+        int d4 = aes_xor(aes_xor(aes_xtime(s4), aes_xor(aes_xtime(s5), s5)), aes_xor(s6, s7));
+        int d5 = aes_xor(aes_xor(s4, aes_xtime(s5)), aes_xor(aes_xor(aes_xtime(s6), s6), s7));
+        int d6 = aes_xor(aes_xor(s4, s5), aes_xor(aes_xtime(s6), aes_xor(aes_xtime(s7), s7)));
+        int d7 = aes_xor(aes_xor(aes_xor(aes_xtime(s4), s4), s5), aes_xor(s6, aes_xtime(s7)));
+
+        int d8 = aes_xor(aes_xor(aes_xtime(s8), aes_xor(aes_xtime(s9), s9)), aes_xor(s10, s11));
+        int d9 = aes_xor(aes_xor(s8, aes_xtime(s9)), aes_xor(aes_xor(aes_xtime(s10), s10), s11));
+        int d10 = aes_xor(aes_xor(s8, s9), aes_xor(aes_xtime(s10), aes_xor(aes_xtime(s11), s11)));
+        int d11 = aes_xor(aes_xor(aes_xor(aes_xtime(s8), s8), s9), aes_xor(s10, aes_xtime(s11)));
+
+        int d12 = aes_xor(aes_xor(aes_xtime(s12), aes_xor(aes_xtime(s13), s13)), aes_xor(s14, s15));
+        int d13 = aes_xor(aes_xor(s12, aes_xtime(s13)), aes_xor(aes_xor(aes_xtime(s14), s14), s15));
+        int d14 = aes_xor(aes_xor(s12, s13), aes_xor(aes_xtime(s14), aes_xor(aes_xtime(s15), s15)));
+        int d15 = aes_xor(aes_xor(aes_xor(aes_xtime(s12), s12), s13), aes_xor(s14, aes_xtime(s15)));
+
+        int rbase = round * 16;
+        s0 = aes_xor(d0, AES_W[rbase + 0]);   s1 = aes_xor(d1, AES_W[rbase + 1]);
+        s2 = aes_xor(d2, AES_W[rbase + 2]);   s3 = aes_xor(d3, AES_W[rbase + 3]);
+        s4 = aes_xor(d4, AES_W[rbase + 4]);   s5 = aes_xor(d5, AES_W[rbase + 5]);
+        s6 = aes_xor(d6, AES_W[rbase + 6]);   s7 = aes_xor(d7, AES_W[rbase + 7]);
+        s8 = aes_xor(d8, AES_W[rbase + 8]);   s9 = aes_xor(d9, AES_W[rbase + 9]);
+        s10 = aes_xor(d10, AES_W[rbase + 10]); s11 = aes_xor(d11, AES_W[rbase + 11]);
+        s12 = aes_xor(d12, AES_W[rbase + 12]); s13 = aes_xor(d13, AES_W[rbase + 13]);
+        s14 = aes_xor(d14, AES_W[rbase + 14]); s15 = aes_xor(d15, AES_W[rbase + 15]);
+    }
+
+    s0 = AES_SBOX[s0];   s1 = AES_SBOX[s1];   s2 = AES_SBOX[s2];   s3 = AES_SBOX[s3];
+    s4 = AES_SBOX[s4];   s5 = AES_SBOX[s5];   s6 = AES_SBOX[s6];   s7 = AES_SBOX[s7];
+    s8 = AES_SBOX[s8];   s9 = AES_SBOX[s9];   s10 = AES_SBOX[s10]; s11 = AES_SBOX[s11];
+    s12 = AES_SBOX[s12]; s13 = AES_SBOX[s13]; s14 = AES_SBOX[s14]; s15 = AES_SBOX[s15];
+
+    int t1 = s5;  s5 = s9;  s9 = s13; s13 = s1; s1 = t1;
+    int t2 = s2;  s2 = s10; s10 = t2; int t6 = s6; s6 = s14; s14 = t6;
+    int t3 = s15; s15 = s11; s11 = s7;  s7 = s3;  s3 = t3;
+
+    AES_OUT[0] = aes_xor(s0, AES_W[160]);   AES_OUT[1] = aes_xor(s1, AES_W[161]);
+    AES_OUT[2] = aes_xor(s2, AES_W[162]);   AES_OUT[3] = aes_xor(s3, AES_W[163]);
+    AES_OUT[4] = aes_xor(s4, AES_W[164]);   AES_OUT[5] = aes_xor(s5, AES_W[165]);
+    AES_OUT[6] = aes_xor(s6, AES_W[166]);   AES_OUT[7] = aes_xor(s7, AES_W[167]);
+    AES_OUT[8] = aes_xor(s8, AES_W[168]);   AES_OUT[9] = aes_xor(s9, AES_W[169]);
+    AES_OUT[10] = aes_xor(s10, AES_W[170]); AES_OUT[11] = aes_xor(s11, AES_W[171]);
+    AES_OUT[12] = aes_xor(s12, AES_W[172]); AES_OUT[13] = aes_xor(s13, AES_W[173]);
+    AES_OUT[14] = aes_xor(s14, AES_W[174]); AES_OUT[15] = aes_xor(s15, AES_W[175]);
+}
+
+func aes_decrypt_block() {
+    int s0 = AES_IN[0];   int s1 = AES_IN[1];   int s2 = AES_IN[2];   int s3 = AES_IN[3];
+    int s4 = AES_IN[4];   int s5 = AES_IN[5];   int s6 = AES_IN[6];   int s7 = AES_IN[7];
+    int s8 = AES_IN[8];   int s9 = AES_IN[9];   int s10 = AES_IN[10]; int s11 = AES_IN[11];
+    int s12 = AES_IN[12]; int s13 = AES_IN[13]; int s14 = AES_IN[14]; int s15 = AES_IN[15];
+
+    s0 = aes_xor(s0, AES_W[160]);   s1 = aes_xor(s1, AES_W[161]);
+    s2 = aes_xor(s2, AES_W[162]);   s3 = aes_xor(s3, AES_W[163]);
+    s4 = aes_xor(s4, AES_W[164]);   s5 = aes_xor(s5, AES_W[165]);
+    s6 = aes_xor(s6, AES_W[166]);   s7 = aes_xor(s7, AES_W[167]);
+    s8 = aes_xor(s8, AES_W[168]);   s9 = aes_xor(s9, AES_W[169]);
+    s10 = aes_xor(s10, AES_W[170]); s11 = aes_xor(s11, AES_W[171]);
+    s12 = aes_xor(s12, AES_W[172]); s13 = aes_xor(s13, AES_W[173]);
+    s14 = aes_xor(s14, AES_W[174]); s15 = aes_xor(s15, AES_W[175]);
+
+    for (int round = 9; round >= 1; round = round - 1) {
+        int t1 = s13; s13 = s9; s9 = s5;  s5 = s1;  s1 = t1;
+        int t2 = s2;  s2 = s10; s10 = t2; int t6 = s6; s6 = s14; s14 = t6;
+        int t3 = s3;  s3 = s7;  s7 = s11; s11 = s15; s15 = t3;
+
+        s0 = AES_ISBOX[s0];   s1 = AES_ISBOX[s1];   s2 = AES_ISBOX[s2];   s3 = AES_ISBOX[s3];
+        s4 = AES_ISBOX[s4];   s5 = AES_ISBOX[s5];   s6 = AES_ISBOX[s6];   s7 = AES_ISBOX[s7];
+        s8 = AES_ISBOX[s8];   s9 = AES_ISBOX[s9];   s10 = AES_ISBOX[s10]; s11 = AES_ISBOX[s11];
+        s12 = AES_ISBOX[s12]; s13 = AES_ISBOX[s13]; s14 = AES_ISBOX[s14]; s15 = AES_ISBOX[s15];
+
+        int rbase = round * 16;
+        s0 = aes_xor(s0, AES_W[rbase + 0]);   s1 = aes_xor(s1, AES_W[rbase + 1]);
+        s2 = aes_xor(s2, AES_W[rbase + 2]);   s3 = aes_xor(s3, AES_W[rbase + 3]);
+        s4 = aes_xor(s4, AES_W[rbase + 4]);   s5 = aes_xor(s5, AES_W[rbase + 5]);
+        s6 = aes_xor(s6, AES_W[rbase + 6]);   s7 = aes_xor(s7, AES_W[rbase + 7]);
+        s8 = aes_xor(s8, AES_W[rbase + 8]);   s9 = aes_xor(s9, AES_W[rbase + 9]);
+        s10 = aes_xor(s10, AES_W[rbase + 10]); s11 = aes_xor(s11, AES_W[rbase + 11]);
+        s12 = aes_xor(s12, AES_W[rbase + 12]); s13 = aes_xor(s13, AES_W[rbase + 13]);
+        s14 = aes_xor(s14, AES_W[rbase + 14]); s15 = aes_xor(s15, AES_W[rbase + 15]);
+
+        int d0 = aes_xor(aes_xor(aes_mul(s0, 14), aes_mul(s1, 11)), aes_xor(aes_mul(s2, 13), aes_mul(s3, 9)));
+        int d1 = aes_xor(aes_xor(aes_mul(s0, 9), aes_mul(s1, 14)), aes_xor(aes_mul(s2, 11), aes_mul(s3, 13)));
+        int d2 = aes_xor(aes_xor(aes_mul(s0, 13), aes_mul(s1, 9)), aes_xor(aes_mul(s2, 14), aes_mul(s3, 11)));
+        int d3 = aes_xor(aes_xor(aes_mul(s0, 11), aes_mul(s1, 13)), aes_xor(aes_mul(s2, 9), aes_mul(s3, 14)));
+
+        int d4 = aes_xor(aes_xor(aes_mul(s4, 14), aes_mul(s5, 11)), aes_xor(aes_mul(s6, 13), aes_mul(s7, 9)));
+        int d5 = aes_xor(aes_xor(aes_mul(s4, 9), aes_mul(s5, 14)), aes_xor(aes_mul(s6, 11), aes_mul(s7, 13)));
+        int d6 = aes_xor(aes_xor(aes_mul(s4, 13), aes_mul(s5, 9)), aes_xor(aes_mul(s6, 14), aes_mul(s7, 11)));
+        int d7 = aes_xor(aes_xor(aes_mul(s4, 11), aes_mul(s5, 13)), aes_xor(aes_mul(s6, 9), aes_mul(s7, 14)));
+
+        int d8 = aes_xor(aes_xor(aes_mul(s8, 14), aes_mul(s9, 11)), aes_xor(aes_mul(s10, 13), aes_mul(s11, 9)));
+        int d9 = aes_xor(aes_xor(aes_mul(s8, 9), aes_mul(s9, 14)), aes_xor(aes_mul(s10, 11), aes_mul(s11, 13)));
+        int d10 = aes_xor(aes_xor(aes_mul(s8, 13), aes_mul(s9, 9)), aes_xor(aes_mul(s10, 14), aes_mul(s11, 11)));
+        int d11 = aes_xor(aes_xor(aes_mul(s8, 11), aes_mul(s9, 13)), aes_xor(aes_mul(s10, 9), aes_mul(s11, 14)));
+
+        int d12 = aes_xor(aes_xor(aes_mul(s12, 14), aes_mul(s13, 11)), aes_xor(aes_mul(s14, 13), aes_mul(s15, 9)));
+        int d13 = aes_xor(aes_xor(aes_mul(s12, 9), aes_mul(s13, 14)), aes_xor(aes_mul(s14, 11), aes_mul(s15, 13)));
+        int d14 = aes_xor(aes_xor(aes_mul(s12, 13), aes_mul(s13, 9)), aes_xor(aes_mul(s14, 14), aes_mul(s15, 11)));
+        int d15 = aes_xor(aes_xor(aes_mul(s12, 11), aes_mul(s13, 13)), aes_xor(aes_mul(s14, 9), aes_mul(s15, 14)));
+
+        s0 = d0; s1 = d1; s2 = d2; s3 = d3;
+        s4 = d4; s5 = d5; s6 = d6; s7 = d7;
+        s8 = d8; s9 = d9; s10 = d10; s11 = d11;
+        s12 = d12; s13 = d13; s14 = d14; s15 = d15;
+    }
+
+    int t1 = s13; s13 = s9; s9 = s5;  s5 = s1;  s1 = t1;
+    int t2 = s2;  s2 = s10; s10 = t2; int t6 = s6; s6 = s14; s14 = t6;
+    int t3 = s3;  s3 = s7;  s7 = s11; s11 = s15; s15 = t3;
+
+    s0 = AES_ISBOX[s0];   s1 = AES_ISBOX[s1];   s2 = AES_ISBOX[s2];   s3 = AES_ISBOX[s3];
+    s4 = AES_ISBOX[s4];   s5 = AES_ISBOX[s5];   s6 = AES_ISBOX[s6];   s7 = AES_ISBOX[s7];
+    s8 = AES_ISBOX[s8];   s9 = AES_ISBOX[s9];   s10 = AES_ISBOX[s10]; s11 = AES_ISBOX[s11];
+    s12 = AES_ISBOX[s12]; s13 = AES_ISBOX[s13]; s14 = AES_ISBOX[s14]; s15 = AES_ISBOX[s15];
+
+    AES_OUT[0] = aes_xor(s0, AES_W[0]);   AES_OUT[1] = aes_xor(s1, AES_W[1]);
+    AES_OUT[2] = aes_xor(s2, AES_W[2]);   AES_OUT[3] = aes_xor(s3, AES_W[3]);
+    AES_OUT[4] = aes_xor(s4, AES_W[4]);   AES_OUT[5] = aes_xor(s5, AES_W[5]);
+    AES_OUT[6] = aes_xor(s6, AES_W[6]);   AES_OUT[7] = aes_xor(s7, AES_W[7]);
+    AES_OUT[8] = aes_xor(s8, AES_W[8]);   AES_OUT[9] = aes_xor(s9, AES_W[9]);
+    AES_OUT[10] = aes_xor(s10, AES_W[10]); AES_OUT[11] = aes_xor(s11, AES_W[11]);
+    AES_OUT[12] = aes_xor(s12, AES_W[12]); AES_OUT[13] = aes_xor(s13, AES_W[13]);
+    AES_OUT[14] = aes_xor(s14, AES_W[14]); AES_OUT[15] = aes_xor(s15, AES_W[15]);
+}
+
+func string aes_out_hex() {
+    string res = "";
+    for (int i = 0; i < 16; i = i + 1) {
+        res = res + aes_byte_hex(AES_OUT[i]);
+    }
+    return res;
+}
+
+func string aes_ecb_encrypt_hex(plain_hex:string) {
+    string res = "";
+    int num_blocks = strLen(plain_hex) / 32;
+    for (int b = 0; b < num_blocks; b = b + 1) {
+        for (int i = 0; i < 16; i = i + 1) {
+            AES_IN[i] = aes_hexbyte(plain_hex, b * 16 + i);
+        }
+        aes_encrypt_block();
+        res = res + aes_out_hex();
+    }
+    return res;
+}
+
+func string aes_cbc_encrypt_hex(plain_hex:string, iv_hex:string) {
+    string res = "";
+    int iv0 = aes_hexbyte(iv_hex, 0);   int iv1 = aes_hexbyte(iv_hex, 1);
+    int iv2 = aes_hexbyte(iv_hex, 2);   int iv3 = aes_hexbyte(iv_hex, 3);
+    int iv4 = aes_hexbyte(iv_hex, 4);   int iv5 = aes_hexbyte(iv_hex, 5);
+    int iv6 = aes_hexbyte(iv_hex, 6);   int iv7 = aes_hexbyte(iv_hex, 7);
+    int iv8 = aes_hexbyte(iv_hex, 8);   int iv9 = aes_hexbyte(iv_hex, 9);
+    int iv10 = aes_hexbyte(iv_hex, 10); int iv11 = aes_hexbyte(iv_hex, 11);
+    int iv12 = aes_hexbyte(iv_hex, 12); int iv13 = aes_hexbyte(iv_hex, 13);
+    int iv14 = aes_hexbyte(iv_hex, 14); int iv15 = aes_hexbyte(iv_hex, 15);
+
+    int num_blocks = strLen(plain_hex) / 32;
+    for (int b = 0; b < num_blocks; b = b + 1) {
+        int base = b * 16;
+        AES_IN[0] = aes_xor(aes_hexbyte(plain_hex, base + 0), iv0);
+        AES_IN[1] = aes_xor(aes_hexbyte(plain_hex, base + 1), iv1);
+        AES_IN[2] = aes_xor(aes_hexbyte(plain_hex, base + 2), iv2);
+        AES_IN[3] = aes_xor(aes_hexbyte(plain_hex, base + 3), iv3);
+        AES_IN[4] = aes_xor(aes_hexbyte(plain_hex, base + 4), iv4);
+        AES_IN[5] = aes_xor(aes_hexbyte(plain_hex, base + 5), iv5);
+        AES_IN[6] = aes_xor(aes_hexbyte(plain_hex, base + 6), iv6);
+        AES_IN[7] = aes_xor(aes_hexbyte(plain_hex, base + 7), iv7);
+        AES_IN[8] = aes_xor(aes_hexbyte(plain_hex, base + 8), iv8);
+        AES_IN[9] = aes_xor(aes_hexbyte(plain_hex, base + 9), iv9);
+        AES_IN[10] = aes_xor(aes_hexbyte(plain_hex, base + 10), iv10);
+        AES_IN[11] = aes_xor(aes_hexbyte(plain_hex, base + 11), iv11);
+        AES_IN[12] = aes_xor(aes_hexbyte(plain_hex, base + 12), iv12);
+        AES_IN[13] = aes_xor(aes_hexbyte(plain_hex, base + 13), iv13);
+        AES_IN[14] = aes_xor(aes_hexbyte(plain_hex, base + 14), iv14);
+        AES_IN[15] = aes_xor(aes_hexbyte(plain_hex, base + 15), iv15);
+
+        aes_encrypt_block();
+
+        iv0 = AES_OUT[0];   iv1 = AES_OUT[1];   iv2 = AES_OUT[2];   iv3 = AES_OUT[3];
+        iv4 = AES_OUT[4];   iv5 = AES_OUT[5];   iv6 = AES_OUT[6];   iv7 = AES_OUT[7];
+        iv8 = AES_OUT[8];   iv9 = AES_OUT[9];   iv10 = AES_OUT[10]; iv11 = AES_OUT[11];
+        iv12 = AES_OUT[12]; iv13 = AES_OUT[13]; iv14 = AES_OUT[14]; iv15 = AES_OUT[15];
+
+        res = res + aes_out_hex();
+    }
+    return res;
+}
+
+func string aes_cbc_decrypt_hex(cipher_hex:string, iv_hex:string) {
+    string res = "";
+    int iv0 = aes_hexbyte(iv_hex, 0);   int iv1 = aes_hexbyte(iv_hex, 1);
+    int iv2 = aes_hexbyte(iv_hex, 2);   int iv3 = aes_hexbyte(iv_hex, 3);
+    int iv4 = aes_hexbyte(iv_hex, 4);   int iv5 = aes_hexbyte(iv_hex, 5);
+    int iv6 = aes_hexbyte(iv_hex, 6);   int iv7 = aes_hexbyte(iv_hex, 7);
+    int iv8 = aes_hexbyte(iv_hex, 8);   int iv9 = aes_hexbyte(iv_hex, 9);
+    int iv10 = aes_hexbyte(iv_hex, 10); int iv11 = aes_hexbyte(iv_hex, 11);
+    int iv12 = aes_hexbyte(iv_hex, 12); int iv13 = aes_hexbyte(iv_hex, 13);
+    int iv14 = aes_hexbyte(iv_hex, 14); int iv15 = aes_hexbyte(iv_hex, 15);
+
+    int num_blocks = strLen(cipher_hex) / 32;
+    for (int b = 0; b < num_blocks; b = b + 1) {
+        int base = b * 16;
+        int c0 = aes_hexbyte(cipher_hex, base + 0);
+        int c1 = aes_hexbyte(cipher_hex, base + 1);
+        int c2 = aes_hexbyte(cipher_hex, base + 2);
+        int c3 = aes_hexbyte(cipher_hex, base + 3);
+        int c4 = aes_hexbyte(cipher_hex, base + 4);
+        int c5 = aes_hexbyte(cipher_hex, base + 5);
+        int c6 = aes_hexbyte(cipher_hex, base + 6);
+        int c7 = aes_hexbyte(cipher_hex, base + 7);
+        int c8 = aes_hexbyte(cipher_hex, base + 8);
+        int c9 = aes_hexbyte(cipher_hex, base + 9);
+        int c10 = aes_hexbyte(cipher_hex, base + 10);
+        int c11 = aes_hexbyte(cipher_hex, base + 11);
+        int c12 = aes_hexbyte(cipher_hex, base + 12);
+        int c13 = aes_hexbyte(cipher_hex, base + 13);
+        int c14 = aes_hexbyte(cipher_hex, base + 14);
+        int c15 = aes_hexbyte(cipher_hex, base + 15);
+
+        AES_IN[0] = c0;   AES_IN[1] = c1;   AES_IN[2] = c2;   AES_IN[3] = c3;
+        AES_IN[4] = c4;   AES_IN[5] = c5;   AES_IN[6] = c6;   AES_IN[7] = c7;
+        AES_IN[8] = c8;   AES_IN[9] = c9;   AES_IN[10] = c10; AES_IN[11] = c11;
+        AES_IN[12] = c12; AES_IN[13] = c13; AES_IN[14] = c14; AES_IN[15] = c15;
+
+        aes_decrypt_block();
+
+        res = res + aes_byte_hex(aes_xor(AES_OUT[0], iv0));
+        res = res + aes_byte_hex(aes_xor(AES_OUT[1], iv1));
+        res = res + aes_byte_hex(aes_xor(AES_OUT[2], iv2));
+        res = res + aes_byte_hex(aes_xor(AES_OUT[3], iv3));
+        res = res + aes_byte_hex(aes_xor(AES_OUT[4], iv4));
+        res = res + aes_byte_hex(aes_xor(AES_OUT[5], iv5));
+        res = res + aes_byte_hex(aes_xor(AES_OUT[6], iv6));
+        res = res + aes_byte_hex(aes_xor(AES_OUT[7], iv7));
+        res = res + aes_byte_hex(aes_xor(AES_OUT[8], iv8));
+        res = res + aes_byte_hex(aes_xor(AES_OUT[9], iv9));
+        res = res + aes_byte_hex(aes_xor(AES_OUT[10], iv10));
+        res = res + aes_byte_hex(aes_xor(AES_OUT[11], iv11));
+        res = res + aes_byte_hex(aes_xor(AES_OUT[12], iv12));
+        res = res + aes_byte_hex(aes_xor(AES_OUT[13], iv13));
+        res = res + aes_byte_hex(aes_xor(AES_OUT[14], iv14));
+        res = res + aes_byte_hex(aes_xor(AES_OUT[15], iv15));
+
+        iv0 = c0;   iv1 = c1;   iv2 = c2;   iv3 = c3;
+        iv4 = c4;   iv5 = c5;   iv6 = c6;   iv7 = c7;
+        iv8 = c8;   iv9 = c9;   iv10 = c10; iv11 = c11;
+        iv12 = c12; iv13 = c13; iv14 = c14; iv15 = c15;
+    }
+    return res;
+}
+
+func string aes_ctr_hex(plain_hex:string, ctr0_hex:string) {
+    string res = "";
+    int total_bytes = strLen(plain_hex) / 2;
+    if (total_bytes == 0) {
+        return "";
+    }
+    int c0 = aes_hexbyte(ctr0_hex, 0);   int c1 = aes_hexbyte(ctr0_hex, 1);
+    int c2 = aes_hexbyte(ctr0_hex, 2);   int c3 = aes_hexbyte(ctr0_hex, 3);
+    int c4 = aes_hexbyte(ctr0_hex, 4);   int c5 = aes_hexbyte(ctr0_hex, 5);
+    int c6 = aes_hexbyte(ctr0_hex, 6);   int c7 = aes_hexbyte(ctr0_hex, 7);
+    int c8 = aes_hexbyte(ctr0_hex, 8);   int c9 = aes_hexbyte(ctr0_hex, 9);
+    int c10 = aes_hexbyte(ctr0_hex, 10); int c11 = aes_hexbyte(ctr0_hex, 11);
+    int c12 = aes_hexbyte(ctr0_hex, 12); int c13 = aes_hexbyte(ctr0_hex, 13);
+    int c14 = aes_hexbyte(ctr0_hex, 14); int c15 = aes_hexbyte(ctr0_hex, 15);
+
+    int byte_idx = 0;
+    while (byte_idx < total_bytes) {
+        AES_IN[0] = c0;   AES_IN[1] = c1;   AES_IN[2] = c2;   AES_IN[3] = c3;
+        AES_IN[4] = c4;   AES_IN[5] = c5;   AES_IN[6] = c6;   AES_IN[7] = c7;
+        AES_IN[8] = c8;   AES_IN[9] = c9;   AES_IN[10] = c10; AES_IN[11] = c11;
+        AES_IN[12] = c12; AES_IN[13] = c13; AES_IN[14] = c14; AES_IN[15] = c15;
+
+        aes_encrypt_block();
+
+        int block_bytes = total_bytes - byte_idx;
+        if (block_bytes > 16) { block_bytes = 16; }
+
+        for (int i = 0; i < block_bytes; i = i + 1) {
+            int p_byte = aes_hexbyte(plain_hex, byte_idx);
+            int c_byte = aes_xor(p_byte, AES_OUT[i]);
+            res = res + aes_byte_hex(c_byte);
+            byte_idx = byte_idx + 1;
+        }
+
+        /# Big-endian 128-bit counter increment #/
+        c15 = c15 + 1;
+        if (c15 >= 256) {
+            c15 = 0; c14 = c14 + 1;
+            if (c14 >= 256) {
+                c14 = 0; c13 = c13 + 1;
+                if (c13 >= 256) {
+                    c13 = 0; c12 = c12 + 1;
+                    if (c12 >= 256) {
+                        c12 = 0; c11 = c11 + 1;
+                        if (c11 >= 256) {
+                            c11 = 0; c10 = c10 + 1;
+                            if (c10 >= 256) {
+                                c10 = 0; c9 = c9 + 1;
+                                if (c9 >= 256) {
+                                    c9 = 0; c8 = c8 + 1;
+                                    if (c8 >= 256) {
+                                        c8 = 0; c7 = c7 + 1;
+                                        if (c7 >= 256) {
+                                            c7 = 0; c6 = c6 + 1;
+                                            if (c6 >= 256) {
+                                                c6 = 0; c5 = c5 + 1;
+                                                if (c5 >= 256) {
+                                                    c5 = 0; c4 = c4 + 1;
+                                                    if (c4 >= 256) {
+                                                        c4 = 0; c3 = c3 + 1;
+                                                        if (c3 >= 256) {
+                                                            c3 = 0; c2 = c2 + 1;
+                                                            if (c2 >= 256) {
+                                                                c2 = 0; c1 = c1 + 1;
+                                                                if (c1 >= 256) {
+                                                                    c1 = 0; c0 = (c0 + 1) % 256;
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    return res;
+}
+
+func string aes_text_to_hex(text:string) {
+    string res = "";
+    int n = strLen(text);
+    for (int i = 0; i < n; i = i + 1) {
+        int b = toInt(text[i]);
+        res = res + aes_byte_hex(b);
+    }
+    return res;
+}
+
+func string aes_hex_to_text(hex_str:string) {
+    string res = "";
+    int n = strLen(hex_str) / 2;
+    for (int i = 0; i < n; i = i + 1) {
+        int b = aes_hexbyte(hex_str, i);
+        if (b >= 32 && b <= 126) {
+            res = res + substr(AES_ASCII, b - 32, 1);
+        } else {
+            res = res + "?";
+        }
+    }
+    return res;
+}
+
+func string aes_pkcs7_pad_hex(hex_str:string) {
+    int n = strLen(hex_str) / 2;
+    int pad_len = 16 - (n % 16);
+    string pad_byte = aes_byte_hex(pad_len);
+    string res = hex_str;
+    for (int i = 0; i < pad_len; i = i + 1) {
+        res = res + pad_byte;
+    }
+    return res;
+}
+
+func string aes_pkcs7_unpad_hex(padded_hex_str:string) {
+    int total_bytes = strLen(padded_hex_str) / 2;
+    int pad_len = aes_hexbyte(padded_hex_str, total_bytes - 1);
+    return substr(padded_hex_str, 0, (total_bytes - pad_len) * 2);
+}
+
+func string aes_encrypt_text_cbc(text:string, key_hex:string, iv_hex:string) {
+    string plain_hex = aes_text_to_hex(text);
+    string padded_hex = aes_pkcs7_pad_hex(plain_hex);
+    aes_load_key_hex(key_hex);
+    return aes_cbc_encrypt_hex(padded_hex, iv_hex);
+}
+
+func string aes_decrypt_text_cbc(cipher_hex:string, key_hex:string, iv_hex:string) {
+    aes_load_key_hex(key_hex);
+    string padded_hex = aes_cbc_decrypt_hex(cipher_hex, iv_hex);
+    string plain_hex = aes_pkcs7_unpad_hex(padded_hex);
+    return aes_hex_to_text(plain_hex);
+}
+

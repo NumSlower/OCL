@@ -1,0 +1,3 @@
+/# Compile-time error: the type checker must reject this before anything runs. #/
+print("this must not run");
+print(missing_variable);

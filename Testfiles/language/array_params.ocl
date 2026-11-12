@@ -1,0 +1,74 @@
+/#
+  Arrays are reference values: passing one to a function shares the same
+  storage, while rebinding the parameter does not affect the caller.
+
+  NOTE: LANGUAGE_REFERENCE.md documents no type name for array parameters or
+  array return values (arrays are written as `Let a:Int = [...]`), so this
+  file annotates them as `int`.  If the type checker rejects that, the
+  documentation needs a convention for array-typed signatures - see
+  docs/TEST_PLAN.md.
+#/
+func fill_squares(arr:int, n:int) {
+    for (int i = 1; i <= n; i = i + 1) {
+        arrayPush(arr, i * i);
+    }
+}
+
+func int sum_array(arr:int) {
+    int total = 0;
+    for (int i = 0; i < arrayLen(arr); i = i + 1) {
+        total = total + arr[i];
+    }
+    return total;
+}
+
+func double_all(arr:int) {
+    for (int i = 0; i < arrayLen(arr); i = i + 1) {
+        arr[i] = arr[i] * 2;
+    }
+}
+
+func rebind(arr:int) {
+    arr = [999];
+    arrayPush(arr, 1000);
+}
+
+func int make_range(n:int) {
+    Let r = [];
+    for (int i = 0; i < n; i = i + 1) {
+        arrayPush(r, i);
+    }
+    return r;
+}
+
+func int largest(rows:int) {
+    int best = 0;
+    for (int i = 0; i < arrayLen(rows); i = i + 1) {
+        Let row = rows[i];
+        for (int j = 0; j < arrayLen(row); j = j + 1) {
+            if (row[j] > best) {
+                best = row[j];
+            }
+        }
+    }
+    return best;
+}
+
+func main() {
+    Let data = [];
+    fill_squares(data, 6);
+    printf("length after callee pushes: %d, sum: %d\n": arrayLen(data), sum_array(data));
+    double_all(data);
+    printf("sum after callee doubles every element: %d\n": sum_array(data));
+    rebind(data);
+    printf("rebinding the parameter leaves the caller's array alone: length %d, first %d\n": arrayLen(data), data[0]);
+
+    Let range = make_range(5);
+    printf("returned array: length %d, sum %d\n": arrayLen(range), sum_array(range));
+    Let again = make_range(5);
+    again[0] = 77;
+    printf("independent returned arrays: %d vs %d\n": range[0], again[0]);
+
+    Let grid = [[3, 9, 2], [8, 1, 7], [4, 6, 5]];
+    printf("largest in nested array: %d\n": largest(grid));
+}

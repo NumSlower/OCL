@@ -1,0 +1,21 @@
+20! = 2432902008176640000
+fib(20) = 6765
+fib_memo(90) = 2880067194370816120
+gcd(1071, 462) = 21
+gcd(2^40, 6^20) = 1048576
+ackermann(2, 3) = 9
+ackermann(3, 3) = 61
+is_even(10) = 1, is_odd(7) = 1, is_even(7) = 0
+sum_to(1000) = 500500
+3^200 mod 1000007 = 959082
+2^62 mod 1000000007 = 145586002
+collatz(27) = 111 steps
+digit_sum(2^32) = 58
+37 in binary = 100101, 255 in hex = ff, 255 in octal = 377
+hanoi(3): AB AC BC AB CA CB AB
+hanoi(10) made 2047 calls
+4-queens has 2 solutions
+5-queens has 10 solutions
+6-queens has 4 solutions
+7-queens has 40 solutions
+8-queens has 92 solutions

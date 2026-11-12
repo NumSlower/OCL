@@ -1,0 +1,123 @@
+/#
+  End-to-end text encryption: printable ASCII -> hex -> PKCS#7 -> AES-128-CBC
+  and back.  Lengths are chosen around the 16-byte block boundary (0, 1, 15,
+  16, 17, 31, 32, 33, 47, 48, 49) because that is where padding bugs live.
+  The printed ciphertexts are the golden output; they were cross-checked
+  against an independent AES implementation (pyca/cryptography).
+#/
+Import <aes128.ocl>
+
+Let KEY = "000102030405060708090a0b0c0d0e0f";
+Let IV = "f0e0d0c0b0a090807060504030201000";
+Let PATTERN = "The quick brown fox jumps over the lazy dog 0123456789!?";
+
+func string take(n:int) {
+    if (n == 0) {
+        return "";
+    }
+    return substr(PATTERN, 0, n);
+}
+
+func string repeat_hex(byte:string, n:int) {
+    string res = "";
+    for (int i = 0; i < n; i = i + 1) {
+        res = res + byte;
+    }
+    return res;
+}
+
+func length_matrix() {
+    int lens = [0, 1, 15, 16, 17, 31, 32, 33, 47, 48, 49];
+    for (int i = 0; i < arrayLen(lens); i = i + 1) {
+        int n = lens[i];
+        string msg = take(n);
+        string cipher = aes_encrypt_text_cbc(msg, KEY, IV);
+        int cbytes = strLen(cipher) / 2;
+        assert(cbytes == (n / 16 + 1) * 16, "ciphertext length for n=" + toString(n));
+        string back = aes_decrypt_text_cbc(cipher, KEY, IV);
+        assert(back == msg, "round trip failed for n=" + toString(n));
+        printf("len=%d bytes=%d %s\n": n, cbytes, cipher);
+    }
+}
+
+func special_characters() {
+    string msg = "He said \"hi\" \\ and left! {a|b} ~100% <ok> [x] `y` #z/";
+    string cipher = aes_encrypt_text_cbc(msg, KEY, IV);
+    assert(aes_decrypt_text_cbc(cipher, KEY, IV) == msg, "special characters must survive a round trip");
+    printf("special bytes=%d %s\n": strLen(cipher) / 2, cipher);
+}
+
+func iv_and_key_sensitivity() {
+    string msg = take(40);
+    string c1 = aes_encrypt_text_cbc(msg, KEY, IV);
+    string c2 = aes_encrypt_text_cbc(msg, KEY, IV);
+    assert(c1 == c2, "encryption must be deterministic for a fixed key and IV");
+    print("PASS deterministic for fixed key+IV");
+
+    string other_iv = "f0e0d0c0b0a090807060504030201001";
+    string c3 = aes_encrypt_text_cbc(msg, KEY, other_iv);
+    assert(substr(c1, 0, 32) != substr(c3, 0, 32), "a different IV must change the first block");
+    assert(substr(c1, 32, 32) != substr(c3, 32, 32), "a different IV must change every later block");
+    print("PASS IV change propagates to every block");
+
+    /# decrypting with the wrong key must not reproduce the plaintext (checked on raw hex, before unpadding) #/
+    aes_load_key_hex("000102030405060708090a0b0c0d0e0e");
+    string garbled = aes_cbc_decrypt_hex(c1, IV);
+    aes_load_key_hex(KEY);
+    string good = aes_cbc_decrypt_hex(c1, IV);
+    assert(garbled != good, "wrong key must not decrypt correctly");
+    assert(aes_hex_to_text(aes_pkcs7_unpad_hex(good)) == msg, "right key must decrypt correctly");
+    print("PASS wrong key does not decrypt");
+}
+
+func padding_unit_tests() {
+    string p0 = aes_pkcs7_pad_hex("");
+    assert(p0 == repeat_hex("10", 16), "empty input pads to one full block of 0x10");
+    print("PASS pad(empty) = 16 x 0x10");
+
+    string full = repeat_hex("ab", 16);
+    assert(aes_pkcs7_pad_hex(full) == full + repeat_hex("10", 16), "a full block gets a whole extra block of padding");
+    print("PASS pad(16 bytes) adds a whole block");
+
+    assert(aes_pkcs7_pad_hex("00") == "00" + repeat_hex("0f", 15), "1 byte gets 15 bytes of 0x0f");
+    print("PASS pad(1 byte) = 15 x 0x0f");
+
+    for (int n = 0; n <= 40; n = n + 1) {
+        string h = repeat_hex("ab", n);
+        string padded = aes_pkcs7_pad_hex(h);
+        assert((strLen(padded) / 2) % 16 == 0, "padded length must be a multiple of 16 (n=" + toString(n) + ")");
+        assert(strLen(padded) / 2 > n, "padding is never empty (n=" + toString(n) + ")");
+        assert(aes_pkcs7_unpad_hex(padded) == h, "unpad(pad(x)) == x (n=" + toString(n) + ")");
+    }
+    print("PASS pad/unpad round trip for 0..40 bytes");
+}
+
+func text_hex_conversion() {
+    assert(strLen(AES_ASCII) == 95, "printable ASCII table must have 95 entries");
+    assert(aes_text_to_hex(" ") == "20", "space is 0x20");
+    assert(aes_text_to_hex("~") == "7e", "tilde is 0x7e");
+    assert(aes_text_to_hex("\"") == "22", "double quote is 0x22");
+    assert(aes_text_to_hex("\\") == "5c", "backslash is 0x5c");
+    assert(aes_text_to_hex("Hello") == "48656c6c6f", "Hello");
+    assert(aes_hex_to_text("48656c6c6f") == "Hello", "Hello (reverse)");
+    assert(aes_hex_to_text("0001ff") == "???", "non-printable bytes map to ?");
+
+    /# every printable character survives text -> hex -> text #/
+    for (int i = 0; i < 95; i = i + 1) {
+        string ch = substr(AES_ASCII, i, 1);
+        string hx = aes_text_to_hex(ch);
+        assert(aes_hexbyte(hx, 0) == i + 32, "code point of table entry " + toString(i));
+        assert(aes_hex_to_text(hx) == ch, "round trip of table entry " + toString(i));
+    }
+    print("PASS all 95 printable ASCII characters round trip");
+}
+
+func main() {
+    aes_init();
+    text_hex_conversion();
+    padding_unit_tests();
+    length_matrix();
+    special_characters();
+    iv_and_key_sensitivity();
+    print("all AES text round-trip tests passed");
+}

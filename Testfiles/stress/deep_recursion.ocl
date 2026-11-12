@@ -1,0 +1,44 @@
+/#
+  Call-stack depth well inside the documented limit of 4096 frames, plus
+  mutual recursion at depth.  Failure here means frame bookkeeping or the
+  stack unwinding path is broken.
+#/
+func int sum_to(n:int) {
+    if (n == 0) {
+        return 0;
+    }
+    return n + sum_to(n - 1);
+}
+
+func int ping(n:int) {
+    if (n == 0) {
+        return 0;
+    }
+    return 1 + pong(n - 1);
+}
+
+func int pong(n:int) {
+    if (n == 0) {
+        return 0;
+    }
+    return 2 + ping(n - 1);
+}
+
+func string nest(n:int) {
+    if (n == 0) {
+        return "x";
+    }
+    return "(" + nest(n - 1) + ")";
+}
+
+func main() {
+    printf("sum_to(3500) = %d\n": sum_to(3500));
+    printf("ping(3000) = %d\n": ping(3000));
+    string deep = nest(500);
+    printf("nested string length = %d\n": strLen(deep));
+    /# repeat to make sure frames were fully released #/
+    for (int i = 0; i < 5; i = i + 1) {
+        assert(sum_to(3500) == 6126750, "run " + toString(i) + " must give the same answer");
+    }
+    print("repeated deep recursion ok");
+}

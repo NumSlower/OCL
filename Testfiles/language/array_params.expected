@@ -1,0 +1,6 @@
+length after callee pushes: 6, sum: 91
+sum after callee doubles every element: 182
+rebinding the parameter leaves the caller's array alone: length 6, first 2
+returned array: length 5, sum 10
+independent returned arrays: 0 vs 77
+largest in nested array: 9

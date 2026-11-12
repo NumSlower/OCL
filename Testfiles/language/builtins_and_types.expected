@@ -1,0 +1,28 @@
+42 -> Int
+string -> String
+true -> Bool
+char literal -> Char
+float -> Float
+array -> Array
+out-of-range arrayGet -> null
+isInt: true false
+isString: true false
+isBool: true false
+isNull: true false
+42!
+true
+toInt: 124 80
+toBool: false true false true
+division truncates toward zero: 3 -3 -3 3
+modulo: 1 2
+abs/min/max: 5 3 9
+2^62 = 4611686018427387904
+len after push: 4
+popped 40, len now 3
+arr[1] after arraySet: 99, via arrayGet: 99
+arrayGet out of range is null: true
+arrayLen of a string: 5
+Int,String,Bool,Char,Array
+nested element mixed[4][1] = 6
+chained access: 5
+aliasing: first[0] = 100

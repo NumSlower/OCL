@@ -1,0 +1,106 @@
+/#
+  Arbitrary-precision arithmetic built from an array of decimal digits
+  (least significant digit first).  Computes factorials and powers far beyond
+  64 bits.  Stresses array push/pop, nested loops, carries and string building.
+#/
+Let DIGITS = [];
+
+func set_small(v:int) {
+    while (arrayLen(DIGITS) > 0) {
+        arrayPop(DIGITS);
+    }
+    int rest = v;
+    if (rest == 0) {
+        arrayPush(DIGITS, 0);
+    }
+    while (rest > 0) {
+        arrayPush(DIGITS, rest % 10);
+        rest = rest / 10;
+    }
+}
+
+func multiply_small(m:int) {
+    int carry = 0;
+    for (int i = 0; i < arrayLen(DIGITS); i = i + 1) {
+        int v = DIGITS[i] * m + carry;
+        DIGITS[i] = v % 10;
+        carry = v / 10;
+    }
+    while (carry > 0) {
+        arrayPush(DIGITS, carry % 10);
+        carry = carry / 10;
+    }
+}
+
+func string digits_to_string() {
+    string res = "";
+    for (int i = arrayLen(DIGITS) - 1; i >= 0; i = i - 1) {
+        res = res + toString(DIGITS[i]);
+    }
+    return res;
+}
+
+func int digit_total() {
+    int total = 0;
+    for (int i = 0; i < arrayLen(DIGITS); i = i + 1) {
+        total = total + DIGITS[i];
+    }
+    return total;
+}
+
+func int trailing_zeros() {
+    int count = 0;
+    int i = 0;
+    while (i < arrayLen(DIGITS) && DIGITS[i] == 0) {
+        count = count + 1;
+        i = i + 1;
+    }
+    return count;
+}
+
+func factorial_big(n:int) {
+    set_small(1);
+    for (int k = 2; k <= n; k = k + 1) {
+        multiply_small(k);
+    }
+}
+
+func power_big(base:int, exponent:int) {
+    set_small(1);
+    for (int k = 0; k < exponent; k = k + 1) {
+        multiply_small(base);
+    }
+}
+
+func main() {
+    factorial_big(20);
+    print("20! = " + digits_to_string());
+    assert(digits_to_string() == "2432902008176640000", "20! must match the 64-bit result");
+
+    factorial_big(25);
+    print("25! = " + digits_to_string());
+
+    factorial_big(50);
+    print("50! = " + digits_to_string());
+
+    factorial_big(100);
+    string f100 = digits_to_string();
+    printf("100! has %d digits, digit sum %d, %d trailing zeros\n": strLen(f100), digit_total(), trailing_zeros());
+    print("100! starts with " + substr(f100, 0, 10));
+    assert(strLen(f100) == 158, "100! has 158 digits");
+    assert(digit_total() == 648, "digit sum of 100! is 648");
+    assert(trailing_zeros() == 24, "100! has 24 trailing zeros");
+
+    power_big(2, 200);
+    print("2^200 = " + digits_to_string());
+
+    power_big(7, 77);
+    printf("7^77 has %d digits and digit sum %d\n": arrayLen(DIGITS), digit_total());
+
+    power_big(10, 30);
+    print("10^30 = " + digits_to_string());
+    assert(trailing_zeros() == 30, "10^30 has 30 trailing zeros");
+
+    set_small(0);
+    print("zero = " + digits_to_string());
+}

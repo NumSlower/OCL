@@ -33,6 +33,27 @@ char *ocl_strdup(const char *s) {
     return d;
 }
 
+/* ── Executable directory (for bundled headers) ───────────────────── */
+
+static char g_program_dir[1024] = {0};
+
+void ocl_set_program_path(const char *argv0) {
+    g_program_dir[0] = '\0';
+    if (!argv0 || !argv0[0]) return;
+
+    const char *slash  = strrchr(argv0, '/');
+    const char *bslash = strrchr(argv0, '\\');
+    if (bslash && (!slash || bslash > slash)) slash = bslash;
+    if (!slash) return;   /* invoked via PATH — no directory component */
+
+    size_t n = (size_t)(slash - argv0) + 1;
+    if (n >= sizeof(g_program_dir)) n = sizeof(g_program_dir) - 1;
+    memcpy(g_program_dir, argv0, n);
+    g_program_dir[n] = '\0';
+}
+
+const char *ocl_program_dir(void) { return g_program_dir; }
+
 /* ── Array heap object ────────────────────────────────────────────── */
 
 OclArray *ocl_array_new(size_t initial_cap) {
@@ -105,7 +126,7 @@ Value value_string_copy(const char *s) {
 }
 
 Value value_own_copy(Value v) {
-    if (v.type == VALUE_STRING && !v.owned)
+    if (v.type == VALUE_STRING)
         return value_string_copy(v.data.string_val);
     if (v.type == VALUE_ARRAY && v.data.array_val)
         ocl_array_retain(v.data.array_val);

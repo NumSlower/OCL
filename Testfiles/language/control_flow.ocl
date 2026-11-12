@@ -1,0 +1,166 @@
+/#
+  Control flow and operator semantics: short-circuit evaluation (proved with
+  side effects), precedence and associativity, nested loops with break and
+  continue, empty for-clauses, increment/decrement statements, else-if chains.
+#/
+Let TRACE = "";
+
+func bool loud(tag:string, value:bool) {
+    TRACE = TRACE + tag;
+    return value;
+}
+
+func short_circuit() {
+    TRACE = "";
+    bool r1 = false && loud("a", true);
+    bool r2 = true || loud("b", true);
+    bool r3 = true && loud("c", true);
+    bool r4 = false || loud("d", false);
+    bool r5 = loud("e", false) && loud("f", true) || loud("g", true);
+    printf("results: %b %b %b %b %b\n": r1, r2, r3, r4, r5);
+    print("evaluated: " + TRACE);
+    assert(TRACE == "cdeg", "only c, d, e and g may be evaluated");
+}
+
+func precedence() {
+    assert(1 + 2 * 3 == 7, "* binds tighter than +");
+    assert((1 + 2) * 3 == 9, "parentheses override");
+    assert(10 - 4 - 3 == 3, "- is left associative");
+    assert(100 / 10 / 5 == 2, "/ is left associative");
+    assert(7 % 4 * 2 == 6, "% and * share precedence, left to right");
+    assert(2 * 3 % 4 == 2, "same, other order");
+    assert(1 + 1 == 2 && 2 + 2 == 4, "&& binds looser than ==");
+    assert(!false && true, "! binds tighter than &&");
+    assert(1 < 2 || 1 / 1 == 0, "|| short-circuits before the right side matters");
+    assert(0 - 3 + 5 == 2, "unary-style subtraction");
+    print("precedence ok");
+}
+
+func fizzbuzz() {
+    string line = "";
+    for (int i = 1; i <= 30; i = i + 1) {
+        string item = toString(i);
+        if (i % 15 == 0) {
+            item = "FizzBuzz";
+        } else if (i % 3 == 0) {
+            item = "Fizz";
+        } else if (i % 5 == 0) {
+            item = "Buzz";
+        }
+        if (i > 1) {
+            line = line + ",";
+        }
+        line = line + item;
+    }
+    print(line);
+}
+
+func pythagorean_triples() {
+    int count = 0;
+    string found = "";
+    for (int a = 1; a <= 30; a = a + 1) {
+        for (int b = a; b <= 30; b = b + 1) {
+            int c2 = a * a + b * b;
+            int c = 0;
+            while (c * c < c2) {
+                c = c + 1;
+            }
+            if (c * c != c2) {
+                continue;
+            }
+            if (c > 30) {
+                break;
+            }
+            count = count + 1;
+            if (found != "") {
+                found = found + " ";
+            }
+            found = found + "(" + toString(a) + "," + toString(b) + "," + toString(c) + ")";
+        }
+    }
+    printf("%d triples with c <= 30: %s\n": count, found);
+}
+
+func loop_forms() {
+    int total = 0;
+    for (int i = 0; i < 20; i = i + 1) {
+        if (i % 3 == 0) {
+            continue;
+        }
+        if (i > 15) {
+            break;
+        }
+        total = total + i;
+    }
+    printf("sum of 0..15 skipping multiples of 3 = %d\n": total);
+
+    int n = 0;
+    for (;;) {
+        n = n + 1;
+        if (n * n > 200) {
+            break;
+        }
+    }
+    printf("first n with n*n > 200: %d\n": n);
+
+    int countdown = 10;
+    string trace = "";
+    while (countdown > 0) {
+        trace = trace + toString(countdown) + " ";
+        countdown = countdown - 3;
+    }
+    print(trace + "liftoff");
+
+    for (Let k:Int = 0; k < 3; k++) {
+        printf("k=%d\n": k);
+    }
+
+    int v = 0;
+    v++;
+    printf("after v++ : %d\n": v);
+    ++v;
+    printf("after ++v : %d\n": v);
+    v--;
+    printf("after v-- : %d\n": v);
+    --v;
+    printf("after --v : %d\n": v);
+
+    int inner_hits = 0;
+    for (int x = 0; x < 5; x = x + 1) {
+        for (int y = 0; y < 5; y = y + 1) {
+            if (y > x) {
+                break;
+            }
+            inner_hits = inner_hits + 1;
+        }
+    }
+    printf("break only leaves the inner loop: %d iterations\n": inner_hits);
+}
+
+func string grade(score:int) {
+    if (score >= 90) {
+        return "A";
+    } else if (score >= 80) {
+        return "B";
+    } else if (score >= 70) {
+        return "C";
+    } else if (score >= 60) {
+        return "D";
+    } else {
+        return "F";
+    }
+}
+
+func main() {
+    short_circuit();
+    precedence();
+    fizzbuzz();
+    pythagorean_triples();
+    loop_forms();
+    int scores = [95, 85, 72, 65, 40, 90, 80, 70, 60, 59];
+    string grades = "";
+    for (int i = 0; i < arrayLen(scores); i = i + 1) {
+        grades = grades + grade(scores[i]);
+    }
+    print("grades: " + grades);
+}

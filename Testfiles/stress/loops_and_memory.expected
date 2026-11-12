@@ -1,0 +1,7 @@
+sum 1..100000 = 5000050000
+pairs below 200x200 with product divisible by 7: 10416
+5000-element array: length 5000, sum 2526420
+after popping down: length 1, only element 0
+40x40 multiplication table sum = 608400
+3000-character string: length 3000
+2000 temporary strings, total length 16890

@@ -1,0 +1,9 @@
+/#
+  Characterisation tests for behaviour that LANGUAGE_REFERENCE.md lists as a
+  known limitation.  They pass today because the limitation exists; when one
+  is fixed this file will fail and should be replaced by a real feature test.
+#/
+Let parts = strSplit("a,b,c,d", ",");
+printf("strSplit currently returns only the piece count: %d\n": parts);
+assert(parts == 4, "strSplit is documented to return the number of pieces");
+print("known limitations unchanged");

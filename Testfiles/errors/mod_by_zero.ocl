@@ -1,0 +1,5 @@
+/# Runtime error: modulo by zero must halt execution with a non-zero exit. #/
+print("before");
+Let zero = 0;
+print(10 % zero);
+print("after - must never be printed");

@@ -1,0 +1,29 @@
+PASS sbox[0x00] 99
+PASS sbox[0x01] 124
+PASS sbox[0x53] 237
+PASS sbox[0xff] 22
+PASS isbox[0x63] 0
+PASS sbox inverse mismatches 0
+PASS sbox fixed points 0
+PASS sbox opposite fixed points 0
+PASS sbox sum (permutation of 0..255) 32640
+PASS xor 0x57 ^ 0x83 212
+PASS xor a ^ a 0
+PASS xor a ^ 0 170
+PASS xtime(0x57) 174
+PASS xtime(0xae) 71
+PASS gmul 0x57 * 0x13 254
+PASS gmul 0x57 * 0x83 193
+PASS round key 0 2b7e151628aed2a6abf7158809cf4f3c
+PASS round key 1 a0fafe1788542cb123a339392a6c7605
+PASS round key 2 f2c295f27a96b9435935807a7359f67f
+PASS round key 10 d014f9a8c9ee2589e13f0cc8b6630ca6
+PASS FIPS-197 B encrypt 3925841d02dc09fbdc118597196a0b32
+PASS FIPS-197 B decrypt 3243f6a8885a308d313198a2e0370734
+PASS FIPS-197 C.1 encrypt 69c4e0d86a7b0430d8cdb78070b4c55a
+PASS FIPS-197 C.1 decrypt 00112233445566778899aabbccddeeff
+PASS zero key, zero block 66e94bd4ef8a2c3b884cfa59ca342b2e
+PASS zero key, zero block (decrypt) 00000000000000000000000000000000
+PASS ones key, ones block bcbf217cb280cf30b2517052193ab979
+PASS ones key, ones block (decrypt) ffffffffffffffffffffffffffffffff
+all AES-128 known-answer tests passed
