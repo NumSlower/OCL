@@ -67,9 +67,15 @@ build cannot accidentally pick up a system `<stdio.h>` or `<stdlib.h>`.
 Porting to a new host means reimplementing the primitives in
 `src/libc/port.h` and nothing else.
 
+No OCL source file includes a C standard header directly: every one of them
+includes `include/ocl_libc.h`, which is the single place that decides whether
+the system headers or `include/freestanding/` are used. `make check-headers`
+enforces this.
+
 Verification:
 
 ```bash
+make check-headers                            # no direct host includes
 make freestanding && nm -u ocl-freestanding   # no undefined symbols
 make check-libc                               # 90 runtime self-tests
 make test-freestanding                        # full .ocl suite on the freestanding binary
@@ -441,6 +447,7 @@ Built-in functions are resolved at compile time by name and dispatched via `OP_C
 │   │   ├── string.h
 │   │   └── time.h
 │   ├── lexer.h
+│   ├── ocl_libc.h        # Single entry point for the C runtime surface
 │   ├── ocl_stdlib.h      # OCL stdlib declarations
 │   ├── parser.h
 │   ├── runtime.h

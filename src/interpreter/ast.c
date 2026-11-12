@@ -1,6 +1,6 @@
 #include "ast.h"
 #include "common.h"
-#include <string.h>
+#include "ocl_libc.h"
 
 ASTNode *ast_create_var_decl(SourceLocation loc, char *name, TypeNode *type, ExprNode *init) {
     VarDeclNode *n = ocl_malloc(sizeof(VarDeclNode));

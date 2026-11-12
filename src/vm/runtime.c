@@ -1,8 +1,7 @@
 #include "runtime.h"
 #include "vm.h"
 #include "common.h"
-#include <stdio.h>
-#include <string.h>
+#include "ocl_libc.h"
 
 CallFrame *runtime_frame_alloc(int total_locals) {
     int cap = total_locals > 0 ? total_locals + 8 : 8;

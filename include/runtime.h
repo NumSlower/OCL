@@ -2,7 +2,7 @@
 #define OCL_RUNTIME_H
 #include "common.h"
 #include "vm.h"
-#include <stdarg.h>
+#include "ocl_libc.h"
 CallFrame *runtime_frame_alloc(int total_locals);
 void       runtime_frame_free(CallFrame *f);
 void       runtime_ensure_local(CallFrame *f, uint32_t idx);

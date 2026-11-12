@@ -1,8 +1,7 @@
 #include "codegen.h"
 #include "ocl_stdlib.h"
 #include "common.h"
-#include <string.h>
-#include <stdio.h>
+#include "ocl_libc.h"
 
 /* IDs for print/printf, which are handled specially in the VM. */
 #define BUILTIN_PRINT   1

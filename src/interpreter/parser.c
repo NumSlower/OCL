@@ -1,8 +1,6 @@
 #include "parser.h"
 #include "common.h"
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include "ocl_libc.h"
 
 static bool at_end(Parser *p) {
     while (p->current < p->token_count && p->tokens[p->current].type == TOKEN_NEWLINE) p->current++;

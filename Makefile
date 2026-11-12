@@ -128,7 +128,20 @@ $(BUILD_DIR)/%.o: $(SRC_DIR)/%.c
 
 # ── Freestanding build: no libc, no libm, no crt ────────────────────────────
 .PHONY: freestanding
-freestanding: $(FS_TARGET)
+freestanding: check-headers $(FS_TARGET)
+
+# ── Guard: no project file may include a host C header directly ─────────────
+# All C runtime use goes through include/ocl_libc.h, which the freestanding
+# build resolves to include/freestanding/ instead of the system headers.
+.PHONY: check-headers
+check-headers:
+	@bad=$$(grep -rnE '^[[:space:]]*#[[:space:]]*include[[:space:]]*<(stdio|stdlib|string|ctype|math|time|errno|inttypes|stdarg|stddef|stdint|stdbool)\.h>' \
+	        $(SRC_DIR) $(INC_DIR) 2>/dev/null \
+	        | grep -v '/libc/' | grep -v '/freestanding/' | grep -v 'ocl_libc\.h' || true); \
+	if [ -n "$$bad" ]; then \
+	    echo "  ERROR direct host C includes found:"; echo "$$bad"; exit 1; \
+	fi; \
+	echo "  OK    no direct host C includes"
 
 $(FS_TARGET): $(FS_OBJS)
 	@echo "  LINK  $@ (nostdlib)"
@@ -228,6 +241,7 @@ help:
 	@echo "  make release    Build optimised release binary"
 	@echo "  make debug      Explicit debug build"
 	@echo "  make freestanding  Build ocl-freestanding (no host libc/libm)"
+	@echo "  make check-headers  Verify no source includes a host C header directly"
 	@echo "  make clean      Remove build artefacts"
 	@echo "  make test       Build and run all .ocl integration tests in $(TEST_DIR)/"
 	@echo "  make test-freestanding  Run the suite against the freestanding binary"

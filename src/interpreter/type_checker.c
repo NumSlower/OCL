@@ -1,8 +1,7 @@
 #include "type_checker.h"
 #include "ocl_stdlib.h"
 #include "common.h"
-#include <string.h>
-#include <stdio.h>
+#include "ocl_libc.h"
 
 SymbolTable *symbol_table_create(void) {
     SymbolTable *t = ocl_malloc(sizeof(SymbolTable));

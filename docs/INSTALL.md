@@ -48,12 +48,15 @@ This produces `./ocl-freestanding`, compiled with
 `src/libc/`. Verify the result:
 
 ```bash
+make check-headers         # no source includes a host C header directly
 nm -u ocl-freestanding     # must print nothing
 make check-libc            # runtime self-tests, also linked with -nostdlib
 make test-freestanding     # full .ocl suite on the freestanding binary
 ```
 
-Only `src/libc/port_linux.c` (raw syscalls) is host-specific; porting to a new
+Every OCL source file includes `include/ocl_libc.h` rather than a C standard
+header, so the runtime choice is made in exactly one place. Only
+`src/libc/port_linux.c` (raw syscalls) is host-specific; porting to a new
 platform means reimplementing the primitives declared in `src/libc/port.h`.
 
 ## Running OCL

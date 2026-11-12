@@ -1,8 +1,6 @@
 #include "bytecode.h"
 #include "common.h"
-#include <stdio.h>
-#include <string.h>
-#include <errno.h>
+#include "ocl_libc.h"
 
 Bytecode *bytecode_create(void) {
     Bytecode *bc = ocl_malloc(sizeof(Bytecode));

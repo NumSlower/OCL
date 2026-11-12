@@ -1,6 +1,4 @@
-#include <stdlib.h>
-#include <string.h>
-#include <ctype.h>
+#include "ocl_libc.h"
 #include "lexer.h"
 #include "common.h"
 

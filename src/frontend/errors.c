@@ -1,6 +1,5 @@
 #include "errors.h"
-#include <stdio.h>
-#include <string.h>
+#include "ocl_libc.h"
 
 /* ── Lifecycle ────────────────────────────────────────────────────── */
 

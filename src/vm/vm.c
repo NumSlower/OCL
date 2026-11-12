@@ -1,7 +1,4 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <inttypes.h>
+#include "ocl_libc.h"
 #include "vm.h"
 #include "ocl_stdlib.h"
 #include "common.h"
