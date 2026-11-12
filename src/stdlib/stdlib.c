@@ -1,4 +1,7 @@
-#include "ocl_libc.h"
+#include <ctype.h>
+#include <inttypes.h>
+#include <math.h>
+#include <time.h>
 
 #include "common.h"
 #include "ocl_stdlib.h"

@@ -1,6 +1,12 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # OCL Interpreter — Makefile
-# Targets:  all, debug, release, clean, test
+#
+# There is exactly one build: OCL links against its own C runtime in
+# src/libc/ and against nothing else. No host libc, no host libm, no crt
+# startup files, no system or compiler header directory.
+#
+# Targets: all, debug, release, freestanding, check-nodeps, check-libc,
+#          test, test-freestanding, run, clean, help
 # ─────────────────────────────────────────────────────────────────────────────
 
 CC      := cc
@@ -17,62 +23,21 @@ VM_DIR      := $(SRC_DIR)/vm
 INTERP_DIR  := $(SRC_DIR)/interpreter
 FRONT_DIR   := $(SRC_DIR)/frontend
 
-# ── Sources (portable wildcard matching, no dependency on external find) ─────
-# src/libc/ is the freestanding runtime: it is built only by `make freestanding`
-# and must never be linked into the host build (it would shadow libc symbols).
-SRCS := $(filter-out $(SRC_DIR)/libc/%, \
-        $(wildcard $(SRC_DIR)/*.c) \
+# ── Sources ──────────────────────────────────────────────────────────────────
+# Everything under src/, including the runtime in src/libc/.
+SRCS := $(wildcard $(SRC_DIR)/*.c) \
         $(wildcard $(SRC_DIR)/*/*.c) \
-        $(wildcard $(SRC_DIR)/*/*/*.c))
+        $(wildcard $(SRC_DIR)/*/*/*.c)
 
-# ── Objects: mirror the src/ tree under build/ ───────────────────────────────
 OBJS := $(patsubst $(SRC_DIR)/%.c, $(BUILD_DIR)/%.o, $(SRCS))
 
-# ── Flags ─────────────────────────────────────────────────────────────────────
+# ── Flags ────────────────────────────────────────────────────────────────────
+# -nostdinc drops every system and compiler header directory; the only
+# headers visible are include/ and include/freestanding/.
+# -nostdlib drops libc, libm and the crt startup files; src/libc/start.c
+# provides _start and src/libc/ supplies every symbol.
 CFLAGS_COMMON := \
     -std=c11 \
-	-g \
-    -Wall \
-    -Wextra \
-    -Wpedantic \
-    -Wno-unused-parameter \
-	-D_POSIX_C_SOURCE=200809L \
-    -I$(INC_DIR)
-
-# ── Detect OS and sanitizer availability ─────────────────────────────────────
-UNAME := $(shell uname -s 2>/dev/null || echo Windows)
-
-# Check for sanitizer runtime support (often missing on Windows/MSYS/Cygwin)
-SAN_FLAGS :=
-ifeq ($(findstring CYGWIN,$(UNAME)),)
-ifeq ($(findstring MSYS,$(UNAME)),)
-ifeq ($(findstring MINGW,$(UNAME)),)
-    HAS_SAN := $(shell $(CC) -fsanitize=address,undefined -x c /dev/null -o /dev/null 2>&1)
-    ifeq ($(HAS_SAN),)
-        SAN_FLAGS := -fsanitize=address,undefined
-    endif
-endif
-endif
-endif
-
-CFLAGS_DEBUG   := $(CFLAGS_COMMON) -g3 -O0 -DDEBUG $(SAN_FLAGS)
-CFLAGS_RELEASE := $(CFLAGS_COMMON) -O2 -DNDEBUG
-
-LDFLAGS        := -lm
-LDFLAGS_DEBUG  := $(LDFLAGS) $(SAN_FLAGS)
-CFLAGS         := $(CFLAGS_DEBUG)
-LFLAGS         := $(LDFLAGS_DEBUG)
-
-# ── Freestanding build (no host libc, no host libm) ─────────────────────────
-FS_TARGET  := ocl-freestanding
-FS_INC     := $(INC_DIR)/freestanding
-FS_BUILD   := $(BUILD_DIR)/freestanding
-FS_SRCS    := $(SRCS) $(wildcard $(SRC_DIR)/libc/*.c)
-FS_OBJS    := $(patsubst $(SRC_DIR)/%.c, $(FS_BUILD)/%.o, $(FS_SRCS))
-
-FS_CFLAGS  := \
-    -std=c11 \
-    -O2 \
     -ffreestanding \
     -fno-builtin \
     -fno-stack-protector \
@@ -81,43 +46,42 @@ FS_CFLAGS  := \
     -Wextra \
     -Wno-unused-parameter \
     -nostdinc \
-    -I$(FS_INC) \
+    -I$(INC_DIR)/freestanding \
     -I$(INC_DIR)
 
-FS_LDFLAGS := -nostdlib -static -no-pie -Wl,--build-id=none
+CFLAGS_DEBUG   := $(CFLAGS_COMMON) -g3 -O0 -DDEBUG
+CFLAGS_RELEASE := $(CFLAGS_COMMON) -O2 -DNDEBUG
 
-# ── Default target ────────────────────────────────────────────────────────────
+LDFLAGS        := -nostdlib -static -no-pie -Wl,--build-id=none
+
+CFLAGS := $(CFLAGS_DEBUG)
+
+# ── Default target ───────────────────────────────────────────────────────────
 .PHONY: all
 all: CFLAGS := $(CFLAGS_DEBUG)
-all: LFLAGS := $(LDFLAGS_DEBUG)
-all: $(TARGET) freestanding
+all: check-nodeps $(TARGET)
 
-# ── Valgrind build (debug with no optimisations) ─────────────────────────────
-.PHONY: valgrind
-valgrind: CFLAGS := $(CFLAGS_COMMON) -g -O0
-valgrind: LFLAGS := $(LDFLAGS)
-valgrind: clean $(TARGET)
-	@echo "Valgrind build complete: ./$(TARGET)"
-
-# ── Release build ─────────────────────────────────────────────────────────────
+# ── Release build ────────────────────────────────────────────────────────────
 .PHONY: release
 release: CFLAGS := $(CFLAGS_RELEASE)
-release: LFLAGS := $(LDFLAGS)
 release: clean $(TARGET)
 	@echo "Release build complete: ./$(TARGET)"
 
-# ── Debug build (same as all but explicit) ────────────────────────────────────
+# ── Debug build (same as all but explicit) ───────────────────────────────────
 .PHONY: debug
 debug: CFLAGS := $(CFLAGS_DEBUG)
-debug: LFLAGS := $(LDFLAGS_DEBUG)
 debug: clean $(TARGET)
 	@echo "Debug build complete: ./$(TARGET)"
 
-# ── Link ──────────────────────────────────────────────────────────────────────
+# ── Freestanding build (alias: every build is freestanding) ──────────────────
+.PHONY: freestanding
+freestanding: all
+
+# ── Link ─────────────────────────────────────────────────────────────────────
 $(TARGET): $(OBJS)
-	@echo "  LINK  $@"
-	@$(CC) $(OBJS) -o $@ $(LFLAGS)
-	@echo "Built $(TARGET) v$(VERSION)"
+	@echo "  LINK  $@ (nostdlib)"
+	@$(CC) $(OBJS) -o $@ $(LDFLAGS)
+	@echo "Built $(TARGET) v$(VERSION) — freestanding, no host libc"
 
 # ── Compile: pattern rule that handles any depth under src/ ──────────────────
 $(BUILD_DIR)/%.o: $(SRC_DIR)/%.c
@@ -125,30 +89,13 @@ $(BUILD_DIR)/%.o: $(SRC_DIR)/%.c
 	@echo "  CC    $<"
 	@$(CC) $(CFLAGS) -c $< -o $@
 
-# ── Freestanding build: no libc, no libm, no crt ────────────────────────────
-.PHONY: freestanding
-freestanding: check-headers check-nodeps $(FS_TARGET)
-
-# ── Guard: no project file may include a host C header directly ─────────────
-# All C runtime use goes through include/ocl_libc.h, which the freestanding
-# build resolves to include/freestanding/ instead of the system headers.
-.PHONY: check-headers
-check-headers:
-	@bad=$$(grep -rnE '^[[:space:]]*#[[:space:]]*include[[:space:]]*<(stdio|stdlib|string|ctype|math|time|errno|inttypes|stdarg|stddef|stdint|stdbool)\.h>' \
-	        $(SRC_DIR) $(INC_DIR) 2>/dev/null \
-	        | grep -v '/libc/' | grep -v '/freestanding/' | grep -v 'ocl_libc\.h' || true); \
-	if [ -n "$$bad" ]; then \
-	    echo "  ERROR direct host C includes found:"; echo "$$bad"; exit 1; \
-	fi; \
-	echo "  OK    no direct host C includes"
-
-# ── Guard: the freestanding build must resolve every header in-tree ─────────
-# Preprocesses each translation unit with the freestanding flags and fails if
-# any header outside this repository is pulled in.
+# ── Guard: every header must resolve inside the repository ───────────────────
+# Preprocesses each translation unit and fails if any header outside this
+# repository is reachable.
 .PHONY: check-nodeps
 check-nodeps:
-	@bad=$$(for f in $(FS_SRCS); do \
-	            $(CC) $(FS_CFLAGS) -E "$$f" 2>/dev/null; \
+	@bad=$$(for f in $(SRCS); do \
+	            $(CC) $(CFLAGS) -E "$$f" 2>/dev/null; \
 	        done | grep -oE '^#[[:space:]]*[0-9]+[[:space:]]+"[^"]+"' \
 	             | sed -E 's/^#[[:space:]]*[0-9]+[[:space:]]+"//; s/"$$//' \
 	             | grep '^/' | grep -v "^$$(pwd)/" | sort -u || true); \
@@ -157,36 +104,20 @@ check-nodeps:
 	fi; \
 	echo "  OK    every header resolves inside the repository"
 
-$(FS_TARGET): $(FS_OBJS)
-	@echo "  LINK  $@ (nostdlib)"
-	@$(CC) $(FS_OBJS) -o $@ $(FS_LDFLAGS)
-	@echo "Built $(FS_TARGET) v$(VERSION) — freestanding, no host libc"
-
-$(FS_BUILD)/%.o: $(SRC_DIR)/%.c
-	@mkdir -p $(dir $@)
-	@echo "  CC    $< [freestanding]"
-	@$(CC) $(FS_CFLAGS) -c $< -o $@
-
-# ── Freestanding runtime self-test (no libc linked) ─────────────────────────
-LIBC_OBJS := $(patsubst $(SRC_DIR)/libc/%.c, $(FS_BUILD)/libc/%.o, \
+# ── Runtime self-test (linked with -nostdlib) ────────────────────────────────
+LIBC_OBJS := $(patsubst $(SRC_DIR)/libc/%.c, $(BUILD_DIR)/libc/%.o, \
              $(wildcard $(SRC_DIR)/libc/*.c))
 
 .PHONY: check-libc
-check-libc: $(LIBC_OBJS) $(FS_BUILD)/tests/libc_selftest.o
+check-libc: $(LIBC_OBJS) $(BUILD_DIR)/tests/libc_selftest.o
 	@echo "  LINK  $(BUILD_DIR)/libc_selftest (nostdlib)"
-	@$(CC) $^ -o $(BUILD_DIR)/libc_selftest $(FS_LDFLAGS)
+	@$(CC) $^ -o $(BUILD_DIR)/libc_selftest $(LDFLAGS)
 	@./$(BUILD_DIR)/libc_selftest
 
-$(FS_BUILD)/tests/%.o: tests/%.c
+$(BUILD_DIR)/tests/%.o: tests/%.c
 	@mkdir -p $(dir $@)
-	@echo "  CC    $< [freestanding]"
-	@$(CC) $(FS_CFLAGS) -c $< -o $@
-
-# ── Clean ─────────────────────────────────────────────────────────────────────
-.PHONY: clean
-clean:
-	@echo "  CLEAN"
-	@rm -rf $(BUILD_DIR) $(TARGET) $(TARGET).exe $(FS_TARGET) $(FS_TARGET).exe
+	@echo "  CC    $<"
+	@$(CC) $(CFLAGS) -c $< -o $@
 
 # ── Test (.ocl integration tests only) ───────────────────────────────────────
 TEST_BIN ?= ./$(TARGET)
@@ -196,8 +127,8 @@ test: all
 	@$(MAKE) --no-print-directory _run_tests TEST_BIN=./$(TARGET)
 
 .PHONY: test-freestanding
-test-freestanding: freestanding
-	@$(MAKE) --no-print-directory _run_tests TEST_BIN=./$(FS_TARGET)
+test-freestanding: all
+	@$(MAKE) --no-print-directory _run_tests TEST_BIN=./$(TARGET)
 
 .PHONY: _run_tests
 _run_tests:
@@ -241,24 +172,29 @@ _run_tests:
 	echo "──────────────────────────────────────────────────────"; \
 	echo "  Results: $$pass passed, $$fail failed"
 
-# ── Run a specific file ───────────────────────────────────────────────────────
+# ── Run a single file ────────────────────────────────────────────────────────
 .PHONY: run
 run: all
-	@[ -n "$(FILE)" ] || (echo "Usage: make run FILE=path/to/file.ocl" && exit 1)
+	@test -n "$(FILE)" || (echo "usage: make run FILE=path/to/program.ocl"; exit 1)
 	@./$(TARGET) $(FILE)
 
-# ── Print help ────────────────────────────────────────────────────────────────
+# ── Clean ────────────────────────────────────────────────────────────────────
+.PHONY: clean
+clean:
+	@echo "  CLEAN"
+	@rm -rf $(BUILD_DIR) $(TARGET) $(TARGET).exe ocl-freestanding ocl-freestanding.exe
+
+# ── Help ─────────────────────────────────────────────────────────────────────
 .PHONY: help
 help:
-	@echo "OCL Interpreter v$(VERSION) — Makefile targets:"
-	@echo "  make            Build ./ocl and ./ocl-freestanding (default)"
-	@echo "  make release    Build optimised release binary"
+	@echo "OCL build targets:"
+	@echo "  make            Build ./ocl (freestanding, no host libc)"
+	@echo "  make release    Optimised build"
 	@echo "  make debug      Explicit debug build"
-	@echo "  make freestanding  Build ocl-freestanding (no host libc/libm)"
-	@echo "  make check-headers  Verify no source includes a host C header directly"
-	@echo "  make check-nodeps   Verify the freestanding build uses only in-tree headers"
-	@echo "  make clean      Remove build artefacts"
+	@echo "  make freestanding  Alias for make (every build is freestanding)"
+	@echo "  make check-nodeps  Verify every header resolves inside the repository"
+	@echo "  make check-libc    Run the from-scratch C runtime self-tests"
 	@echo "  make test       Build and run all .ocl integration tests in $(TEST_DIR)/"
-	@echo "  make test-freestanding  Run the suite against the freestanding binary"
 	@echo "  make run FILE=x Build and run a specific .ocl file"
+	@echo "  make clean      Remove build artefacts"
 	@echo "  make help       Show this message"

@@ -6,10 +6,13 @@
  * reimplementing exactly these primitives; nothing else in the tree
  * needs to change.
  */
+#include <stddef.h>
+#include <stdlib.h>
+#include <time.h>
+#include <errno.h>
+
 #ifndef OCL_PORT_H
 #define OCL_PORT_H
-
-#include <stddef.h>
 
 /* Byte-oriented file descriptors. Return the byte count, or -1 on error
  * with `errno` set. */

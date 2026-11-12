@@ -1,11 +1,6 @@
 /*
  * OCL freestanding ctype, PRNG, clock and errno support.
  */
-#include <ctype.h>
-#include <stdlib.h>
-#include <string.h>
-#include <time.h>
-#include <errno.h>
 #include "port.h"
 
 int errno = 0;

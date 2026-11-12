@@ -4,8 +4,9 @@
  * Accuracy target is ~1e-15 relative for the elementary functions, which
  * is what the OCL stdlib and its tests need. No host libm is used.
  */
-#include <math.h>
+
 #include <stdint.h>
+#include <math.h>
 
 typedef union { double d; uint64_t u; } DBits;
 

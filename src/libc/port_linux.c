@@ -6,7 +6,6 @@
  * need this file rewritten.
  */
 #include "port.h"
-#include <errno.h>
 
 #if defined(__x86_64__)
 

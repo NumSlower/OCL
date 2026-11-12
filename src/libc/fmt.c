@@ -5,10 +5,11 @@
  * Flags: - + space 0 #   Width: digits or *   Precision: .digits or .*
  * Length: hh h l ll z j t
  */
-#include <stdio.h>
-#include <stdarg.h>
+
 #include <stddef.h>
 #include <stdint.h>
+#include <stdarg.h>
+#include <stdio.h>
 #include <string.h>
 #include <math.h>
 

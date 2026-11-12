@@ -32,35 +32,32 @@ Run `make` in the root of the project:
 make
 ```
 
-This will compile the interpreter and produce the `ocl` executable, plus the
-dependency-free `ocl-freestanding` binary.
+This will compile the interpreter and produce the `ocl` executable.
 
-### Freestanding build (no host C library)
+### No third-party code
 
-OCL also ships its own C runtime, so it can be built without the host libc,
-libm or C runtime startup files:
+OCL ships its own C runtime, so the build never touches the host libc, libm or
+C runtime startup files:
 
 ```bash
-make freestanding
+make
 ```
 
-This produces `./ocl-freestanding`, compiled with
-`-ffreestanding -fno-builtin -nostdinc -nostdlib` and linked against
-`src/libc/`. No system header directory and no compiler header directory is
-on the include path: `include/freestanding/` supplies every header, including
-`stddef.h`, `stdint.h`, `stdbool.h` and `stdarg.h`. Verify the result:
+The binary is compiled with `-ffreestanding -fno-builtin -nostdinc -nostdlib`
+and linked with `-nostdlib -static` against `src/libc/`. No system header
+directory and no compiler header directory is on the include path:
+`include/freestanding/` supplies every header, including `stddef.h`,
+`stdint.h`, `stdbool.h` and `stdarg.h`. Verify the result:
 
 ```bash
-make check-headers         # no source includes a host C header directly
 make check-nodeps          # every header resolves inside the repository
-nm -u ocl-freestanding     # must print nothing
+nm -u ocl                  # must print nothing
+ldd ocl                    # "not a dynamic executable"
 make check-libc            # runtime self-tests, also linked with -nostdlib
-make test-freestanding     # full .ocl suite on the freestanding binary
+make test                  # full .ocl suite
 ```
 
-Every OCL source file includes `include/ocl_libc.h` rather than a C standard
-header, so the runtime choice is made in exactly one place. Only
-`src/libc/port_linux.c` (raw syscalls) is host-specific; porting to a new
+Only `src/libc/port_linux.c` (raw syscalls) is host-specific; porting to a new
 platform means reimplementing the primitives declared in `src/libc/port.h`.
 
 ## Running OCL

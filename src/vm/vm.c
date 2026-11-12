@@ -1,4 +1,5 @@
-#include "ocl_libc.h"
+#include <inttypes.h>
+
 #include "vm.h"
 #include "ocl_stdlib.h"
 #include "common.h"

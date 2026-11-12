@@ -1,5 +1,4 @@
 #include "common.h"
-#include "ocl_libc.h"
 
 /* ── Memory helpers ───────────────────────────────────────────────── */
 

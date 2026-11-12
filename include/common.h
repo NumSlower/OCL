@@ -1,7 +1,12 @@
 #ifndef OCL_COMMON_H
 #define OCL_COMMON_H
 
-#include "ocl_libc.h"
+#include <stddef.h>
+#include <stdint.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 /* ── Compiler hints ───────────────────────────────────────────────── */
 #if defined(__GNUC__) || defined(__clang__)

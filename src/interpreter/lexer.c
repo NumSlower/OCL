@@ -1,4 +1,5 @@
-#include "ocl_libc.h"
+#include <ctype.h>
+
 #include "lexer.h"
 #include "common.h"
 

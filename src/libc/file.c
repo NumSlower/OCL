@@ -4,11 +4,10 @@
  * FILE is a thin, unbuffered wrapper over the port layer's descriptors.
  * No host stdio is used.
  */
+#include "port.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <errno.h>
-#include "port.h"
 
 struct OclFile {
     int fd;

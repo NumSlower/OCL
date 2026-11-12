@@ -1,5 +1,4 @@
 #include "errors.h"
-#include "ocl_libc.h"
 
 /* ── Lifecycle ────────────────────────────────────────────────────── */
 

@@ -1,6 +1,6 @@
 #define _POSIX_C_SOURCE 200809L
 
-#include "ocl_libc.h"
+#include <time.h>
 
 #include "common.h"
 #include "errors.h"

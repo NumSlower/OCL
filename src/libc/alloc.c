@@ -4,11 +4,9 @@
  * A first-fit free-list allocator with boundary coalescing, backed by
  * anonymous memory obtained from the port layer. No libc malloc is used.
  */
-#include <stdlib.h>
-#include <string.h>
-#include <stdint.h>
-#include <errno.h>
 #include "port.h"
+#include <stdint.h>
+#include <string.h>
 
 #define OCL_ALIGN      16u
 #define OCL_MIN_SPLIT  (sizeof(Block) + OCL_ALIGN)

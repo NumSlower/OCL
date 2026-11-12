@@ -1,9 +1,10 @@
 /*
  * OCL freestanding memory and string primitives — written from scratch.
  */
-#include <string.h>
-#include <stdlib.h>
+
 #include <stddef.h>
+#include <stdlib.h>
+#include <string.h>
 
 void *memcpy(void *dst, const void *src, size_t n) {
     unsigned char       *d = (unsigned char *)dst;

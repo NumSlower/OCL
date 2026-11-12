@@ -22,10 +22,10 @@ A bytecode-compiled interpreter for **OCL** (a custom scripting language), writt
 Requires a C11 compiler (`cc`) and `make`.
 
 ```bash
-# Debug build of ./ocl plus the dependency-free ./ocl-freestanding
+# Debug build of ./ocl (no host libc, no host libm, no crt, no system headers)
 make
 
-# Release build (optimised, no sanitizers)
+# Release build (optimised)
 make release
 
 # Explicit debug build
@@ -34,21 +34,21 @@ make debug
 # Clean all build artefacts
 make clean
 
-# Freestanding build — no host libc, no host libm, no crt, no system headers
-make freestanding
+# Verify every header resolves inside the repository
+make check-nodeps
 
 # Verify the from-scratch C runtime on its own
 make check-libc
 ```
 
-The resulting binaries are `./ocl` and `./ocl-freestanding`.
+The resulting binary is `./ocl`.
 
-### Freestanding build
+### No third-party code
 
-`make freestanding` produces `./ocl-freestanding`, a statically linked
-executable that does not use the host C library at all. It is compiled with
-`-ffreestanding -fno-builtin -nostdinc -nostdlib` and links against OCL's own
-runtime in `src/libc/`:
+There is exactly one build, and it links against nothing but OCL's own
+runtime in `src/libc/`. It is compiled with
+`-ffreestanding -fno-builtin -nostdinc -nostdlib` and links with
+`-nostdlib -static`:
 
 | Area | File | Notes |
 |------|------|-------|
@@ -58,29 +58,24 @@ runtime in `src/libc/`:
 | stdio | `src/libc/file.c` | Unbuffered `FILE` over descriptors |
 | printf | `src/libc/fmt.c` | Full formatter: `%d %u %o %x %c %s %p %f %e %g`, flags/width/precision |
 | Numbers | `src/libc/num.c` | `strtol`, `strtoll`, `strtoull`, `strtod`, `atoi` |
-| Math | `src/libc/math.c` | `sqrt`, `pow`, `exp`, `log`, `sin`, `cos`, `tan`, `atan`, `floor`, `ceil`, `round`, `fmod`, … |
+| Math | `src/libc/math.c` | `sqrt`, `pow`, `exp`, `log`, `sin`, `cos`, `tan`, `atan`, `floor`, `ceil`, `round`, `fmod`, ... |
 | Misc | `src/libc/misc.c` | `ctype`, `rand`, `clock_gettime`, `strerror`, `errno` |
 | Entry point | `src/libc/start.c` | `_start` for `-nostdlib` links |
 
-The host headers are shadowed by `include/freestanding/`, so the freestanding
-build cannot accidentally pick up a system `<stdio.h>` or `<stdlib.h>`.
-That directory also supplies `stddef.h`, `stdint.h`, `stdbool.h` and
-`stdarg.h`, so not even the compiler's own header directory is on the search
+`include/freestanding/` supplies every header the build can see — including
+`stddef.h`, `stdint.h`, `stdbool.h` and `stdarg.h` — so neither the system
+header directory nor the compiler's own header directory is on the search
 path (`-nostdinc`, no `-isystem`). Porting to a new host means reimplementing
 the primitives in `src/libc/port.h` and nothing else.
-
-No OCL source file includes a C standard header directly: every one of them
-includes `include/ocl_libc.h`, which is the single place that decides whether
-the system headers or `include/freestanding/` are used.
 
 Verification:
 
 ```bash
-make check-headers                            # no direct host includes
-make check-nodeps                             # every header resolves in-tree
-make freestanding && nm -u ocl-freestanding   # no undefined symbols
-make check-libc                               # 90 runtime self-tests
-make test-freestanding                        # full .ocl suite on the freestanding binary
+make check-nodeps              # every header resolves in-tree
+nm -u ocl                      # no undefined symbols
+ldd ocl                        # "not a dynamic executable"
+make check-libc                # 90 runtime self-tests
+make test                      # full .ocl suite
 ```
 
 ---
@@ -108,9 +103,6 @@ make run FILE=path/to/program.ocl
 
 # Run the test suite
 make test
-
-# Run the test suite against the freestanding (no-libc) binary
-make test-freestanding
 ```
 
 ### Test Suite
@@ -439,7 +431,7 @@ Built-in functions are resolved at compile time by name and dispatched via `OP_C
 │   ├── codegen.h
 │   ├── common.h
 │   ├── errors.h
-│   ├── freestanding/      # Shadow headers for the no-libc build
+│   ├── freestanding/      # Every header the build can see
 │   │   ├── ctype.h
 │   │   ├── errno.h
 │   │   ├── inttypes.h
@@ -453,7 +445,6 @@ Built-in functions are resolved at compile time by name and dispatched via `OP_C
 │   │   ├── string.h
 │   │   └── time.h
 │   ├── lexer.h
-│   ├── ocl_libc.h        # Single entry point for the C runtime surface
 │   ├── ocl_stdlib.h      # OCL stdlib declarations
 │   ├── parser.h
 │   ├── runtime.h
@@ -470,7 +461,7 @@ Built-in functions are resolved at compile time by name and dispatched via `OP_C
 │   │   ├── lexer.c        # Tokeniser
 │   │   ├── parser.c       # Recursive-descent parser + import resolution
 │   │   └── type_checker.c # Symbol table & type inference
-│   ├── libc/              # From-scratch C runtime (freestanding build only)
+│   ├── libc/              # From-scratch C runtime (the only runtime)
 │   │   ├── alloc.c        # malloc/calloc/realloc/free
 │   │   ├── file.c         # FILE streams over raw descriptors
 │   │   ├── fmt.c          # printf family
