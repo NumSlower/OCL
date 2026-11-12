@@ -22,7 +22,7 @@ A bytecode-compiled interpreter for **OCL** (a custom scripting language), writt
 Requires a C11 compiler (`cc`) and `make`.
 
 ```bash
-# Debug build (default — includes AddressSanitizer + UBSan)
+# Debug build of ./ocl plus the dependency-free ./ocl-freestanding
 make
 
 # Release build (optimised, no sanitizers)
@@ -34,14 +34,14 @@ make debug
 # Clean all build artefacts
 make clean
 
-# Freestanding build — no host libc, no host libm, no crt
+# Freestanding build — no host libc, no host libm, no crt, no system headers
 make freestanding
 
 # Verify the from-scratch C runtime on its own
 make check-libc
 ```
 
-The resulting binary is `./ocl`.
+The resulting binaries are `./ocl` and `./ocl-freestanding`.
 
 ### Freestanding build
 
@@ -64,18 +64,20 @@ runtime in `src/libc/`:
 
 The host headers are shadowed by `include/freestanding/`, so the freestanding
 build cannot accidentally pick up a system `<stdio.h>` or `<stdlib.h>`.
-Porting to a new host means reimplementing the primitives in
-`src/libc/port.h` and nothing else.
+That directory also supplies `stddef.h`, `stdint.h`, `stdbool.h` and
+`stdarg.h`, so not even the compiler's own header directory is on the search
+path (`-nostdinc`, no `-isystem`). Porting to a new host means reimplementing
+the primitives in `src/libc/port.h` and nothing else.
 
 No OCL source file includes a C standard header directly: every one of them
 includes `include/ocl_libc.h`, which is the single place that decides whether
-the system headers or `include/freestanding/` are used. `make check-headers`
-enforces this.
+the system headers or `include/freestanding/` are used.
 
 Verification:
 
 ```bash
 make check-headers                            # no direct host includes
+make check-nodeps                             # every header resolves in-tree
 make freestanding && nm -u ocl-freestanding   # no undefined symbols
 make check-libc                               # 90 runtime self-tests
 make test-freestanding                        # full .ocl suite on the freestanding binary
@@ -442,6 +444,10 @@ Built-in functions are resolved at compile time by name and dispatched via `OP_C
 │   │   ├── errno.h
 │   │   ├── inttypes.h
 │   │   ├── math.h
+│   │   ├── stdarg.h
+│   │   ├── stdbool.h
+│   │   ├── stddef.h
+│   │   ├── stdint.h
 │   │   ├── stdio.h
 │   │   ├── stdlib.h
 │   │   ├── string.h

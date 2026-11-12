@@ -32,7 +32,8 @@ Run `make` in the root of the project:
 make
 ```
 
-This will compile the interpreter and produce the `ocl` executable.
+This will compile the interpreter and produce the `ocl` executable, plus the
+dependency-free `ocl-freestanding` binary.
 
 ### Freestanding build (no host C library)
 
@@ -45,10 +46,13 @@ make freestanding
 
 This produces `./ocl-freestanding`, compiled with
 `-ffreestanding -fno-builtin -nostdinc -nostdlib` and linked against
-`src/libc/`. Verify the result:
+`src/libc/`. No system header directory and no compiler header directory is
+on the include path: `include/freestanding/` supplies every header, including
+`stddef.h`, `stdint.h`, `stdbool.h` and `stdarg.h`. Verify the result:
 
 ```bash
 make check-headers         # no source includes a host C header directly
+make check-nodeps          # every header resolves inside the repository
 nm -u ocl-freestanding     # must print nothing
 make check-libc            # runtime self-tests, also linked with -nostdlib
 make test-freestanding     # full .ocl suite on the freestanding binary

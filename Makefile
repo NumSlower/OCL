@@ -81,7 +81,6 @@ FS_CFLAGS  := \
     -Wextra \
     -Wno-unused-parameter \
     -nostdinc \
-    -isystem $(shell $(CC) -print-file-name=include) \
     -I$(FS_INC) \
     -I$(INC_DIR)
 
@@ -91,7 +90,7 @@ FS_LDFLAGS := -nostdlib -static -no-pie -Wl,--build-id=none
 .PHONY: all
 all: CFLAGS := $(CFLAGS_DEBUG)
 all: LFLAGS := $(LDFLAGS_DEBUG)
-all: $(TARGET)
+all: $(TARGET) freestanding
 
 # ── Valgrind build (debug with no optimisations) ─────────────────────────────
 .PHONY: valgrind
@@ -128,7 +127,7 @@ $(BUILD_DIR)/%.o: $(SRC_DIR)/%.c
 
 # ── Freestanding build: no libc, no libm, no crt ────────────────────────────
 .PHONY: freestanding
-freestanding: check-headers $(FS_TARGET)
+freestanding: check-headers check-nodeps $(FS_TARGET)
 
 # ── Guard: no project file may include a host C header directly ─────────────
 # All C runtime use goes through include/ocl_libc.h, which the freestanding
@@ -142,6 +141,21 @@ check-headers:
 	    echo "  ERROR direct host C includes found:"; echo "$$bad"; exit 1; \
 	fi; \
 	echo "  OK    no direct host C includes"
+
+# ── Guard: the freestanding build must resolve every header in-tree ─────────
+# Preprocesses each translation unit with the freestanding flags and fails if
+# any header outside this repository is pulled in.
+.PHONY: check-nodeps
+check-nodeps:
+	@bad=$$(for f in $(FS_SRCS); do \
+	            $(CC) $(FS_CFLAGS) -E "$$f" 2>/dev/null; \
+	        done | grep -oE '^#[[:space:]]*[0-9]+[[:space:]]+"[^"]+"' \
+	             | sed -E 's/^#[[:space:]]*[0-9]+[[:space:]]+"//; s/"$$//' \
+	             | grep '^/' | grep -v "^$$(pwd)/" | sort -u || true); \
+	if [ -n "$$bad" ]; then \
+	    echo "  ERROR third-party headers reachable:"; echo "$$bad"; exit 1; \
+	fi; \
+	echo "  OK    every header resolves inside the repository"
 
 $(FS_TARGET): $(FS_OBJS)
 	@echo "  LINK  $@ (nostdlib)"
@@ -237,11 +251,12 @@ run: all
 .PHONY: help
 help:
 	@echo "OCL Interpreter v$(VERSION) — Makefile targets:"
-	@echo "  make            Build with debug + sanitizers (default)"
+	@echo "  make            Build ./ocl and ./ocl-freestanding (default)"
 	@echo "  make release    Build optimised release binary"
 	@echo "  make debug      Explicit debug build"
 	@echo "  make freestanding  Build ocl-freestanding (no host libc/libm)"
 	@echo "  make check-headers  Verify no source includes a host C header directly"
+	@echo "  make check-nodeps   Verify the freestanding build uses only in-tree headers"
 	@echo "  make clean      Remove build artefacts"
 	@echo "  make test       Build and run all .ocl integration tests in $(TEST_DIR)/"
 	@echo "  make test-freestanding  Run the suite against the freestanding binary"
